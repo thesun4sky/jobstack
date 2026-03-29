@@ -91,7 +91,7 @@ graph LR
 ## 설치
 
 ```bash
-git clone https://github.com/your-username/jobstack.git
+git clone https://github.com/thesun4sky/jobstack.git
 cd jobstack
 ./install.sh
 ```
@@ -214,238 +214,64 @@ jobstack은 2016년부터 2025년까지 9년간 30건 이상의 자소서 첨삭
 
 ---
 
-## 통합 테스트 결과
+## E2E 통합 테스트
 
-`test/run-integration-test.sh`로 전체 시스템 검증을 수행합니다.
+실제 샘플 데이터(이력서 + 자소서 + 채용공고)로 전체 8단계 플로우를 돌린 결과입니다.
 
-```bash
-./test/run-integration-test.sh
-```
+> **페르소나**: 김민수 (신입 백엔드 개발자, 서울과기대 컴공, 인턴 6개월)
+> **목표**: 네이버 서버 플랫폼 개발자
 
-### 테스트 결과: 50/50 통과
-
-```mermaid
-pie title 통합 테스트 결과 (50/50)
-    "인프라 (8)" : 8
-    "프리앰블 (26)" : 26
-    "뷰어 (6)" : 6
-    "파일감지 (3)" : 3
-    "데이터 (7)" : 7
-```
-
-### 테스트 항목별 상세
+### 전체 플로우 요약
 
 ```mermaid
 flowchart LR
-    subgraph T1["1. 인프라 (8/8)"]
-        direction TB
-        T1A["install.sh<br/>심링크 13개 ✓"]
-        T1B["jobstack-config<br/>set/get/list ✓"]
-        T1C["상태 디렉토리<br/>6개 생성 ✓"]
+    subgraph 입력["입력 3건"]
+        IN1["이력서_김민수.md"]
+        IN2["채용공고_네이버.md"]
+        IN3["자소서_네이버.md"]
     end
 
-    subgraph T2["2. 프리앰블 (26/26)"]
-        direction TB
-        T2A["13개 스킬<br/>YAML 프론트매터 ✓"]
-        T2B["13개 스킬<br/>bash 블록 ✓"]
-    end
+    S1["/auto<br/>3건 감지<br/>프로필 생성"]
+    S2["/strategy<br/>GAP 분석<br/>12주 로드맵"]
+    S3["/company-research<br/>키워드 14%<br/>적합도 58점"]
+    S4["/resume<br/>ATS 53%<br/>수치화 6건"]
+    S5["/cover-letter<br/>38점→결이요<br/>미끼 5개"]
+    S6["/review<br/>체크 12/20<br/>질문 32개"]
+    S7["/mock-interview<br/>인성 5문<br/>66/100점"]
+    S8["/retro<br/>회고+액션플랜"]
 
-    subgraph T3["3. 뷰어 (6/6)"]
-        direction TB
-        T3A["HTML 생성 ✓"]
-        T3B["marked.js CDN ✓"]
-        T3C["한국어 폰트 ✓"]
-        T3D["다크모드 ✓"]
-        T3E["PDF 버튼 ✓"]
-    end
+    입력 --> S1 --> S2 --> S3 --> S4 --> S5 --> S6 --> S7 --> S8
+    S8 -.-> |"피드백 루프"| S2
 
-    subgraph T4["4. 파일감지 (3/3)"]
-        direction TB
-        T4A["이력서 감지 ✓"]
-        T4B["자소서 감지 ✓"]
-        T4C["채용공고 감지 ✓"]
-    end
-
-    subgraph T5["5. 데이터 (7/7)"]
-        direction TB
-        T5A["tracker JSONL ✓"]
-        T5B["프로필 YAML ✓"]
-        T5C["텔레메트리 ✓"]
-    end
-
-    T1 --> T2 --> T3 --> T4 --> T5
-
-    style T1 fill:#E8F5E9,stroke:#4CAF50
-    style T2 fill:#E3F2FD,stroke:#2196F3
-    style T3 fill:#FFF3E0,stroke:#FF9800
-    style T4 fill:#F3E5F5,stroke:#9C27B0
-    style T5 fill:#E0F7FA,stroke:#00BCD4
+    style S5 fill:#FCE4EC,stroke:#E91E63
+    style S7 fill:#F3E5F5,stroke:#9C27B0
 ```
 
-### 테스트 입출력 데이터
+### 단계별 핵심 입출력
 
-| 테스트 | 입력 | 출력 | 검증 |
-|--------|------|------|------|
-| install.sh | `./install.sh` | `~/.claude/commands/` 심링크 13개 | 각 심링크 존재 확인 |
-| jobstack-config | `set test_key test_value` | `~/.jobstack/config.yaml` | `get test_key` = `test_value` |
-| 상태 디렉토리 | install.sh 실행 | `~/.jobstack/{profiles,tracker,...}` | 6개 디렉토리 존재 |
-| YAML 프론트매터 | 13개 SKILL.md | `---` 시작 확인 | grep `^---` |
-| 프리앰블 bash | 13개 SKILL.md | ` ```bash` 블록 존재 | grep ` ```bash` |
-| HTML 뷰어 | `이력서_홍길동.md` (850B) | `이력서_홍길동.html` (6809B) | marked.js, 폰트, 다크모드, PDF 버튼 |
-| 이력서 감지 | `이력서_홍길동.md` | 파일 분류: 이력서 | find `이력서*` 매칭 |
-| 자소서 감지 | `자소서_네이버_홍길동.md` | 파일 분류: 자소서 | find `자소서*` 매칭 |
-| 채용공고 감지 | `채용공고_네이버_백엔드.md` | 파일 분류: 채용공고 | find `채용*` 매칭 |
-| tracker | JSONL 2건 쓰기 | `applications.jsonl` | JSON 유효성 + 건수 |
-| 프로필 | YAML 저장 | `default.yaml` | 필수 필드 존재 |
-| 텔레메트리 | 스킬 사용 로그 3건 | `skill-usage.jsonl` | JSONL 건수 확인 |
+| Step | 스킬 | 입력 | 핵심 출력 | 크기 |
+|------|------|------|----------|------|
+| 1 | `/auto` | 폴더 파일 3건 | [대시보드](docs/e2e-output/step1-auto-대시보드.md) — 감지 결과 + 체크리스트 | 2.6KB |
+| 2 | `/strategy` | 이력서 → 프로필 추출 | [프로필](docs/e2e-output/step2-strategy-프로필.yaml) + [로드맵](docs/e2e-output/step2-strategy-로드맵.md) | 8.5KB |
+| 3 | `/company-research` | 채용공고 + WebSearch | [네이버 기업분석](docs/e2e-output/step3-company-research-네이버.md) — 키워드 반영률 14% | 9.8KB |
+| 4 | `/resume` | 이력서 + 채용공고 | [이력서 첨삭](docs/e2e-output/step4-resume-첨삭결과.md) — 수치화 before/after 6건 | 13KB |
+| 5 | `/cover-letter` | 자소서 + 기업분석 | [자소서 5단계 첨삭](docs/e2e-output/step5-cover-letter-첨삭결과.md) — 진단 38점, 미끼 5개 | **25.6KB** |
+| 6 | `/review` | 이력서+자소서+채용공고 | [통합 점검](docs/e2e-output/step6-review-통합점검.md) — 면접 질문 32개 | 13.4KB |
+| 7 | `/mock-interview` | 자소서 미끼 + 프로필 | [인성면접 5문](docs/e2e-output/step7-mock-interview-인성면접.md) — 66/100점 | 18.5KB |
+| 8 | `/tracker` + `/retro` | 면접 결과 | [현황](docs/e2e-output/step8-tracker-현황.md) + [회고](docs/e2e-output/step8-retro-회고.md) | 11.5KB |
+| | | | **총 출력** | **103KB** |
 
-### 테스트 샘플 데이터
+### 자소서 변환 추적 (Before → After)
 
-테스트에 사용된 샘플 데이터 (`test/sample-data/`):
+**지원동기 원문**:
+> "네이버는 대한민국을 대표하는 IT 기업이며...서버 개발에 **흥미를 느꼈고**...네이버에서 더 **성장하고 싶습니다**"
 
-| 파일 | 설명 | 크기 |
-|------|------|------|
-| `이력서_홍길동.md` | 백엔드 개발자 이력서 (신입) | 850B |
-| `자소서_네이버_홍길동.md` | 네이버 백엔드 자소서 (첨삭 전) | 1.1KB |
-| `채용공고_네이버_백엔드.md` | 네이버 백엔드 개발자 JD | 750B |
+**결이요 적용 후**:
+> "플러스테크 인턴 기간에 Redis 캐싱을 적용해 주요 API 응답시간을 **350ms에서 15ms로 단축**한 경험이 있습니다...네이버 **Search Platform이 일 수억 건의 검색 요청을 MSA 기반으로 처리**한다는...네이버 검색 백엔드의 응답 속도와 안정성 개선에 **즉시 기여하겠습니다**"
 
----
+**전체 상세 리포트**: [docs/E2E-TEST-REPORT.md](docs/E2E-TEST-REPORT.md)
 
-## 전체 프로세스 상세 (End-to-End)
-
-실제 사용 시나리오를 기반으로 한 전체 프로세스입니다.
-
-```mermaid
-sequenceDiagram
-    actor User as 사용자
-    participant Auto as /auto
-    participant Strategy as /strategy
-    participant CR as /company-research
-    participant Resume as /resume
-    participant CL as /cover-letter
-    participant Review as /review
-    participant MI as /mock-interview
-    participant Tracker as /tracker
-    participant Retro as /retro
-    participant View as jobstack-view
-
-    User->>Auto: /auto 실행
-    Auto->>Auto: 파일 스캔 (Glob)
-    Auto-->>User: 대시보드 + 다음 단계 제안
-
-    User->>Strategy: /strategy
-    Strategy-->>User: 역량 진단 질문 (1개씩)
-    User-->>Strategy: 답변
-    Strategy->>Strategy: 프로필 저장 (YAML)
-    Strategy-->>User: 로드맵.md 생성
-    Strategy->>View: 뷰어로 열기
-
-    User->>CR: /company-research 네이버
-    CR->>CR: WebSearch 7가지 소스
-    CR-->>User: 키워드 체크리스트 + 적합도 스코어
-    CR->>CR: 리포트 저장 (company-cache)
-
-    User->>Resume: /resume (이력서 첨삭)
-    Resume->>Resume: 이력서 분석
-    Resume-->>User: ATS 최적화 + before/after 피드백
-
-    User->>CL: /cover-letter (자소서 첨삭)
-    CL->>CL: 7가지 문제 패턴 진단
-    CL->>CL: 5단계 첨삭
-    CL-->>User: 진단 점수 + 미끼 포인트 + 예상 질문
-    CL->>View: 결과 뷰어로 열기
-
-    User->>Review: /review (통합 점검)
-    Review->>Review: 일관성 + 키워드 + 미끼 점검
-    Review-->>User: 체크리스트 + 면접 예상 질문 세트
-
-    User->>MI: /mock-interview (모의면접)
-    MI-->>User: 면접 질문 (1개씩)
-    User-->>MI: 답변
-    MI-->>User: 즉시 피드백 (4차원 평가)
-    MI-->>User: 종합 리포트
-
-    User->>Tracker: /tracker add
-    Tracker->>Tracker: JSONL 저장
-    Tracker-->>User: 지원 현황 테이블
-
-    User->>Retro: /retro (면접 회고)
-    Retro-->>User: 강점/약점 + 개선 액션플랜
-    Retro-.->Strategy: 피드백 루프
-```
-
-### 프로세스별 입출력 요약
-
-| 단계 | 스킬 | 입력 | 출력 | 저장 위치 |
-|------|------|------|------|----------|
-| 0 | `/auto` | 현재 폴더 파일 | 대시보드 + 다음 단계 제안 | - |
-| 1 | `/strategy` | 사용자 답변 (6개 질문) | 프로필 + 로드맵 | `~/.jobstack/profiles/default.yaml` |
-| 2 | `/company-research` | 기업명 | 키워드 체크리스트 + 적합도 스코어 | `~/.jobstack/company-cache/` |
-| 3 | `/resume` | 이력서 파일 | ATS 최적화 피드백 | 프로필 업데이트 |
-| 4 | `/cover-letter` | 자소서 파일 + 채용공고 | 5단계 첨삭 + 미끼 포인트 + 예상 질문 | 현재 디렉토리 |
-| 5 | `/review` | 이력서 + 자소서 + 포트폴리오 | 통합 체크리스트 + 면접 질문 세트 | 현재 디렉토리 |
-| 6 | `/mock-interview` | 기업/직무 + 자소서 | 면접 시뮬레이션 + 종합 리포트 | `~/.jobstack/interview-history/` |
-| 7 | `/tracker` | 기업/직무/상태 | 지원 현황 테이블 | `~/.jobstack/tracker/applications.jsonl` |
-| 8 | `/retro` | 면접 경험 | 강점/약점 + 액션플랜 | `~/.jobstack/interview-history/` |
-
----
-
-## 데이터 흐름
-
-```mermaid
-flowchart TB
-    subgraph 입력["입력 파일"]
-        R["이력서.md/pdf"]
-        CL["자소서.md/docx"]
-        JD["채용공고.md/pdf"]
-        PF["포트폴리오"]
-    end
-
-    subgraph 상태["~/.jobstack/ 상태 관리"]
-        Profile["profiles/<br/>default.yaml"]
-        Cache["company-cache/<br/>기업분석 리포트"]
-        Tracker["tracker/<br/>applications.jsonl"]
-        History["interview-history/<br/>면접 기록"]
-        Analytics["analytics/<br/>skill-usage.jsonl"]
-    end
-
-    subgraph 출력["출력 결과물"]
-        Roadmap["strategy-roadmap.md"]
-        Report["기업분석-리포트.md"]
-        Feedback["첨삭-피드백.md"]
-        Questions["면접예상질문.md"]
-        InterviewReport["면접-리포트.md"]
-    end
-
-    subgraph 뷰어["jobstack-view"]
-        HTML["스타일링된 HTML"]
-        PDF["PDF 저장"]
-    end
-
-    R --> Profile
-    JD --> Cache
-    CL --> Feedback
-    R --> Feedback
-    JD --> Report
-
-    Profile --> Roadmap
-    Cache --> Feedback
-    Cache --> Questions
-    Feedback --> Questions
-    Questions --> InterviewReport
-
-    Roadmap --> HTML
-    Report --> HTML
-    Feedback --> HTML
-    Questions --> HTML
-    InterviewReport --> HTML
-    HTML --> PDF
-
-    style 입력 fill:#E3F2FD,stroke:#2196F3
-    style 상태 fill:#FFF3E0,stroke:#FF9800
-    style 출력 fill:#E8F5E9,stroke:#4CAF50
-    style 뷰어 fill:#F3E5F5,stroke:#9C27B0
-```
+> 각 단계의 실제 출력물 전문은 [docs/e2e-output/](docs/e2e-output/) 디렉토리에서 확인할 수 있습니다.
 
 ---
 

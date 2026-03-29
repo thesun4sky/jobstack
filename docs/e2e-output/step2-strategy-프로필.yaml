@@ -1,0 +1,110 @@
+# JobStack Profile — 자동 생성
+# Source: 이력서_김민수.md
+# Generated: 2026-03-29
+
+personal:
+  name: 김민수
+  birth: 1999-05-22
+  email: minsu.kim@gmail.com
+  phone: 010-9876-5432
+  github: github.com/minsu-dev
+  military: null  # [!] 이력서에 병역 정보 누락 — 보완 필요
+
+education:
+  - school: 서울과학기술대학교
+    major: 컴퓨터공학과
+    degree: 학사
+    gpa: "3.7 / 4.5"
+    graduated: 2024-02
+    note: null
+
+experience:
+  - company: 플러스테크
+    role: 백엔드 개발 인턴
+    period: "2023.07 ~ 2023.12"
+    duration_months: 6
+    type: internship
+    highlights:
+      - Spring Boot REST API 서버 개발
+      - Redis 캐싱으로 API 응답 속도 개선
+      - MySQL 슬로우 쿼리 분석 및 인덱스 최적화
+      - JUnit5 단위 테스트 작성
+
+projects:
+  - name: "밥친구 — 실시간 매칭 서비스"
+    type: graduation_project
+    period: "2023.03 ~ 2023.11"
+    role: 팀 리더 (4인)
+    tech_stack:
+      - Spring Boot
+      - WebSocket
+      - Docker Compose
+      - GitHub Actions
+    achievements:
+      - 실시간 매칭 시스템 설계 및 구현
+      - CI/CD 파이프라인 구축
+      - 교내 경진대회 장려상 수상
+
+  - name: 기술 블로그
+    type: personal_project
+    period: "2022.06 ~ 현재"
+    platform: Velog
+    articles: 40+
+    topics:
+      - Spring
+      - JPA
+      - 알고리즘
+
+certifications:
+  - name: 정보처리기사
+    date: 2023-11
+  - name: SQLD
+    date: 2023-06
+
+language:
+  - type: TOEIC
+    score: 780
+    date: 2023-09
+
+skills:
+  languages:
+    - Java
+    - Python
+    - SQL
+  frameworks:
+    - Spring Boot
+    - Spring Data JPA
+    - Spring Security
+  databases:
+    - MySQL
+    - Redis
+  infra:
+    - Docker
+    - AWS EC2
+    - AWS S3
+    - GitHub Actions
+  tools:
+    - Git
+    - IntelliJ IDEA
+    - Notion
+
+target:
+  role: 백엔드 개발자
+  level: 신입
+  preferred_companies:
+    - 네이버
+  preferred_domains:
+    - 서버 플랫폼
+    - 검색 서비스
+    - 대규모 트래픽 처리
+
+# 보완 필요 항목
+gaps:
+  - field: military
+    note: "병역 정보 누락 — 한국 기업 지원 시 필수"
+  - field: photo
+    note: "증명사진 누락 — 한국식 이력서 필수 항목"
+  - field: address
+    note: "주소 누락 — 선택이나 일부 기업 요구"
+  - field: experience_metrics
+    note: "경력 기술에 정량적 성과 수치 부재"
