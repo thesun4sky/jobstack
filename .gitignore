@@ -1,0 +1,26 @@
+# State directory
+.jobstack/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+
+# Environment
+.env
+.env.local
+
+# Logs
+*.log
+
+# Generated HTML (from jobstack-view)
+*.html
+
+# Generated (rebuild with gen-skill-docs.sh)
+# SKILL.md files are committed for convenience

@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# jobstack-config -- read/write ~/.jobstack/config.yaml
+set -euo pipefail
+
+STATE_DIR="${JOBSTACK_STATE_DIR:-$HOME/.jobstack}"
+CONFIG_FILE="$STATE_DIR/config.yaml"
+
+mkdir -p "$STATE_DIR"
+[ -f "$CONFIG_FILE" ] || touch "$CONFIG_FILE"
+
+usage() {
+  echo "Usage: jobstack-config <get|set|list> [key] [value]"
+  exit 1
+}
+
+[ $# -lt 1 ] && usage
+
+case "$1" in
+  get)
+    [ $# -lt 2 ] && usage
+    grep "^$2:" "$CONFIG_FILE" 2>/dev/null | sed "s/^$2: *//" || echo ""
+    ;;
+  set)
+    [ $# -lt 3 ] && usage
+    if grep -q "^$2:" "$CONFIG_FILE" 2>/dev/null; then
+      sed -i '' "s|^$2:.*|$2: $3|" "$CONFIG_FILE"
+    else
+      echo "$2: $3" >> "$CONFIG_FILE"
+    fi
+    ;;
+  list)
+    cat "$CONFIG_FILE"
+    ;;
+  *)
+    usage
+    ;;
+esac

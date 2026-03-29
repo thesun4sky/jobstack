@@ -1,0 +1,360 @@
+#!/usr/bin/env bash
+# jobstack-view -- Markdown을 스타일링된 HTML로 변환하여 브라우저에서 열기
+# Usage: jobstack-view <file.md> [--no-open]
+set -euo pipefail
+
+if [ $# -lt 1 ]; then
+  echo "Usage: jobstack-view <file.md> [--no-open]"
+  echo "  Markdown 파일을 스타일링된 HTML로 변환하여 브라우저에서 엽니다."
+  exit 1
+fi
+
+INPUT_FILE="$1"
+NO_OPEN=0
+[ "${2:-}" = "--no-open" ] && NO_OPEN=1
+
+if [ ! -f "$INPUT_FILE" ]; then
+  echo "Error: 파일을 찾을 수 없습니다: $INPUT_FILE" >&2
+  exit 1
+fi
+
+# 출력 파일명 생성 (.md → .html)
+BASENAME=$(basename "$INPUT_FILE" .md)
+OUTPUT_DIR=$(dirname "$INPUT_FILE")
+OUTPUT_FILE="$OUTPUT_DIR/${BASENAME}.html"
+
+# Markdown 내용 읽기 (특수문자 이스케이프)
+MD_CONTENT=$(cat "$INPUT_FILE" | sed 's/\\/\\\\/g' | sed 's/`/\\`/g' | sed "s/'/\\\\'/g")
+
+# HTML 생성
+cat > "$OUTPUT_FILE" << 'HTMLEOF'
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TITLE_PLACEHOLDER</title>
+<script src="https://cdn.jsdelivr.net/npm/marked/lib/marked.umd.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+  :root {
+    --bg: #ffffff;
+    --fg: #1a1a2e;
+    --muted: #6b7280;
+    --accent: #2563eb;
+    --accent-light: #eff6ff;
+    --border: #e5e7eb;
+    --card-bg: #f9fafb;
+    --success: #059669;
+    --warning: #d97706;
+    --danger: #dc2626;
+    --code-bg: #f3f4f6;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f172a;
+      --fg: #e2e8f0;
+      --muted: #94a3b8;
+      --accent: #60a5fa;
+      --accent-light: #1e293b;
+      --border: #334155;
+      --card-bg: #1e293b;
+      --success: #34d399;
+      --warning: #fbbf24;
+      --danger: #f87171;
+      --code-bg: #1e293b;
+    }
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Noto Sans KR', -apple-system, BlinkMacSystemFont, sans-serif;
+    background: var(--bg);
+    color: var(--fg);
+    line-height: 1.8;
+    font-size: 16px;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .container {
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 40px 24px 80px;
+  }
+
+  .header {
+    text-align: center;
+    padding: 32px 0 24px;
+    border-bottom: 2px solid var(--accent);
+    margin-bottom: 40px;
+  }
+
+  .header .logo {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--accent);
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+
+  .header .meta {
+    font-size: 13px;
+    color: var(--muted);
+  }
+
+  #content h1 {
+    font-size: 28px;
+    font-weight: 700;
+    margin: 40px 0 16px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border);
+    color: var(--fg);
+  }
+
+  #content h1:first-child {
+    margin-top: 0;
+  }
+
+  #content h2 {
+    font-size: 22px;
+    font-weight: 700;
+    margin: 36px 0 12px;
+    color: var(--fg);
+  }
+
+  #content h3 {
+    font-size: 18px;
+    font-weight: 500;
+    margin: 28px 0 8px;
+    color: var(--fg);
+  }
+
+  #content p {
+    margin: 12px 0;
+    color: var(--fg);
+  }
+
+  #content ul, #content ol {
+    margin: 12px 0;
+    padding-left: 24px;
+  }
+
+  #content li {
+    margin: 6px 0;
+  }
+
+  #content blockquote {
+    border-left: 4px solid var(--accent);
+    background: var(--accent-light);
+    padding: 16px 20px;
+    margin: 20px 0;
+    border-radius: 0 8px 8px 0;
+    font-style: normal;
+  }
+
+  #content blockquote p {
+    margin: 4px 0;
+  }
+
+  #content code {
+    font-family: 'JetBrains Mono', monospace;
+    background: var(--code-bg);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 14px;
+  }
+
+  #content pre {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px 20px;
+    margin: 16px 0;
+    overflow-x: auto;
+    font-size: 14px;
+    line-height: 1.6;
+  }
+
+  #content pre code {
+    background: none;
+    padding: 0;
+    border-radius: 0;
+  }
+
+  #content table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 20px 0;
+    font-size: 15px;
+  }
+
+  #content th {
+    background: var(--accent-light);
+    font-weight: 500;
+    text-align: left;
+    padding: 12px 16px;
+    border: 1px solid var(--border);
+  }
+
+  #content td {
+    padding: 10px 16px;
+    border: 1px solid var(--border);
+  }
+
+  #content tr:hover td {
+    background: var(--card-bg);
+  }
+
+  #content hr {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 32px 0;
+  }
+
+  #content strong {
+    font-weight: 700;
+    color: var(--fg);
+  }
+
+  #content a {
+    color: var(--accent);
+    text-decoration: none;
+  }
+
+  #content a:hover {
+    text-decoration: underline;
+  }
+
+  /* 체크리스트 스타일 */
+  #content li input[type="checkbox"] {
+    margin-right: 8px;
+  }
+
+  /* jobstack 특화 스타일 */
+  #content .status-done { color: var(--success); }
+  #content .status-warning { color: var(--warning); }
+  #content .status-danger { color: var(--danger); }
+
+  .footer {
+    text-align: center;
+    padding: 24px 0;
+    margin-top: 40px;
+    border-top: 1px solid var(--border);
+    font-size: 13px;
+    color: var(--muted);
+  }
+
+  .actions {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    display: flex;
+    gap: 8px;
+  }
+
+  .actions button {
+    background: var(--accent);
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-family: 'Noto Sans KR', sans-serif;
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+    transition: transform 0.1s;
+  }
+
+  .actions button:hover {
+    transform: translateY(-1px);
+  }
+
+  .actions button.secondary {
+    background: var(--card-bg);
+    color: var(--fg);
+    border: 1px solid var(--border);
+  }
+
+  @media print {
+    .actions { display: none; }
+    .container { max-width: 100%; padding: 20px; }
+    body { font-size: 12px; }
+  }
+
+  @media (max-width: 640px) {
+    .container { padding: 20px 16px 60px; }
+    #content h1 { font-size: 24px; }
+    #content h2 { font-size: 20px; }
+    #content table { font-size: 13px; }
+    #content th, #content td { padding: 8px 10px; }
+  }
+</style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="logo">jobstack</div>
+      <div class="meta">TIMESTAMP_PLACEHOLDER</div>
+    </div>
+    <div id="content"></div>
+    <div class="footer">
+      jobstack &mdash; 한국 취업 통합 엑셀러레이터
+    </div>
+  </div>
+  <div class="actions">
+    <button class="secondary" onclick="window.print()">PDF 저장</button>
+  </div>
+  <script>
+    const md = document.getElementById('markdown-source').textContent;
+    document.getElementById('content').innerHTML = marked.parse(md);
+    // 첫 번째 h1을 타이틀로
+    const h1 = document.querySelector('#content h1');
+    if (h1) document.title = h1.textContent + ' | jobstack';
+  </script>
+  <script id="markdown-source" type="text/plain">
+MARKDOWN_PLACEHOLDER
+  </script>
+</body>
+</html>
+HTMLEOF
+
+# 모든 플레이스홀더를 Python으로 한번에 교체 (특수문자 안전)
+TITLE=$(head -5 "$INPUT_FILE" | grep '^#' | head -1 | sed 's/^#* *//' || echo "$BASENAME")
+[ -z "$TITLE" ] && TITLE="$BASENAME"
+TIMESTAMP=$(date '+%Y년 %m월 %d일 %H:%M')
+
+python3 << PYEOF
+import sys
+
+with open('$INPUT_FILE', 'r') as f:
+    md = f.read()
+with open('$OUTPUT_FILE', 'r') as f:
+    html = f.read()
+
+title = """$TITLE"""
+timestamp = "$TIMESTAMP"
+
+html = html.replace('TITLE_PLACEHOLDER', title + ' | jobstack')
+html = html.replace('TIMESTAMP_PLACEHOLDER', timestamp)
+html = html.replace('MARKDOWN_PLACEHOLDER', md.replace('</script>', '<' + '/script>'))
+
+with open('$OUTPUT_FILE', 'w') as f:
+    f.write(html)
+PYEOF
+
+echo "HTML 생성: $OUTPUT_FILE"
+
+# 브라우저에서 열기
+if [ "$NO_OPEN" -eq 0 ]; then
+  if command -v open >/dev/null 2>&1; then
+    open "$OUTPUT_FILE"
+  elif command -v xdg-open >/dev/null 2>&1; then
+    xdg-open "$OUTPUT_FILE"
+  else
+    echo "브라우저에서 직접 열어주세요: $OUTPUT_FILE"
+  fi
+fi
