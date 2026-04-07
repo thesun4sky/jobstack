@@ -13,10 +13,23 @@ allowed-tools:
 ---
 
 ```bash
+# ─── jobstack 프리앰블 ─────────────────────────
 _JS_STATE="${JOBSTACK_STATE_DIR:-$HOME/.jobstack}"
 mkdir -p "$_JS_STATE/analytics" "$_JS_STATE/profiles" "$_JS_STATE/tracker" \
          "$_JS_STATE/company-cache" "$_JS_STATE/interview-history" "$_JS_STATE/sessions"
+
+# 세션 추적
 echo "$$" > "$_JS_STATE/sessions/$$"
+
+# 설정 로딩
+_JS_CONFIG="${CLAUDE_SKILL_DIR}/../bin/jobstack-config"
+if [ -x "$_JS_CONFIG" ]; then
+  PROACTIVE=$("$_JS_CONFIG" get proactive 2>/dev/null || echo "true")
+else
+  PROACTIVE="true"
+fi
+
+# 트래커 파일
 TRACKER_FILE="$_JS_STATE/tracker/applications.jsonl"
 [ -f "$TRACKER_FILE" ] || touch "$TRACKER_FILE"
 echo "TRACKER_FILE=$TRACKER_FILE"
@@ -26,6 +39,14 @@ if [ "$ENTRY_COUNT" -gt 0 ]; then
   echo "--- 최근 지원 ---"
   tail -5 "$TRACKER_FILE"
 fi
+
+# 활성 세션 수
+ACTIVE_SESSIONS=$(ls "$_JS_STATE/sessions/" 2>/dev/null | wc -l | tr -d ' ')
+echo "ACTIVE_SESSIONS=$ACTIVE_SESSIONS"
+echo "PROACTIVE=$PROACTIVE"
+echo "SKILL_NAME=tracker"
+
+# 텔레메트리
 echo "{\"skill\":\"tracker\",\"ts\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"pid\":$$}" \
   >> "$_JS_STATE/analytics/skill-usage.jsonl" 2>/dev/null || true
 ```
