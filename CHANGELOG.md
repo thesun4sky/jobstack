@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.1.2] - 2026-04-08
+
+### Added
+- SaaS Phase 2 설계 초안: `docs/saas-phase2-erd-openapi.md` (논리 ERD, REST 스켈레톤, 모노레포 레이아웃 제안)
+- Phase 1 아키텍처 문서에서 Phase 2 문서로 연결
+
 ## [0.1.1] - 2026-04-07
 
 ### Fixed
