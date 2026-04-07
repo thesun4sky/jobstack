@@ -12,6 +12,12 @@ Thumbs.db
 .idea/
 .vscode/
 
+# Node / monorepo (apps/web, packages/*)
+node_modules/
+.turbo/
+apps/web/.next/
+apps/web/out/
+
 # Environment
 .env
 .env.local

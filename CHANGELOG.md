@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.3] - 2026-04-08
+
+### Added
+- pnpm + Turborepo 모노레포 루트(`pnpm-workspace.yaml`, `turbo.json`, 루트 `package.json`)
+- `apps/web`: Next.js 15(App Router) 최소 랜딩 `@jobstack/web`
+- `packages/db`: Phase 2 ORM·마이그레이션용 자리 표시자 패키지 `@jobstack/db`
+- Vercel 모노레포 배포 메모: `docs/vercel-monorepo.md`
+
 ## [0.1.2] - 2026-04-08
 
 ### Added

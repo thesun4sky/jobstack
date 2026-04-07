@@ -1,0 +1,9 @@
+{
+  "name": "@jobstack/db",
+  "version": "0.0.0",
+  "private": true,
+  "description": "PostgreSQL schema, ORM, migrations (PR-B). Placeholder package for Phase 2.",
+  "scripts": {
+    "build": "node -e \"console.log('@jobstack/db: no build yet')\""
+  }
+}

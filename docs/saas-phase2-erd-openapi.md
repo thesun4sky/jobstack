@@ -206,7 +206,7 @@ erDiagram
 - [x] 모노레포 디렉터리 제안
 - [ ] DDL 초안 (다음 PR)
 - [ ] `openapi.yaml` 1차 체크인 (다음 PR)
-- [ ] `apps/web` Next.js 스캐폴드 (리더 스코프 확정 후)
+- [x] `apps/web` Next.js 스캐폴드 ([CHANGELOG](../CHANGELOG.md) 0.1.3, `docs/vercel-monorepo.md`)
 
 ---
 
