@@ -19,4 +19,4 @@
   - `/retro` - 회고/개선
 - `install.sh` 원라인 설치
 - `bin/jobstack-config` 설정 관리
-- `ETHOS.md` 코칭 철학 (9년 첨삭 인사이트)
+- `ETHOS.md` 코칭 철학 (4년간 60건+ 첨삭 인사이트)

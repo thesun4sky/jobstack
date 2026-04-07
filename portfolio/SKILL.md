@@ -10,6 +10,7 @@ allowed-tools:
   - Read
   - Write
   - Edit
+  - Glob
   - AskUserQuestion
   - WebSearch
   - WebFetch
