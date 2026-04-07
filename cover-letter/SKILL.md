@@ -38,6 +38,10 @@ else
 fi
 # 기업분석 캐시 확인
 ls "$_JS_STATE/company-cache/" 2>/dev/null | head -5
+ACTIVE_SESSIONS=$(ls "$_JS_STATE/sessions/" 2>/dev/null | wc -l | tr -d ' ')
+echo "ACTIVE_SESSIONS=$ACTIVE_SESSIONS"
+echo "PROACTIVE=$PROACTIVE"
+echo "SKILL_NAME=cover-letter"
 echo "{\"skill\":\"cover-letter\",\"ts\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"pid\":$$}" \
   >> "$_JS_STATE/analytics/skill-usage.jsonl" 2>/dev/null || true
 ```
