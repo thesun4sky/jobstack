@@ -1,7 +1,7 @@
 ---
 name: job-search
 preamble-tier: 2
-version: 0.1.0
+version: 0.2.0
 description: |
   채용정보 탐색 스킬. 사람인/잡코리아/원티드 채용공고 검색, 공채/수시 캘린더.
   "채용공고", "개발자 채용", "지금 뜨는 공고" 등의 요청 시 활용.
@@ -56,20 +56,66 @@ echo "{\"skill\":\"job-search\",\"ts\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"pid\
 
 ### Phase 2: 채용공고 검색
 
-WebSearch를 활용하여 주요 플랫폼에서 채용공고를 탐색합니다.
+**중요**: WebSearch(검색엔진)는 공고 날짜 필터가 부정확합니다. **WebFetch로 각 플랫폼 검색 URL을 직접 조회**하는 것이 훨씬 정확합니다.
+
+**검색 전략 (우선순위 순):**
+
+#### 1단계: WebFetch 직접 조회 (가장 정확)
+
+아래 URL 패턴으로 직접 접근하세요. `{KEYWORD}`를 URL 인코딩된 직무 키워드로 치환:
+
+```
+# 사람인 — 7일 이내, 최신순
+https://www.saramin.co.kr/zf_user/search?searchword={KEYWORD}&poster_duration=7&sort=RD&cat_mcls=2
+
+# 잡코리아 — 7일 이내
+https://www.jobkorea.co.kr/Search/?stext={KEYWORD}&posted=7&ord=RegDate
+
+# 원티드 — 최신순 (IT/스타트업)
+https://www.wanted.co.kr/wdlist/518?country=kr&job_sort=job.latest_order
+
+# 점핏 — 최신순 (개발직군)
+https://jumpit.saramin.co.kr/search?sort=rsp_rate&keyword={KEYWORD}
+
+# 프로그래머스 — 최신순
+https://career.programmers.co.kr/job_positions?order=recent&min_career=0
+```
+
+각 URL의 응답에서 회사명, 직무명, 마감일, 기술스택을 파싱하세요.
+
+#### 2단계: WebFetch 실패 시 WebSearch 보조 활용
+
+WebFetch 응답이 비어있거나 JavaScript 렌더링 필요 시에만 사용:
+```
+site:saramin.co.kr {직무} {기술스택}
+site:wanted.co.kr {직무}
+site:jumpit.saramin.co.kr {기술스택}
+```
+
+**날짜 주의**: WebSearch 결과는 게재일이 부정확할 수 있습니다. WebFetch 결과를 우선 신뢰하세요.
+
+#### 3단계: 결과 없을 때 사용자에게 직접 링크 제공
+
+WebFetch와 WebSearch 모두 결과가 부족하면, 사용자가 직접 확인할 수 있는 맞춤 링크를 제공하고 **공고를 붙여넣어 달라고** 요청하세요:
+
+```
+▸ 사람인: https://www.saramin.co.kr/zf_user/search?searchword={KEYWORD}&poster_duration=7&sort=RD
+▸ 원티드: https://www.wanted.co.kr/wdlist/518?country=kr&job_sort=job.latest_order
+▸ 점핏: https://jumpit.saramin.co.kr/search?sort=rsp_rate&keyword={KEYWORD}
+```
 
 **검색 대상 플랫폼:**
 - 사람인 (saramin.co.kr) — 대기업/중견기업 공채 중심
 - 잡코리아 (jobkorea.co.kr) — 대기업/공기업 공채 중심
 - 원티드 (wanted.co.kr) — IT/스타트업 수시채용 중심
 - 프로그래머스 (programmers.co.kr) — 개발 직군 특화
-- 점핏 (jumpit.co.kr) — IT 직군 특화
+- 점핏 (jumpit.saramin.co.kr) — IT 직군 특화
 - 랠릿 (rallit.com) — 개발자 이력서 기반
 
-**검색 전략:**
-1. 직무 키워드 + 기술스택 조합으로 검색
-2. 최근 1~2주 이내 등록된 공고 우선
-3. 마감일 임박 공고 별도 표시
+**공통 검색 파라미터:**
+- 최신순 정렬 필수
+- 7일 이내 게재 필터 적용
+- 마감일 임박 공고 별도 표시
 
 ### Phase 3: 채용공고 분석
 
