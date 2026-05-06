@@ -24,3 +24,7 @@ Thumbs.db
 
 # Generated (rebuild with gen-skill-docs.sh)
 # SKILL.md files are committed for convenience
+
+# Browser scraper dependencies (npm install on first use)
+bin/node_modules/
+bin/package-lock.json

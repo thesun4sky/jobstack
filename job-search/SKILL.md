@@ -1,7 +1,7 @@
 ---
 name: job-search
 preamble-tier: 2
-version: 0.3.0
+version: 0.4.0
 description: |
   채용정보 탐색 스킬. 사람인/잡코리아/원티드 채용공고 검색, 공채/수시 캘린더.
   "채용공고", "개발자 채용", "지금 뜨는 공고" 등의 요청 시 활용.
@@ -26,6 +26,21 @@ if [ -x "$_JS_CONFIG" ]; then PROACTIVE=$("$_JS_CONFIG" get proactive 2>/dev/nul
 PROFILE="$_JS_STATE/profiles/default.yaml"
 if [ -f "$PROFILE" ]; then echo "PROFILE_EXISTS=true"; head -20 "$PROFILE"; else echo "PROFILE_EXISTS=false"; fi
 echo "{\"skill\":\"job-search\",\"ts\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"pid\":$$}" >> "$_JS_STATE/analytics/skill-usage.jsonl" 2>/dev/null || true
+
+# ─── Playwright 브라우저 스크래퍼 초기화 ─────────────
+_JS_BIN="${CLAUDE_SKILL_DIR}/../bin"
+_JS_BROWSER_SCRIPT="$_JS_BIN/fetch-jobs.mjs"
+BROWSER_SCRAPER_AVAILABLE=false
+if [ -f "$_JS_BROWSER_SCRIPT" ]; then
+  if [ ! -d "$_JS_BIN/node_modules/playwright" ]; then
+    (cd "$_JS_BIN" && npm install --silent 2>/dev/null || true)
+  fi
+  if [ -d "$_JS_BIN/node_modules/playwright" ]; then
+    BROWSER_SCRAPER_AVAILABLE=true
+    echo "BROWSER_SCRAPER=ready"
+  fi
+fi
+echo "BROWSER_SCRAPER_AVAILABLE=$BROWSER_SCRAPER_AVAILABLE"
 ```
 
 # /job-search — 채용정보 탐색
@@ -61,80 +76,91 @@ echo "{\"skill\":\"job-search\",\"ts\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"pid\
 > 마감일이 오늘 이전인 공고는 **절대 출력하지 않습니다**.
 > 마감일 확인 불가한 공고는 "마감일 미확인"으로 표시하고 사용자에게 직접 확인을 권고합니다.
 
-**플랫폼별 실제 접근 가능 여부 (테스트 검증 결과):**
+**플랫폼별 접근 방법 (v0.4.0 실제 테스트 검증):**
 
-| 플랫폼 | WebFetch | 방법 | 마감일 포함 |
-|--------|----------|------|------------|
-| 원티드 | ✅ API 작동 | JSON API | ✅ due_time 필드 |
-| 잡코리아 | ✅ HTML 목록 | 검색 페이지 | ⚠️ 목록에 없음, 상세 페이지 필요 |
-| 사람인 | ❌ JS 렌더링 | 직접 링크만 | - |
-| 점핏 | ❌ JS 렌더링 | 직접 링크만 | - |
-| 프로그래머스 | ❌ 차단됨 | WebSearch | - |
+| 플랫폼 | 방법 | 마감일 포함 | 비고 |
+|--------|------|------------|------|
+| 원티드 | ✅ JSON API | ✅ due_time 필드 | IT/스타트업 특화 |
+| 잡코리아 | ✅ HTML curl | ⚠️ 상세 페이지 필요 | 대기업/공기업 공채 |
+| 사람인 | ✅ HTML curl | ✅ date 필드 (MM/DD 형식) | 서버사이드 렌더링 |
+| 점핏 | ✅ Playwright | ✅ D-N 잔여일 | IT 직군 특화 |
+| 프로그래머스 | ❌ 접속 차단 | - | 제외 |
 
-#### 1단계: 원티드 API (가장 신뢰도 높음)
+#### 1단계: 원티드 API
 
 직무 카테고리에 맞는 API URL 사용:
 
 ```
 # 직무 카테고리 ID
-# 518 = 백엔드
-# 872 = 프론트엔드
-# 669 = 풀스택
-# 655 = DevOps/인프라
-# 660 = 데이터 엔지니어
-# 1 = 전체
+# 518 = 백엔드  872 = 프론트엔드  669 = 풀스택
+# 655 = DevOps/인프라  660 = 데이터 엔지니어  1 = 전체
 
-# API 호출 (JSON 응답)
 https://www.wanted.co.kr/api/v4/jobs?tag_type_ids={CATEGORY_ID}&country=kr&job_sort=job.latest_order&limit=20&offset=0
 ```
 
 **JSON 파싱 규칙:**
 - `due_time`: null이면 상시채용, 날짜 문자열이면 마감일
-- **due_time이 오늘 이전이면 제외** (이미 마감)
+- **due_time이 오늘 이전이면 반드시 제외**
 - `position.name` = 직무명, `company.name` = 회사명
 
-#### 2단계: 잡코리아 HTML (7일 이내 필터 URL)
+#### 2단계: 잡코리아 HTML
 
 ```
 https://www.jobkorea.co.kr/Search/?stext={URL인코딩된 키워드}&posted=7&ord=RegDate
 ```
 
 - HTML 목록에서 회사명, 직무명 파싱 가능
-- ⚠️ 마감일은 목록에 없으므로, 관심 공고는 상세 URL을 추가로 WebFetch해서 마감일 확인
+- 마감일은 목록에 없으므로, 관심 공고는 상세 URL을 추가로 WebFetch해서 마감일 확인
 - `posted=7` 파라미터로 7일 이내 게재 공고만 조회
 
-#### 3단계: 사람인/점핏 — 직접 방문 링크 제공
+#### 3단계: 사람인 curl (서버사이드 렌더링, 마감일 포함)
 
-WebFetch 불가 (JavaScript 렌더링 필요). 사용자에게 직접 방문 링크를 제공하세요:
+> 사람인은 서버사이드 렌더링으로 curl/WebFetch가 완벽히 작동합니다.
+
+```bash
+# 7일 이내, 최신순 검색
+curl -sL --max-time 20 \
+  "https://www.saramin.co.kr/zf_user/search?searchword={KEYWORD}&poster_duration=7&sort=RD" \
+  -H "User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36" \
+  -H "Accept-Language: ko-KR"
+```
+
+**마감일 파싱 규칙:**
+- HTML에서 `class="date">` 태그 내용 추출
+- 형식: `~ MM/DD(요일)` (예: `~ 05/29(금)`) 또는 `상시채용` / `채용시`
+- `~ MM/DD` → 해당 날짜가 오늘(YYYY-MM-DD) 이전이면 **반드시 제외**
+- `상시채용` / `채용시` → 포함 가능 (수시채용)
+
+#### 4단계: 점핏 Playwright 브라우저 스크래핑
+
+`BROWSER_SCRAPER_AVAILABLE=true` 일 때만 실행합니다:
+
+```bash
+# $_JS_BIN 은 프리앰블에서 설정됨
+node "$_JS_BIN/fetch-jobs.mjs" jumpit "{KEYWORD}" 20 2>/dev/null
+```
+
+**결과 JSON 필드:**
+- `platform`: "jumpit"
+- `company`: 회사명
+- `title`: 직무명
+- `deadline`: "N일 후 마감" / "오늘 마감!" / "상시채용"
+- `dRemaining`: "D-7" / "D-day" / "상시채용" (정렬/필터용)
+- `link`: 상세 URL
+
+**마감일 필터링:** `dRemaining`이 `D-0` 또는 `D-day`인 경우 오늘까지 지원 가능. 음수(이미 마감) 표시는 없으므로, 스크래핑 시점 기준으로 이미 지난 공고는 점핏이 목록에서 제외합니다.
+
+#### 5단계: WebSearch 보조 (결과 부족 시에만)
+
+위 4개 플랫폼으로 결과가 10개 미만일 때만 사용:
 
 ```
-▸ 사람인 (7일 이내 최신순):
-  https://www.saramin.co.kr/zf_user/search?searchword={KEYWORD}&poster_duration=7&sort=RD
-
-▸ 점핏 (최신순):
-  https://jumpit.saramin.co.kr/search?sort=rsp_rate&keyword={KEYWORD}
-```
-
-**중요**: 공고를 직접 붙여넣어 주시면 마감일 포함 상세 분석이 가능하다고 안내하세요.
-
-#### 4단계: WebSearch 보조 (마지막 수단)
-
-원티드 API + 잡코리아로 결과가 충분하지 않을 때만 사용:
-
-```
-site:saramin.co.kr "{직무}" 채용 2026
 site:wanted.co.kr "{직무}" 2026
+site:jobkorea.co.kr "{직무}" 채용
 ```
 
 > ⚠️ WebSearch(구글) 결과는 **이미 마감된 공고가 포함**될 수 있습니다.
 > 검색 스니펫에서 마감일/게재일을 반드시 확인하고, 확인 불가하면 "미확인" 표시 후 사용자에게 원본 URL 확인 요청.
-
-**검색 대상 플랫폼 특성:**
-- 원티드 (wanted.co.kr) — IT/스타트업 수시채용, API 직접 조회 가능 ⭐
-- 잡코리아 (jobkorea.co.kr) — 대기업/공기업 공채, HTML 직접 조회 가능 ⭐
-- 사람인 (saramin.co.kr) — 대기업/중견기업 공채, 직접 링크 안내
-- 점핏 (jumpit.saramin.co.kr) — IT 직군 특화, 직접 링크 안내
-- 랠릿 (rallit.com) — 개발자 이력서 기반, WebSearch 활용
 
 ### Phase 3: 채용공고 분석
 
