@@ -218,7 +218,7 @@ try {
 
           if (results.length >= lim) break;
         }
-        return results;
+        return results.filter(j => j.title && j.company);
       }, limit);
     } catch (err) {
       process.stderr.write(`jobkorea scrape error: ${err.message}\n`);
