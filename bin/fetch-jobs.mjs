@@ -2,7 +2,7 @@
 /**
  * Playwright-based job listing fetcher for JS-rendered platforms.
  * Usage: node fetch-jobs.mjs <platform> <keyword> [limit]
- * Platform: jumpit | programmers
+ * Platform: jumpit | programmers | jobkorea
  * Outputs JSON array to stdout.
  *
  * Note: saramin uses server-side rendering → use curl/WebFetch directly
@@ -18,7 +18,7 @@ if (!platform || !keyword) {
   process.exit(1);
 }
 
-const PLATFORMS = ['jumpit', 'programmers'];
+const PLATFORMS = ['jumpit', 'programmers', 'jobkorea'];
 if (!PLATFORMS.includes(platform)) {
   process.stderr.write(`Unknown platform: ${platform}. Supported: ${PLATFORMS.join(', ')}\n`);
   process.exit(1);
@@ -96,6 +96,39 @@ try {
         };
       }).filter(j => j.title);
     }, limit);
+
+  } else if (platform === 'jobkorea') {
+    const url = `https://www.jobkorea.co.kr/Search/?stext=${encodeURIComponent(keyword)}&posted=7&ord=RegDate`;
+    try {
+      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 20000 });
+      await page.waitForTimeout(3000);
+
+      jobs = await page.evaluate((lim) => {
+        // jobkorea listing items
+        const items = document.querySelectorAll('.list-default .list-item, .recruit-info, .list-recruit li');
+        return Array.from(items).slice(0, lim).map(item => {
+          const titleEl = item.querySelector('.title a, .tit a, h2 a, h3 a');
+          const companyEl = item.querySelector('.name a, .corp-name a, .company a');
+          const deadlineEl = item.querySelector('.date, .info-period, .dueDate, [class*="deadline"]');
+          const link = titleEl?.href || '';
+
+          const deadlineText = deadlineEl?.innerText?.trim() || '';
+          // jobkorea format: "~05/15" or "상시채용" or "채용시"
+          let deadline = deadlineText || '마감일 미확인';
+
+          return {
+            platform: 'jobkorea',
+            company: companyEl?.innerText?.trim() || '',
+            title: titleEl?.innerText?.trim() || '',
+            deadline,
+            dRemaining: '',
+            link: link.startsWith('http') ? link : `https://www.jobkorea.co.kr${link}`,
+          };
+        }).filter(j => j.title && j.company);
+      }, limit);
+    } catch (err) {
+      process.stderr.write(`jobkorea scrape error: ${err.message}\n`);
+    }
   }
 } catch (err) {
   process.stderr.write(`Error fetching ${platform}: ${err.message}\n`);
