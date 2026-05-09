@@ -93,11 +93,11 @@ echo "BROWSER_SCRAPER_AVAILABLE=$BROWSER_SCRAPER_AVAILABLE"
 > - "This job is no longer available", "Job closed", "Expired"
 > 날짜 필터로 통과했더라도 페이지 본문에 위 문구가 있으면 마감 처리합니다.
 >
-> **⚠️ 원티드 공고 부분 검증 (선별적 적용):**
-> `due_time: null`(상시채용)인 공고 중 **최대 5개만** `https://www.wanted.co.kr/wd/{id}` WebFetch로 마감 여부를 확인하세요.
-> 나머지 공고(due_time에 미래 날짜 있는 것)는 WebFetch 불필요.
-> 페이지에 "해당 포지션은 마감되었습니다" 확인 시 해당 공고 제외.
-> 훈련 데이터에 기억된 공고 ID는 절대 사용하지 말고, 반드시 API를 호출해 받은 ID만 사용하세요.
+> **⚠️ 원티드 공고 검증 — API detail endpoint 사용 (HTML WebFetch 금지):**
+> Wanted 페이지(`wd/{id}`)는 JavaScript로 마감 메시지를 렌더링하므로 WebFetch로는 마감 감지 불가.
+> 반드시 `https://www.wanted.co.kr/api/v4/jobs/{id}` JSON API를 사용하세요.
+> `status: "close"` 또는 `hidden: true`이면 즉시 제외. `due_time:null` 공고 최대 10개까지 확인.
+> **ID 범위 검증**: API 목록에 없는 ID는 훈련 데이터 출처이므로 절대 포함 금지.
 
 **플랫폼별 접근 방법 (v0.4.0 실제 테스트 검증):**
 
@@ -127,10 +127,18 @@ https://www.wanted.co.kr/api/v4/jobs?tag_type_ids={CATEGORY_ID}&country=kr&job_s
 - `status`: `active`가 아니면 제외
 - `position.name` = 직무명, `company.name` = 회사명
 
-**원티드 공고 선별 검증 (due_time:null 만, 최대 5개):**
-`due_time: null`인 공고에 한해 `WebFetch("https://www.wanted.co.kr/wd/{id}")`로 마감 여부를 확인합니다.
-`due_time`에 미래 날짜가 명시된 공고는 WebFetch 생략 (과도한 호출 방지).
-페이지에 "해당 포지션은 마감되었습니다" 문구가 있으면 즉시 제외합니다.
+**⚠️ 훈련 데이터 사용 금지 — ID 범위 검증 필수:**
+API 응답에서 얻은 job ID 목록만 사용하세요. API 목록의 최소 ID와 최대 ID를 기록해두고,
+포함하려는 모든 공고 ID가 반드시 이 목록 안에 있어야 합니다.
+ID가 목록에 없으면 훈련 데이터에서 기억한 것이므로 **즉시 제외**.
+(예: 현재 API 목록이 360,092~360,429 범위라면, ID 66113은 목록에 없으므로 절대 포함 금지)
+
+**원티드 공고 마감 검증 — API detail endpoint 사용 (전체, 최대 10개):**
+HTML 페이지(wd/{id})가 아닌 **API detail endpoint**를 사용하세요 — HTML은 JS 렌더링이 필요해 마감 감지가 불가합니다.
+`due_time: null`인 공고에 대해 `WebFetch("https://www.wanted.co.kr/api/v4/jobs/{id}")`를 실행하고:
+- JSON에서 `"status": "close"` 이거나 `"hidden": true`이면 **즉시 제외**
+- `"status": "active"`이고 `"hidden": false`이면 포함 가능
+- 최대 10개까지 확인 (JSON이라 HTML보다 빠름)
 
 #### 2단계: 잡코리아 HTML
 
