@@ -105,7 +105,7 @@ echo "BROWSER_SCRAPER_AVAILABLE=$BROWSER_SCRAPER_AVAILABLE"
 |--------|------|------------|------|
 | 원티드 | ✅ JSON API + API detail 검증 | ✅ due_time 필드 | IT/스타트업 특화 |
 | 잡코리아 | ✅ Playwright (Tailwind 개편 대응) | ✅ MM/DD 마감일 | 대기업/공기업 공채 |
-| 사람인 | ✅ Open API (키 필요) / ❌ WebFetch 차단 | ✅ API 응답 포함 | API 키: oapi.saramin.co.kr |
+| 사람인 | ✅ Playwright (스텔스 모드) | ✅ 날짜 파싱 | 봇 감지 우회 적용 |
 | 점핏 | ✅ Playwright | ✅ D-N 잔여일 | IT 직군 특화 |
 | 프로그래머스 | ❌ 접속 차단 | - | 제외 |
 
@@ -163,30 +163,20 @@ node "$_JS_BIN/fetch-jobs.mjs" jobkorea "{KEYWORD}" 20 2>/dev/null
 https://www.jobkorea.co.kr/Search/?stext={URL인코딩된 키워드}&posted=7&ord=RegDate
 ```
 
-#### 3단계: 사람인 Playwright (공식 API 또는 점핏 대체)
+#### 3단계: 사람인 Playwright 스크래핑 (스텔스 모드)
 
-> **사람인 본 사이트는 봇 감지로 Playwright/WebFetch 모두 차단됩니다.**
-> 두 가지 접근 방법:
-
-**방법 A — 사람인 Open API (SARAMIN_API_KEY 있을 때):**
-공식 API를 사용합니다. API 키는 무료로 발급 가능: https://oapi.saramin.co.kr/join
+> `fetch-jobs.mjs`에 스텔스 처리가 적용되어 있습니다 (navigator.webdriver 패치, AutomationControlled 비활성화 등).
+> `BROWSER_SCRAPER_AVAILABLE=true`일 때 실행:
 
 ```bash
-# SARAMIN_API_KEY 환경변수가 설정된 경우에만 실행
 node "$_JS_BIN/fetch-jobs.mjs" saramin "{KEYWORD}" 20 2>/dev/null
 ```
 
-결과 JSON: `platform:"saramin"`, `company`, `title`, `deadline`(YYYY-MM-DD 형식), `link`
+결과 JSON: `platform:"saramin"`, `company`, `title`, `deadline`(YYYY-MM-DD 또는 "상시채용"/"채용시마감"), `link`
 
-**방법 B — SARAMIN_API_KEY 없을 때:**
-사람인 WebFetch는 공고 목록을 반환하지 않으므로 사용하지 마세요.
-대신 점핏(jumpit)에서 추가 공고를 수집하거나, 사용자에게 직접 검색 링크를 제공:
-```
-https://www.saramin.co.kr/zf_user/search?searchword={KEYWORD}&poster_duration=7&sort=RD
-```
-
-**마감일 필터링:** 방법 A의 경우 `deadline` 필드가 YYYY-MM-DD 형식. 오늘 이전이면 제외.
-- `상시채용` / `채용시` → 포함 가능 (수시채용)
+**마감일 필터링:** `deadline` 필드가 YYYY-MM-DD 형식이면 오늘 이전인 경우 제외.
+- `상시채용` / `채용시마감` → 포함 가능 (수시채용)
+- 스크래핑 실패(봇 감지) 시 빈 배열 반환 → 점핏으로 대체 수집
 
 #### 4단계: 점핏 Playwright 브라우저 스크래핑
 

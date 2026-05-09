@@ -4,10 +4,6 @@
  * Usage: node fetch-jobs.mjs <platform> <keyword> [limit]
  * Platform: jumpit | jobkorea | saramin
  * Outputs JSON array to stdout.
- *
- * saramin: Uses official Saramin Open API (oapi.saramin.co.kr)
- *   Requires SARAMIN_API_KEY env var. Apply free at: https://oapi.saramin.co.kr/join
- *   Falls back to empty array if key not set.
  */
 
 import { chromium } from 'playwright';
@@ -26,60 +22,35 @@ if (!PLATFORMS.includes(platform)) {
   process.exit(1);
 }
 
-// ─── saramin: uses official JSON API, no browser needed ───────────────────────
-if (platform === 'saramin') {
-  const apiKey = process.env.SARAMIN_API_KEY || '';
-  if (!apiKey) {
-    process.stderr.write('SARAMIN_API_KEY not set. Get free key at https://oapi.saramin.co.kr/join\n');
-    process.stdout.write(JSON.stringify([]) + '\n');
-    process.exit(0);
-  }
-
-  const params = new URLSearchParams({
-    'access-key': apiKey,
-    keywords: keyword,
-    job_mid_cd: '2', // IT 직종
-    count: String(Math.min(limit, 110)),
-    sort: 'pd', // 등록일순
-    fields: 'posting-date,expiration-date,keyword,position,salary,company',
-  });
-  const url = `https://oapi.saramin.co.kr/job-search?${params.toString()}`;
-
-  try {
-    const res = await fetch(url, { headers: { Accept: 'application/json' } });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const json = await res.json();
-    const jobs = (json?.jobs?.job || []).map(j => {
-      const exp = j['expiration-date'];
-      const company = j.company?.['detail']?.name || j.company?.name || '';
-      const title = j.position?.title || '';
-      const href = j.url || '';
-      return {
-        platform: 'saramin',
-        company,
-        title,
-        deadline: exp ? exp.replace('T', ' ').slice(0, 10) : '상시채용',
-        dRemaining: '',
-        link: href,
-      };
-    });
-    process.stdout.write(JSON.stringify(jobs, null, 2) + '\n');
-  } catch (err) {
-    process.stderr.write(`saramin API error: ${err.message}\n`);
-    process.stdout.write(JSON.stringify([]) + '\n');
-  }
-  process.exit(0);
-}
-
-// ─── Playwright-based platforms ────────────────────────────────────────────────
+// ─── Playwright-based platforms (stealth) ─────────────────────────────────────
 const browser = await chromium.launch({
   headless: true,
-  args: ['--no-sandbox', '--disable-dev-shm-usage'],
+  args: [
+    '--no-sandbox',
+    '--disable-dev-shm-usage',
+    '--disable-blink-features=AutomationControlled',
+    '--disable-infobars',
+    '--window-size=1366,768',
+  ],
 });
 
 const context = await browser.newContext({
-  userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+  userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
   locale: 'ko-KR',
+  viewport: { width: 1366, height: 768 },
+  timezoneId: 'Asia/Seoul',
+  extraHTTPHeaders: {
+    'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7',
+  },
+});
+
+// webdriver 감지 우회
+await context.addInitScript(() => {
+  Object.defineProperty(navigator, 'webdriver', { get: () => false });
+  delete window.__playwright;
+  delete window.__pw_manual;
+  Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3] });
+  Object.defineProperty(navigator, 'languages', { get: () => ['ko-KR', 'ko', 'en-US'] });
 });
 
 const page = await context.newPage();
@@ -128,6 +99,59 @@ try {
         };
       }).filter(j => j.title);
     }, limit);
+
+  } else if (platform === 'saramin') {
+    // page.goto()는 TLS 핑거프린팅으로 차단됨 → context.request.get()으로 HTML fetch 후 setContent 파싱
+    const url = `https://www.saramin.co.kr/zf_user/search?searchword=${encodeURIComponent(keyword)}&poster_duration=7&sort=RD`;
+    try {
+      const resp = await context.request.get(url, {
+        timeout: 15000,
+        headers: { 'Accept-Language': 'ko-KR,ko;q=0.9' },
+      });
+      if (!resp.ok()) throw new Error(`HTTP ${resp.status()}`);
+      const html = await resp.text();
+      await page.setContent(html, { waitUntil: 'domcontentloaded', timeout: 10000 });
+
+      jobs = await page.evaluate((lim) => {
+        const items = Array.from(document.querySelectorAll('.item_recruit'));
+        return items.slice(0, lim).map(item => {
+          const titleEl = item.querySelector('.job_tit a');
+          const companyEl = item.querySelector('.corp_name a');
+          const fullText = item.innerText || '';
+          const dateText = item.querySelector('.date, .job_date')?.innerText?.trim() || '';
+
+          let deadline = '마감일 미확인';
+          // "~ 06/06(토)" 형식
+          const mdMatch = dateText.match(/~\s*(\d{2})\/(\d{2})/);
+          // "2026.06.06" 형식
+          const ymMatch = fullText.match(/(\d{4})\.(\d{2})\.(\d{2})/);
+          if (mdMatch) {
+            const year = new Date().getFullYear();
+            deadline = `${year}-${mdMatch[1]}-${mdMatch[2]}`;
+          } else if (ymMatch) {
+            deadline = `${ymMatch[1]}-${ymMatch[2]}-${ymMatch[3]}`;
+          } else if (fullText.includes('상시채용') || dateText.includes('상시채용')) {
+            deadline = '상시채용';
+          } else if (fullText.includes('채용시')) {
+            deadline = '채용시마감';
+          }
+
+          // setContent로 로드된 경우 절대 URL로 복원
+          const href = titleEl?.getAttribute('href') || '';
+          const link = href.startsWith('http') ? href : `https://www.saramin.co.kr${href}`;
+          return {
+            platform: 'saramin',
+            company: companyEl?.innerText?.trim() || '',
+            title: titleEl?.innerText?.trim() || '',
+            deadline,
+            dRemaining: '',
+            link,
+          };
+        }).filter(j => j.title && j.company);
+      }, limit);
+    } catch (err) {
+      process.stderr.write(`saramin scrape error: ${err.message}\n`);
+    }
 
   } else if (platform === 'jobkorea') {
     // jobkorea redesigned with Tailwind CSS — use link-based approach
