@@ -1,18 +1,21 @@
 #!/usr/bin/env node
 /**
  * Playwright-based job listing fetcher for JS-rendered platforms.
- * Usage: node fetch-jobs.mjs <platform> <keyword> [limit]
+ * Usage: node fetch-jobs.mjs <platform> <keyword> [limit] [career]
  * Platform: jumpit | jobkorea | saramin
+ * Career: entry (신입) | experienced (경력) | (생략시 전체)
  * Outputs JSON array to stdout.
  */
 
 import { chromium } from 'playwright';
 
-const [, , platform, keyword, limitArg] = process.argv;
+const [, , platform, keyword, limitArg, careerArg] = process.argv;
 const limit = parseInt(limitArg || '20', 10);
+// entry=신입, experienced=경력, ''=전체
+const career = (careerArg || '').toLowerCase();
 
 if (!platform || !keyword) {
-  process.stderr.write('Usage: fetch-jobs.mjs <platform> <keyword> [limit]\n');
+  process.stderr.write('Usage: fetch-jobs.mjs <platform> <keyword> [limit] [career]\n');
   process.exit(1);
 }
 
@@ -58,7 +61,11 @@ let jobs = [];
 
 try {
   if (platform === 'jumpit') {
-    const url = `https://jumpit.saramin.co.kr/search?sort=rsp_rate&keyword=${encodeURIComponent(keyword)}`;
+    // career: entry → min_career=0&max_career=0, experienced → min_career=1
+    const jtParams = new URLSearchParams({ sort: 'rsp_rate', keyword });
+    if (career === 'entry') { jtParams.set('min_career', '0'); jtParams.set('max_career', '0'); }
+    else if (career === 'experienced') { jtParams.set('min_career', '1'); }
+    const url = `https://jumpit.saramin.co.kr/search?${jtParams.toString()}`;
     await page.goto(url, { waitUntil: 'commit', timeout: 15000 });
     await page.waitForTimeout(5000);
 
@@ -102,7 +109,11 @@ try {
 
   } else if (platform === 'saramin') {
     // page.goto()는 TLS 핑거프린팅으로 차단됨 → context.request.get()으로 HTML fetch 후 setContent 파싱
-    const url = `https://www.saramin.co.kr/zf_user/search?searchword=${encodeURIComponent(keyword)}&poster_duration=7&sort=RD`;
+    // career: URL 파라미터 미지원 → 키워드에 신입/경력 추가
+    const srKeyword = career === 'entry' ? `${keyword} 신입`
+      : career === 'experienced' ? `${keyword} 경력` : keyword;
+    const srParams = new URLSearchParams({ searchword: srKeyword, poster_duration: '7', sort: 'RD' });
+    const url = `https://www.saramin.co.kr/zf_user/search?${srParams.toString()}`;
     try {
       const resp = await context.request.get(url, {
         timeout: 15000,
@@ -155,7 +166,11 @@ try {
 
   } else if (platform === 'jobkorea') {
     // jobkorea redesigned with Tailwind CSS — use link-based approach
-    const url = `https://www.jobkorea.co.kr/Search/?stext=${encodeURIComponent(keyword)}&posted=7&ord=RegDate`;
+    // career: 키워드에 신입/경력 추가 (URL 파라미터 대신 키워드 임베딩)
+    const jkKeyword = career === 'entry' ? `${keyword} 신입`
+      : career === 'experienced' ? `${keyword} 경력` : keyword;
+    const jkParams = new URLSearchParams({ stext: jkKeyword, posted: '7', ord: 'RegDate' });
+    const url = `https://www.jobkorea.co.kr/Search/?${jkParams.toString()}`;
     try {
       await page.goto(url, { waitUntil: 'networkidle', timeout: 25000 });
       await page.waitForTimeout(3000);

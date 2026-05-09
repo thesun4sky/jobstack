@@ -76,6 +76,20 @@ echo "BROWSER_SCRAPER_AVAILABLE=$BROWSER_SCRAPER_AVAILABLE"
 - 희망 지역 (서울, 판교, 원격 등)
 - 연봉 기대 범위 (선택)
 
+**경력 수준 → fetch-jobs.mjs career 인수 매핑:**
+- 신입 → `entry`
+- 1~3년, 3~5년, 5년+ → `experienced`
+- 미지정 → (생략, 전체 검색)
+
+**원티드 경력 필터 (`years` 파라미터):**
+```
+신입: ?years=0
+1~3년: ?years=1
+3~5년: ?years=3
+5년+: ?years=5
+```
+원티드 API URL에 `&years={N}` 추가. 경력 미지정 시 파라미터 생략.
+
 ### Phase 2: 채용공고 검색
 
 > ⚠️ **마감 공고 필터링 규칙 (반드시 준수)**
@@ -146,7 +160,9 @@ HTML 페이지(wd/{id})가 아닌 **API detail endpoint**를 사용하세요 —
 > `BROWSER_SCRAPER_AVAILABLE=true`일 때 Playwright를 사용하세요.
 
 ```bash
-node "$_JS_BIN/fetch-jobs.mjs" jobkorea "{KEYWORD}" 20 2>/dev/null
+# career 인수: entry(신입) | experienced(경력) | 생략(전체)
+node "$_JS_BIN/fetch-jobs.mjs" jobkorea "{KEYWORD}" 20 {CAREER} 2>/dev/null
+# 예: node "$_JS_BIN/fetch-jobs.mjs" jobkorea "백엔드" 20 entry 2>/dev/null
 ```
 
 **결과 JSON 필드:**
@@ -169,7 +185,8 @@ https://www.jobkorea.co.kr/Search/?stext={URL인코딩된 키워드}&posted=7&or
 > `BROWSER_SCRAPER_AVAILABLE=true`일 때 실행:
 
 ```bash
-node "$_JS_BIN/fetch-jobs.mjs" saramin "{KEYWORD}" 20 2>/dev/null
+# career 인수: entry(신입) | experienced(경력) | 생략(전체)
+node "$_JS_BIN/fetch-jobs.mjs" saramin "{KEYWORD}" 20 {CAREER} 2>/dev/null
 ```
 
 결과 JSON: `platform:"saramin"`, `company`, `title`, `deadline`(YYYY-MM-DD 또는 "상시채용"/"채용시마감"), `link`
