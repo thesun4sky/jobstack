@@ -366,17 +366,18 @@ site:jobkorea.co.kr "{직무}" 채용
 - 관심 공고 확정 → `/resume` (해당 공고 맞춤 이력서)
 - 관심 공고 확정 → `/cover-letter` (해당 공고 맞춤 자소서)
 
-## 시각화 이미지 생성 (선택)
+## 시각화 이미지 생성
 
-채용공고 목록이나 비교 결과를 정리할 때 시각적 이미지가 큰 그림 파악에 도움이 되면 응답 끝에 아래 마커를 추가한다:
+채용공고를 **3개 이상** 나열하는 답변에서는 반드시 응답 맨 끝에 아래 마커를 추가한다:
 
 ```
 [IMAGE_PROMPT: <영어 프롬프트>]
 ```
 
-**사용 기준:**
-- 여러 공고를 비교하는 인포그래픽, 스택 비교 시각화, 취업 시장 요약 → 사용
-- 단순 1개 공고 안내, 짧은 답변, 오류 메시지 → 사용하지 않음
+**트리거 조건 (필수):**
+- 공고 3개 이상 나열 → **반드시** 추가
+- 스택 비교, 매칭도 비교, 취업 시장 요약 → 추가
+- 1~2개 공고 안내, 짧은 답변, 오류 메시지 → 추가하지 않음
 
-**프롬프트 스타일:** 명확하고 informative한 infographic/diagram 스타일.
-예: `A clean professional infographic comparing 3 software engineer job listings: Company A (Series B startup, remote, $80K), Company B (large corp, Seoul, $70K), Company C (game studio, hybrid, $75K). Show tech stacks as icons. White background, Korean company aesthetic.`
+**프롬프트 스타일:** 명확하고 informative한 infographic/diagram 스타일. 실제 회사명·직무·매칭 점수·기술스택을 반영한다.
+예: `A clean professional infographic comparing 3 Korean software engineer job listings: AlgoCare (Series A, Seoul, Backend+LLM, match 85%), Samjjomsamm (FinTech SaaS, Seoul, Java/Kafka, match 92%), KakaoBank (판교, Spring AI, match 72%). Show tech stack icons, match score badges, company tiers. Dark navy background, white text, green/yellow accent for scores. Korean startup aesthetic.`
