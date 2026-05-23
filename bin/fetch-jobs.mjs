@@ -2,7 +2,7 @@
 /**
  * Playwright-based job listing fetcher for JS-rendered platforms.
  * Usage: node fetch-jobs.mjs <platform> <keyword> [limit] [career] [location]
- * Platform: jumpit | jobkorea | saramin
+ * Platform: jumpit | jobkorea | saramin | wanted
  * Career: entry (신입) | experienced (경력) | (생략시 전체)
  * Location: seoul|gyeonggi|busan|incheon|daejeon|daegu|gwangju|remote (생략시 전체)
  * Outputs JSON array to stdout.
@@ -45,7 +45,7 @@ if (!platform || !keyword) {
   process.exit(1);
 }
 
-const PLATFORMS = ['jumpit', 'programmers', 'jobkorea', 'saramin'];
+const PLATFORMS = ['jumpit', 'programmers', 'jobkorea', 'saramin', 'wanted'];
 if (!PLATFORMS.includes(platform)) {
   process.stderr.write(`Unknown platform: ${platform}. Supported: ${PLATFORMS.join(', ')}\n`);
   process.exit(1);
@@ -199,6 +199,74 @@ try {
       }, limit);
     } catch (err) {
       process.stderr.write(`saramin scrape error: ${err.message}\n`);
+    }
+
+  } else if (platform === 'wanted') {
+    // career → years 매핑 (URL 파라미터로 사용)
+    let yearsParam = '-1';
+    if (career === 'entry') yearsParam = '0';
+    else if (career === 'experienced') yearsParam = '1';
+
+    // 원티드는 검색 페이지의 직군 탭(/search?query=...&tab=position) 사용.
+    // 지역 필터는 jumpit/jobkorea와 동일하게 키워드 임베딩 방식.
+    let wKeyword = keyword;
+    if (location && LOCATION_KO[location]) wKeyword += ` ${LOCATION_KO[location]}`;
+    const wParams = new URLSearchParams({ query: wKeyword, tab: 'position' });
+    if (yearsParam !== '-1') wParams.set('years', yearsParam);
+    const url = `https://www.wanted.co.kr/search?${wParams.toString()}`;
+
+    try {
+      await page.goto(url, { waitUntil: 'networkidle', timeout: 25000 });
+      await page.waitForTimeout(3000);
+
+      // 무한스크롤 트리거 — 카드를 더 로드
+      await page.evaluate(async () => {
+        for (let i = 0; i < 3; i++) {
+          window.scrollTo(0, document.body.scrollHeight);
+          await new Promise(r => setTimeout(r, 800));
+        }
+      });
+      await page.waitForTimeout(1000);
+
+      jobs = await page.evaluate((lim) => {
+        const seen = new Set();
+        const results = [];
+
+        // /wd/{id} 형식 채용공고 카드 링크
+        const cards = Array.from(document.querySelectorAll('a[href*="/wd/"]'));
+
+        for (const card of cards) {
+          const m = card.href.match(/\/wd\/(\d+)/);
+          if (!m) continue;
+          const id = m[1];
+          if (seen.has(id)) continue;
+          seen.add(id);
+
+          // 카드 내부 텍스트 — 보통 [직무명, 회사명, 지역, 응답률...] 순서
+          const fullText = (card.innerText || '').trim();
+          const lines = fullText.split('\n').map(l => l.trim()).filter(Boolean);
+          if (lines.length < 2) continue;
+
+          const title = lines[0];
+          const company = lines[1];
+          if (!title || !company) continue;
+          if (title.length < 2 || company.length < 2) continue;
+
+          results.push({
+            platform: 'wanted',
+            company,
+            title,
+            deadline: '상시채용',
+            dRemaining: '',
+            link: `https://www.wanted.co.kr/wd/${id}`,
+          });
+
+          if (results.length >= lim) break;
+        }
+        return results;
+      }, limit);
+    } catch (err) {
+      process.stderr.write(`wanted scrape error: ${err.message}\n`);
     }
 
   } else if (platform === 'jobkorea') {
