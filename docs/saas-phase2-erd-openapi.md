@@ -1,6 +1,6 @@
 # JobStack 웹 SaaS — Phase 2: 데이터 모델·API 스켈레톤
 
-**문서 목적**: [Phase 1 아키텍처](./saas-architecture-phase1.md) 이후 구현 착수를 위한 **ERD 초안**, **핵심 REST 경로**, **권장 레포 구조**를 한곳에 둔다.  
+**문서 목적**: [통합 아키텍처](./WEB_SAAS_ARCHITECTURE.md)(구 [Phase 1](./saas-architecture-phase1.md)) 이후 구현 착수를 위한 **ERD 초안**, **핵심 REST 경로**, **권장 레포 구조**를 한곳에 둔다.  
 **범위**: DDL·OpenAPI 전문이 아니라 **스코프 확정용 초안**이다.
 
 ---

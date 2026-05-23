@@ -13,8 +13,12 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "JobStack",
-  description: "한국 취업 통합 엑셀러레이터 — 웹앱(스캐폴드)",
+  title: {
+    default: "JobStack | AI 취업 코칭 워크스페이스",
+    template: "%s · JobStack",
+  },
+  description:
+    "검증된 방법론과 13개 스킬로 기업 리서치부터 자소서·면접까지 한 워크플로에서.",
 };
 
 export default function RootLayout({

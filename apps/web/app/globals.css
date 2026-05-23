@@ -1,8 +1,17 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #f8fafc;
+  --foreground: #0f172a;
+  --js-surface: #ffffff;
+  --js-elevated: #f1f5f9;
+  --js-ink: #0f172a;
+  --js-muted: #475569;
+  --js-faint: #64748b;
+  --js-border: #e2e8f0;
+  --js-accent: #0d9488;
+  --js-accent-strong: #0f766e;
+  --js-accent-soft: #ccfbf1;
 }
 
 @theme inline {
@@ -14,13 +23,36 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --background: #020617;
+    --foreground: #f8fafc;
+    --js-surface: #0f172a;
+    --js-elevated: #1e293b;
+    --js-ink: #f8fafc;
+    --js-muted: #94a3b8;
+    --js-faint: #64748b;
+    --js-border: #334155;
+    --js-accent: #2dd4bf;
+    --js-accent-strong: #5eead4;
+    --js-accent-soft: #134e4a;
   }
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+}
+
+@keyframes js-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
+}
+
+.js-hero-art {
+  animation: js-float 7s ease-in-out infinite;
 }

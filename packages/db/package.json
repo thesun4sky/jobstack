@@ -2,8 +2,28 @@
   "name": "@jobstack/db",
   "version": "0.0.0",
   "private": true,
-  "description": "PostgreSQL schema, ORM, migrations (PR-B). Placeholder package for Phase 2.",
+  "type": "module",
+  "description": "PostgreSQL schema, ORM, migrations (JobStack PR-B).",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
   "scripts": {
-    "build": "node -e \"console.log('@jobstack/db: no build yet')\""
+    "build": "tsc",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "db:push": "drizzle-kit push",
+    "db:studio": "drizzle-kit studio"
+  },
+  "dependencies": {
+    "drizzle-orm": "^0.40.1",
+    "pg": "^8.20.0"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.11.0",
+    "drizzle-kit": "^0.30.0",
+    "typescript": "^5"
   }
 }

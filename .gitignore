@@ -14,9 +14,11 @@ Thumbs.db
 
 # Node / monorepo (apps/web, packages/*)
 node_modules/
+packages/*/dist/
 .turbo/
 apps/web/.next/
 apps/web/out/
+apps/jobclaw-telegram/data/
 
 # Environment
 .env

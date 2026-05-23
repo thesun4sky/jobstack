@@ -1,0 +1,14 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: jobstack
+    ports:
+      - "5432:5432"
+    volumes:
+      - jobstack_pg:/var/lib/postgresql/data
+
+volumes:
+  jobstack_pg:

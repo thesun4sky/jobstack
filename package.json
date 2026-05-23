@@ -5,7 +5,10 @@
   "scripts": {
     "dev": "turbo run dev",
     "build": "turbo run build",
-    "lint": "turbo run lint"
+    "lint": "turbo run lint",
+    "db:generate": "pnpm -F @jobstack/db db:generate",
+    "db:migrate": "pnpm -F @jobstack/db db:migrate",
+    "db:push": "pnpm -F @jobstack/db db:push"
   },
   "devDependencies": {
     "turbo": "^2.5.4"
