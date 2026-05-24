@@ -1,27 +1,59 @@
 ---
 name: retro
 preamble-tier: 2
-version: 0.1.0
+version: 0.1.1
 description: |
   면접/지원 회고 스킬. 면접 결과 분석, 탈락 원인 진단, 개선 포인트 도출.
-  "면접 회고", "왜 떨어졌을까", "개선점" 등의 요청 시 활용.
+  누적 패턴 분석: 여러 면접 기록에서 반복 약점을 교차 분석.
+  "면접 회고", "왜 떨어졌을까", "개선점", "패턴 분석" 등의 요청 시 활용.
 allowed-tools:
   - Bash
   - Read
   - Write
+  - Grep
   - AskUserQuestion
 benefits-from: [mock-interview, tracker]
 ---
 
 ```bash
+# ─── jobstack 프리앰블 ─────────────────────────
 _JS_STATE="${JOBSTACK_STATE_DIR:-$HOME/.jobstack}"
-mkdir -p "$_JS_STATE/analytics" "$_JS_STATE/sessions"
+mkdir -p "$_JS_STATE/analytics" "$_JS_STATE/profiles" "$_JS_STATE/tracker" \
+         "$_JS_STATE/company-cache" "$_JS_STATE/interview-history" "$_JS_STATE/sessions"
+
+# 세션 추적
 echo "$$" > "$_JS_STATE/sessions/$$"
+trap 'rm -f "$_JS_STATE/sessions/$$"' EXIT
+
+# 설정 로딩
+_JS_CONFIG="${CLAUDE_SKILL_DIR}/../bin/jobstack-config"
+if [ -x "$_JS_CONFIG" ]; then
+  PROACTIVE=$("$_JS_CONFIG" get proactive 2>/dev/null || echo "true")
+else
+  PROACTIVE="true"
+fi
+
 # 최근 면접 기록 확인
 echo "--- 최근 면접 기록 ---"
+RETRO_COUNT=$(ls "$_JS_STATE/interview-history/" 2>/dev/null | grep "^retro-" | wc -l | tr -d ' ')
 ls -t "$_JS_STATE/interview-history/" 2>/dev/null | head -5 || echo "기록 없음"
+echo "RETRO_HISTORY_COUNT=$RETRO_COUNT"
+
+# 최근 지원 현황 확인
 echo "--- 최근 지원 현황 ---"
 tail -5 "$_JS_STATE/tracker/applications.jsonl" 2>/dev/null || echo "기록 없음"
+
+# 활성 세션 수
+for _f in "$_JS_STATE/sessions/"* 2>/dev/null; do
+  [ -f "$_f" ] || continue
+  kill -0 "$(basename "$_f")" 2>/dev/null || rm -f "$_f"
+done
+ACTIVE_SESSIONS=$(ls "$_JS_STATE/sessions/" 2>/dev/null | wc -l | tr -d ' ')
+echo "ACTIVE_SESSIONS=$ACTIVE_SESSIONS"
+echo "PROACTIVE=$PROACTIVE"
+echo "SKILL_NAME=retro"
+
+# 텔레메트리
 echo "{\"skill\":\"retro\",\"ts\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"pid\":$$}" \
   >> "$_JS_STATE/analytics/skill-usage.jsonl" 2>/dev/null || true
 ```
@@ -36,14 +68,21 @@ echo "{\"skill\":\"retro\",\"ts\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"pid\":$$}
 
 interview-history와 tracker에서 최근 기록을 확인합니다.
 
+`RETRO_HISTORY_COUNT`가 3 이상이면 C) 패턴 분석 옵션을 강조합니다.
+
 AskUserQuestion:
 ```
 회고할 면접/지원 건을 선택해주세요.
 
 A) 최근 면접 회고 (면접 경험 분석)
 B) 탈락 원인 분석 (불합격 건)
-C) 전체 지원 현황 회고
+C) 누적 패턴 분석 (여러 면접 경험 종합) ← 기록 3건+ 시 강력 추천
 ```
+
+---
+
+**C 선택 시 — 누적 패턴 분석 바로 실행:**
+모든 `~/.jobstack/interview-history/retro-*.md` 파일을 Read하고, Phase 3.3 패턴 분석을 직접 수행합니다. Phase 2 (면접 인터뷰)는 건너뜁니다.
 
 ---
 
@@ -74,9 +113,33 @@ AskUserQuestion으로 하나씩 질문합니다:
 - 미끼 전략이 작동했는지 확인
 
 ### 3.3 패턴 분석
-- 반복되는 약점이 있는가?
-- 특정 질문 유형에 취약한가?
-- 기업 연구가 충분했는가?
+
+interview-history 디렉토리에 이전 회고 파일이 있으면 Grep으로 분석합니다.
+
+**누적 패턴 찾기:**
+- Grep으로 `~/.jobstack/interview-history/retro-*.md`에서 "개선 필요", "아쉬운 점", "BLOCKED" 키워드 검색
+- 반복 등장하는 약점 카테고리 집계:
+  - 기업 연구 부족 (여러 회고에서 같은 언급?)
+  - 꼬리질문 대응 미흡 (반복 패턴?)
+  - 수치화 부족 (지속 등장?)
+  - 기술적 깊이 부족 (직무별 차이?)
+
+**패턴 출력 예시:**
+```
+누적 패턴 분석 (총 4건 회고)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+반복 약점:
+  3/4회 — 기업 연구 부족 (삼성, LG, 카카오)
+  2/4회 — 꼬리질문 대응 미흡 (삼성, 네이버)
+  1/4회 — 수치화 부족 (LG)
+
+개선 추세:
+  ✅ 수치화 → 최근 2회에서 개선됨
+  ⚠️ 기업 연구 → 여전히 반복 중
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+과거 기록이 없으면 현재 단일 회고만 진행합니다.
 
 ---
 
@@ -120,5 +183,9 @@ AskUserQuestion으로 하나씩 질문합니다:
 ## 완료 상태
 
 - **완료 (DONE)** — 회고 + 액션플랜 완료
+- **완료 (DONE)** [패턴 분석] — 누적 회고 패턴 + 개선 추세 분석 완료
 
-다음 추천: `/strategy` (전략 재수립) 또는 `/mock-interview` (재연습)
+다음 추천:
+- `/strategy` (전략 재수립, 반복 약점이 구조적이면)
+- `/mock-interview` (반복 약점 집중 연습)
+- `/company-research` (기업 연구 부족이 반복 패턴이면)

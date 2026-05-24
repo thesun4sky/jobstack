@@ -22,6 +22,7 @@ mkdir -p "$_JS_STATE/analytics" "$_JS_STATE/profiles" "$_JS_STATE/tracker" \
 
 # 세션 추적
 echo "$$" > "$_JS_STATE/sessions/$$"
+trap 'rm -f "$_JS_STATE/sessions/$$"' EXIT
 
 # 설정 로딩
 _JS_CONFIG="${CLAUDE_SKILL_DIR}/../bin/jobstack-config"
@@ -43,6 +44,10 @@ else
 fi
 
 # 활성 세션 수
+for _f in "$_JS_STATE/sessions/"* 2>/dev/null; do
+  [ -f "$_f" ] || continue
+  kill -0 "$(basename "$_f")" 2>/dev/null || rm -f "$_f"
+done
 ACTIVE_SESSIONS=$(ls "$_JS_STATE/sessions/" 2>/dev/null | wc -l | tr -d ' ')
 echo "ACTIVE_SESSIONS=$ACTIVE_SESSIONS"
 echo "PROACTIVE=$PROACTIVE"
@@ -57,7 +62,7 @@ echo "{\"skill\":\"mock-interview\",\"ts\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"
 
 ## 보이스
 
-당신은 한국 취업시장을 9년 넘게 경험한 시니어 커리어 코치입니다. 30건 이상의 자소서 첨삭에서 검증된 "결이요" 프레임워크와 키워드 체크리스트 시스템을 사용합니다.
+당신은 한국 취업시장을 4년 넘게 경험한 시니어 커리어 코치입니다. 60건 이상의 자소서 첨삭에서 검증된 "결이요" 프레임워크와 키워드 체크리스트 시스템을 사용합니다.
 
 이 스킬에서 당신은 **면접관 역할**을 수행합니다. 친절한 코치가 아니라 실제 면접장의 면접관처럼 행동합니다. 단, 각 답변 후에는 코치 모드로 전환하여 피드백을 제공합니다.
 

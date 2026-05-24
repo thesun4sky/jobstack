@@ -20,12 +20,29 @@ benefits-from: [strategy]
 _JS_STATE="${JOBSTACK_STATE_DIR:-$HOME/.jobstack}"
 mkdir -p "$_JS_STATE/analytics" "$_JS_STATE/profiles" "$_JS_STATE/tracker" \
          "$_JS_STATE/company-cache" "$_JS_STATE/interview-history" "$_JS_STATE/sessions"
+
+# 세션 추적
 echo "$$" > "$_JS_STATE/sessions/$$"
+trap 'rm -f "$_JS_STATE/sessions/$$"' EXIT
+
+# 설정 로딩
 _JS_CONFIG="${CLAUDE_SKILL_DIR}/../bin/jobstack-config"
-if [ -x "$_JS_CONFIG" ]; then PROACTIVE=$("$_JS_CONFIG" get proactive 2>/dev/null || echo "true"); else PROACTIVE="true"; fi
+if [ -x "$_JS_CONFIG" ]; then
+  PROACTIVE=$("$_JS_CONFIG" get proactive 2>/dev/null || echo "true")
+else
+  PROACTIVE="true"
+fi
+
+# 프로필 로딩
 PROFILE="$_JS_STATE/profiles/default.yaml"
-if [ -f "$PROFILE" ]; then echo "PROFILE_EXISTS=true"; head -20 "$PROFILE"; else echo "PROFILE_EXISTS=false"; fi
-echo "{\"skill\":\"job-search\",\"ts\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"pid\":$$}" >> "$_JS_STATE/analytics/skill-usage.jsonl" 2>/dev/null || true
+if [ -f "$PROFILE" ]; then
+  echo "PROFILE_EXISTS=true"
+  echo "--- 프로필 요약 ---"
+  head -20 "$PROFILE"
+  echo "---"
+else
+  echo "PROFILE_EXISTS=false"
+fi
 
 # ─── Playwright 브라우저 스크래퍼 초기화 ─────────────
 # CLAUDE_SKILL_DIR 기반 경로를 우선 시도하되, fetch-jobs.mjs 존재 여부를 검증.
@@ -52,6 +69,20 @@ if [ -f "$_JS_BROWSER_SCRIPT" ]; then
   fi
 fi
 echo "BROWSER_SCRAPER_AVAILABLE=$BROWSER_SCRAPER_AVAILABLE"
+
+# 활성 세션 수
+for _f in "$_JS_STATE/sessions/"* 2>/dev/null; do
+  [ -f "$_f" ] || continue
+  kill -0 "$(basename "$_f")" 2>/dev/null || rm -f "$_f"
+done
+ACTIVE_SESSIONS=$(ls "$_JS_STATE/sessions/" 2>/dev/null | wc -l | tr -d ' ')
+echo "ACTIVE_SESSIONS=$ACTIVE_SESSIONS"
+echo "PROACTIVE=$PROACTIVE"
+echo "SKILL_NAME=job-search"
+
+# 텔레메트리
+echo "{\"skill\":\"job-search\",\"ts\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"pid\":$$}" \
+  >> "$_JS_STATE/analytics/skill-usage.jsonl" 2>/dev/null || true
 ```
 
 # /job-search — 채용정보 탐색
@@ -60,7 +91,7 @@ echo "BROWSER_SCRAPER_AVAILABLE=$BROWSER_SCRAPER_AVAILABLE"
 
 ## 보이스
 
-당신은 한국 취업시장을 9년 넘게 경험한 시니어 커리어 코치입니다.
+당신은 한국 취업시장을 4년 넘게 경험한 시니어 커리어 코치입니다.
 
 - 직접적이고 구체적으로. 빈말 대신 근거와 예시.
 - 존댓말 기본, 과도한 격식 지양.
