@@ -202,61 +202,92 @@ try {
     }
 
   } else if (platform === 'wanted') {
-    // career → years 매핑 (URL 파라미터로 사용)
-    let yearsParam = '-1';
-    if (career === 'entry') yearsParam = '0';
-    else if (career === 'experienced') yearsParam = '1';
-
-    // 원티드는 검색 페이지의 직군 탭(/search?query=...&tab=position) 사용.
-    // 지역 필터는 jumpit/jobkorea와 동일하게 키워드 임베딩 방식.
-    let wKeyword = keyword;
+    // career → 키워드 임베딩 (jobkorea/saramin과 일관).
+    // years 파라미터는 연차 단위로 추정되어 experienced일 때 생략 — 1년차만 잡히는 누락 방지.
+    let wKeyword = career === 'entry' ? `${keyword} 신입`
+      : career === 'experienced' ? `${keyword} 경력` : keyword;
     if (location && LOCATION_KO[location]) wKeyword += ` ${LOCATION_KO[location]}`;
     const wParams = new URLSearchParams({ query: wKeyword, tab: 'position' });
-    if (yearsParam !== '-1') wParams.set('years', yearsParam);
+    if (career === 'entry') wParams.set('years', '0'); // 신입만 명시
     const url = `https://www.wanted.co.kr/search?${wParams.toString()}`;
 
     try {
-      await page.goto(url, { waitUntil: 'networkidle', timeout: 25000 });
-      await page.waitForTimeout(3000);
+      // 원티드 SPA 트래커가 계속 폴링해 networkidle 도달이 어려움 → domcontentloaded + 카드 셀렉터 대기.
+      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 25000 });
+      // state: 'attached' — Wanted 카드는 viewport 밖 lazy-render라 기본값 'visible'은 timeout.
+      // try-catch — 검색 결과 0건이면 카드가 안 나타나므로 정상 케이스로 처리, 5초 단축.
+      try {
+        await page.waitForSelector('a[href*="/wd/"]', { state: 'attached', timeout: 5000 });
+      } catch {
+        // 0건 — 무한스크롤/추출 단계로 진행하면 빈 배열 반환.
+      }
 
-      // 무한스크롤 트리거 — 카드를 더 로드
+      // 무한스크롤 — scrollHeight 변화 없으면 조기 종료 (최대 5회).
+      // 카드가 아예 없으면 (0건 케이스) 스크롤 건너뜀.
       await page.evaluate(async () => {
-        for (let i = 0; i < 3; i++) {
+        if (document.querySelectorAll('a[href*="/wd/"]').length === 0) return;
+        let prevHeight = 0;
+        let stableCount = 0;
+        for (let i = 0; i < 5; i++) {
           window.scrollTo(0, document.body.scrollHeight);
           await new Promise(r => setTimeout(r, 800));
+          const h = document.body.scrollHeight;
+          if (h === prevHeight) {
+            if (++stableCount >= 2) break;
+          } else {
+            stableCount = 0;
+            prevHeight = h;
+          }
         }
       });
-      await page.waitForTimeout(1000);
 
-      jobs = await page.evaluate((lim) => {
+      jobs = await page.evaluate(({ lim, careerArg }) => {
         const seen = new Set();
         const results = [];
 
-        // /wd/{id} 형식 채용공고 카드 링크
-        const cards = Array.from(document.querySelectorAll('a[href*="/wd/"]'));
+        // 검색 결과 카드만 — data-position-id가 있는 a 태그가 정상 카드.
+        // Wanted SPA는 트래킹용으로 data-position-name / data-company-name 등을 카드에 심어놓음.
+        // 추천/사이드바 등의 anchor는 이 attribute가 없어 자연스럽게 제외됨.
+        const root = document.querySelector('main') || document;
+        const cards = Array.from(root.querySelectorAll('a[href*="/wd/"][data-position-id]'));
 
         for (const card of cards) {
-          const m = card.href.match(/\/wd\/(\d+)/);
-          if (!m) continue;
-          const id = m[1];
-          if (seen.has(id)) continue;
+          const id = card.getAttribute('data-position-id');
+          if (!id || seen.has(id)) continue;
           seen.add(id);
 
-          // 카드 내부 텍스트 — 보통 [직무명, 회사명, 지역, 응답률...] 순서
-          const fullText = (card.innerText || '').trim();
-          const lines = fullText.split('\n').map(l => l.trim()).filter(Boolean);
-          if (lines.length < 2) continue;
-
-          const title = lines[0];
-          const company = lines[1];
+          const title = (card.getAttribute('data-position-name') || '').trim();
+          const company = (card.getAttribute('data-company-name') || '').trim();
           if (!title || !company) continue;
-          if (title.length < 2 || company.length < 2) continue;
+
+          const fullText = (card.innerText || '').trim();
+
+          // career 필터 — Wanted 검색 URL의 years 파라미터는 SPA가 무시하므로 카드 텍스트 매칭이 가장 정확.
+          // 카드 텍스트 예: "...경력 5-12년합격보상금 100만원" / "...신입-경력 3년..."
+          if (careerArg === 'entry') {
+            if (!/신입/.test(fullText)) continue;
+          } else if (careerArg === 'experienced') {
+            // '경력 N-M년' 또는 '경력 N년' — N >= 1이면 experienced 대상.
+            const em = fullText.match(/경력\s*(\d+)/);
+            if (!em || parseInt(em[1], 10) < 1) continue;
+          }
+
+          // 마감일 추출 — D-day / D-N / 상시채용 / 채용시 라벨 탐색, 없으면 미확인 폴백.
+          let deadline = '마감일 미확인';
+          if (/D-?day|오늘\s?마감/.test(fullText)) {
+            deadline = '오늘 마감!';
+          } else {
+            const dMatch = fullText.match(/D-(\d+)/);
+            if (dMatch) deadline = `${dMatch[1]}일 후 마감`;
+            else if (fullText.includes('상시채용')) deadline = '상시채용';
+            else if (fullText.includes('채용시')) deadline = '채용시마감';
+          }
 
           results.push({
             platform: 'wanted',
             company,
             title,
-            deadline: '상시채용',
+            deadline,
             dRemaining: '',
             link: `https://www.wanted.co.kr/wd/${id}`,
           });
@@ -264,7 +295,7 @@ try {
           if (results.length >= lim) break;
         }
         return results;
-      }, limit);
+      }, { lim: limit, careerArg: career });
     } catch (err) {
       process.stderr.write(`wanted scrape error: ${err.message}\n`);
     }
