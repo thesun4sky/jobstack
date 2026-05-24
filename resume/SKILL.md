@@ -50,7 +50,7 @@ else
 fi
 
 # 활성 세션 수
-for _f in "$_JS_STATE/sessions/"* 2>/dev/null; do
+for _f in "$_JS_STATE/sessions/"*; do
   [ -f "$_f" ] || continue
   kill -0 "$(basename "$_f")" 2>/dev/null || rm -f "$_f"
 done

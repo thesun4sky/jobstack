@@ -39,7 +39,7 @@ else
 fi
 # 기업분석 캐시 확인
 ls "$_JS_STATE/company-cache/" 2>/dev/null | head -5
-for _f in "$_JS_STATE/sessions/"* 2>/dev/null; do
+for _f in "$_JS_STATE/sessions/"*; do
   [ -f "$_f" ] || continue
   kill -0 "$(basename "$_f")" 2>/dev/null || rm -f "$_f"
 done
