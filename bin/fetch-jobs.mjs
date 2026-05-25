@@ -98,6 +98,7 @@ try {
     await page.waitForTimeout(5000);
 
     jobs = await page.evaluate((lim) => {
+      const NOISE_RE = /D-\d|마감|상시|경력|신입|원격|재택|\d+년/;
       const links = Array.from(document.querySelectorAll('a[href*="/position/"]'));
       return links.slice(0, lim).map(a => {
         const rawTitle = a.getAttribute('title') || '';
@@ -109,7 +110,13 @@ try {
         if (dLine === 'D-day') deadline = '오늘 마감!';
         else if (dLine.startsWith('D-')) deadline = `${dLine.replace('D-', '')}일 후 마감`;
         else if (dLine === '상시채용') deadline = '상시채용';
-        return { platform: 'jumpit', company, title, deadline, dRemaining: dLine, link: a.href };
+        const LOCATION_RE = /[시구군동로]\s*\d*$|^서울|^경기|^부산|^인천|^대전|^대구|^광주/;
+        const tagEls = Array.from(a.querySelectorAll('[class*="tag"] span, [class*="skill"] span, ul li, [class*="chip"]'));
+        const skills = tagEls
+          .map(el => el.innerText.replace(/^·\s*/, '').trim())
+          .filter(s => s && s.length > 0 && s.length < 30 && !NOISE_RE.test(s) && !LOCATION_RE.test(s))
+          .slice(0, 8).join(', ');
+        return { platform: 'jumpit', company, title, deadline, dRemaining: dLine, link: a.href, skills };
       }).filter(j => j.title && j.company);
     }, limit);
 
@@ -184,6 +191,10 @@ try {
             deadline = '채용시마감';
           }
 
+          // 사람인 list page는 기술태그를 노출하지 않음.
+          // .job_sector는 날짜/등록일 텍스트 → 빈 문자열 반환.
+          const skills = '';
+
           // setContent로 로드된 경우 절대 URL로 복원
           const href = titleEl?.getAttribute('href') || '';
           const link = href.startsWith('http') ? href : `https://www.saramin.co.kr${href}`;
@@ -194,6 +205,7 @@ try {
             deadline,
             dRemaining: '',
             link,
+            skills,
           };
         }).filter(j => j.title && j.company);
       }, limit);
@@ -283,6 +295,14 @@ try {
             else if (fullText.includes('채용시')) deadline = '채용시마감';
           }
 
+          const tagEls = Array.from(
+            card.querySelectorAll('[class*="tag"] span, [class*="skill"] span, [class*="badge"] span, [class*="chip"] span')
+          ).filter(el => {
+            const t = el.innerText.trim();
+            return t && t.length > 0 && t.length < 30 && !/D-\d|마감|상시|경력|신입|\d+년/.test(t);
+          });
+          const skills = tagEls.map(el => el.innerText.trim()).slice(0, 8).join(', ');
+
           results.push({
             platform: 'wanted',
             company,
@@ -290,6 +310,7 @@ try {
             deadline,
             dRemaining: '',
             link: `https://www.wanted.co.kr/wd/${id}`,
+            skills,
           });
 
           if (results.length >= lim) break;
@@ -360,6 +381,12 @@ try {
             : fullText.includes('채용시') ? '채용시마감'
             : '마감일 미확인';
 
+          const tagEls = card?.querySelectorAll('[class*="tag"] span, [class*="chip"] span, [class*="skill"] span, [class*="badge"] span') || [];
+          const skills = Array.from(tagEls)
+            .map(el => el.innerText.trim())
+            .filter(s => s && s.length > 0 && s.length < 30 && !/마감|채용|모집/.test(s))
+            .slice(0, 8).join(', ');
+
           results.push({
             platform: 'jobkorea',
             company: companyText,
@@ -367,6 +394,7 @@ try {
             deadline,
             dRemaining: '',
             link: baseHref,
+            skills,
           });
 
           if (results.length >= lim) break;
