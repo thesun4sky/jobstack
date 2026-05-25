@@ -110,10 +110,11 @@ try {
         if (dLine === 'D-day') deadline = '오늘 마감!';
         else if (dLine.startsWith('D-')) deadline = `${dLine.replace('D-', '')}일 후 마감`;
         else if (dLine === '상시채용') deadline = '상시채용';
+        const LOCATION_RE = /[시구군동로]\s*\d*$|^서울|^경기|^부산|^인천|^대전|^대구|^광주/;
         const tagEls = Array.from(a.querySelectorAll('[class*="tag"] span, [class*="skill"] span, ul li, [class*="chip"]'));
         const skills = tagEls
-          .map(el => el.innerText.trim())
-          .filter(s => s && s.length > 0 && s.length < 30 && !NOISE_RE.test(s))
+          .map(el => el.innerText.replace(/^·\s*/, '').trim())
+          .filter(s => s && s.length > 0 && s.length < 30 && !NOISE_RE.test(s) && !LOCATION_RE.test(s))
           .slice(0, 8).join(', ');
         return { platform: 'jumpit', company, title, deadline, dRemaining: dLine, link: a.href, skills };
       }).filter(j => j.title && j.company);
@@ -190,11 +191,9 @@ try {
             deadline = '채용시마감';
           }
 
-          const skillEls = item.querySelectorAll('.job_sector span, [class*="tag"] span, [class*="skill"] span');
-          const skills = Array.from(skillEls)
-            .map(el => el.innerText.trim())
-            .filter(s => s && s.length > 0 && s.length < 30 && !s.startsWith('#'))
-            .slice(0, 8).join(', ');
+          // 사람인 list page는 기술태그를 노출하지 않음.
+          // .job_sector는 날짜/등록일 텍스트 → 빈 문자열 반환.
+          const skills = '';
 
           // setContent로 로드된 경우 절대 URL로 복원
           const href = titleEl?.getAttribute('href') || '';
