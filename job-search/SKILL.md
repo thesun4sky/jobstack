@@ -410,5 +410,7 @@ site:jobkorea.co.kr "{직무}" 채용
 - 스택 비교, 매칭도 비교, 취업 시장 요약 → 추가
 - 1~2개 공고 안내, 짧은 답변, 오류 메시지 → 추가하지 않음
 
+이 마커를 빠뜨리지 말 것 — 위 조건에 해당하면 응답의 가장 마지막 줄에 반드시 포함한다.
+
 **프롬프트 스타일:** 명확하고 informative한 infographic/diagram 스타일. 실제 회사명·직무·매칭 점수·기술스택을 반영한다.
 예: `A clean professional infographic comparing 3 Korean software engineer job listings: AlgoCare (Series A, Seoul, Backend+LLM, match 85%), Samjjomsamm (FinTech SaaS, Seoul, Java/Kafka, match 92%), KakaoBank (판교, Spring AI, match 72%). Show tech stack icons, match score badges, company tiers. Dark navy background, white text, green/yellow accent for scores. Korean startup aesthetic.`

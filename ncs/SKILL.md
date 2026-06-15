@@ -178,3 +178,21 @@ NCS 역량을 자소서에 녹이는 방법을 안내합니다.
 - NCS 매핑 완료 → `/cover-letter` (NCS 기반 자소서 작성)
 - NCS 매핑 완료 → `/mock-interview` (NCS 기반 면접 준비)
 - NCS 매핑 완료 → `/resume` (NCS 역량 기반 이력서 보강)
+
+## 시각화 이미지 생성
+
+NCS 능력단위 분해·역량 수준 진단 결과를 제시하는 답변에서는 반드시 응답 맨 끝에 아래 마커를 추가한다:
+
+```
+[IMAGE_PROMPT: <영어 프롬프트>]
+```
+
+**트리거 조건 (필수):**
+- NCS 능력단위 분해/매핑, 직무 역량 수준 진단, 자가진단 결과 → **반드시** 추가
+- 역량 갭 다이어그램, 수준별 로드맵 → 추가
+- 단순 단답, 용어 1개 설명, 오류 메시지 → 추가하지 않음
+
+이 마커를 빠뜨리지 말 것 — 위 조건에 해당하면 응답의 가장 마지막 줄에 반드시 포함한다.
+
+**프롬프트 스타일:** professional diagram/infographic 스타일. 실제 직무·능력단위·수준을 반영한다.
+예: `An NCS competency map infographic for 백엔드 개발 직무: 능력단위(competency units) breakdown with 수준(level 1–8) badges, a radar chart of 핵심 역량 vs 현재 수준, and gap highlights. Clean professional diagram, blue/teal palette, Korean labels.`
