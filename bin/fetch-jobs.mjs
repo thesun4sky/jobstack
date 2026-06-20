@@ -214,11 +214,15 @@ try {
     }
 
   } else if (platform === 'wanted') {
-    // career → 키워드 임베딩 (jobkorea/saramin과 일관).
-    // years 파라미터는 연차 단위로 추정되어 experienced일 때 생략 — 1년차만 잡히는 누락 방지.
-    let wKeyword = career === 'entry' ? `${keyword} 신입`
-      : career === 'experienced' ? `${keyword} 경력` : keyword;
-    if (location && LOCATION_KO[location]) wKeyword += ` ${LOCATION_KO[location]}`;
+    // career·location 은 검색 쿼리에 임베딩하지 않는다. wanted 검색은 추가 단어를
+    // AND 텍스트 매칭으로 처리해 결과를 과도하게 좁힌다(엔트리: query='백엔드 신입'
+    // → 3건 vs query='백엔드' → 17건, prod 검증 2026-06-20). career 는 아래 years
+    // 파라미터 + 카드 텍스트 후필터(신입/경력 N년)로 거른다.
+    // ⚠️ location: wanted 카드 innerText 에 근무지가 안정적으로 노출되지 않아(후필터
+    //    적용 시 결과 0건 over-narrow, prod 검증) location 필터는 미지원 — wanted 는
+    //    전 지역 결과를 반환한다(수율 우선). jobkorea/saramin 은 정식 필터 파라미터를
+    //    쓰므로 location 임베딩 유지(이 변경은 wanted 한정).
+    const wKeyword = keyword;
     const wParams = new URLSearchParams({ query: wKeyword, tab: 'position' });
     if (career === 'entry') wParams.set('years', '0'); // 신입만 명시
     const url = `https://www.wanted.co.kr/search?${wParams.toString()}`;
