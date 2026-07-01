@@ -82,6 +82,7 @@ echo "{\"skill\":\"portfolio\",\"ts\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"pid\"
 
 1. **Glob 스캔**: 사용자 작업 디렉토리에서 README.md, portfolio 관련 파일 탐색
 2. **WebFetch**: 사용자가 제공한 GitHub 프로필, Notion 링크 등을 분석
+   - **페치 실패 폴백(#118)**: WebFetch가 실패하면(JS SPA 등) 곧바로 복붙을 요구하지 말고 대체 소스를 시도합니다 — GitHub는 REST API(`api.github.com/repos/{owner}/{repo}`) 또는 raw README(`raw.githubusercontent.com/{owner}/{repo}/HEAD/README.md`), Notion은 공개 페이지 URL. 대체 소스도 실패한 경우에만 사용자에게 내용 복붙을 요청합니다.
 3. 현재 포트폴리오 구성 요소 목록화:
    - 프로젝트 수
    - 각 프로젝트의 README 유무, 설명 수준
