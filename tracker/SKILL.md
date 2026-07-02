@@ -89,7 +89,7 @@ AskUserQuestion으로 하나씩 정보를 수집합니다:
 4. "서류 마감일이 있으면 알려주세요. (예: 2026-04-15, 없으면 '없음')"
 5. "메모할 내용이 있으면 적어주세요. (없으면 '없음')"
 
-수집 후 JSONL 형식으로 `~/.jobstack/tracker/applications.jsonl`에 추가:
+수집 후 JSONL 형식으로 `$_JS_STATE/tracker/applications.jsonl`에 추가:
 ```json
 {"id":"app-001","company":"삼성전자","position":"SW엔지니어","status":"서류전형","applied_at":"2026-03-29","deadline":"2026-04-15","updated_at":"2026-03-29","notes":"자소서 3번 문항 확인 필요"}
 ```

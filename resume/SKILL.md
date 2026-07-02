@@ -393,7 +393,7 @@ PROFILE="$_JS_STATE/profiles/default.yaml"
   ✅ 기본 정보, 기술스택, 경력사항 저장됨
 
 다음 추천:
-  → /cover-letter — 이력서 기반으로 자기소개서 작성
-  → /company-research — 목표 기업 심층 분석
+  → /cover_letter — 이력서 기반으로 자기소개서 작성
+  → /company_research — 목표 기업 심층 분석
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```

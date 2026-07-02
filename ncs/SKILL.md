@@ -175,8 +175,8 @@ NCS 역량을 자소서에 녹이는 방법을 안내합니다.
 
 ### 다음 스킬 추천
 
-- NCS 매핑 완료 → `/cover-letter` (NCS 기반 자소서 작성)
-- NCS 매핑 완료 → `/mock-interview` (NCS 기반 면접 준비)
+- NCS 매핑 완료 → `/cover_letter` (NCS 기반 자소서 작성)
+- NCS 매핑 완료 → `/mock_interview` (NCS 기반 면접 준비)
 - NCS 매핑 완료 → `/resume` (NCS 역량 기반 이력서 보강)
 
 ## 시각화 이미지 생성

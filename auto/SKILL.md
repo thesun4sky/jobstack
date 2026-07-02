@@ -97,7 +97,7 @@ echo "{\"skill\":\"auto\",\"ts\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"pid\":$$}"
 프리앰블 출력의 `PROFILE_EXISTS` 값을 확인합니다.
 
 **Case A: 프로필 있음 (PROFILE_EXISTS=true)**
-- `~/.jobstack/profiles/default.yaml`에서 프로필 로드
+- `$_JS_STATE/profiles/default.yaml`에서 프로필 로드
 - 기존 진행 상태와 함께 Phase 3으로
 
 **Case B: 프로필 없음 + 이력서 감지됨**
@@ -108,7 +108,7 @@ echo "{\"skill\":\"auto\",\"ts\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"pid\":$$}"
   - 경력/인턴 (회사명, 직무, 기간)
   - 기술/자격증
   - 어학성적
-- 추출한 프로필을 `~/.jobstack/profiles/default.yaml`에 YAML로 저장
+- 추출한 프로필을 `$_JS_STATE/profiles/default.yaml`에 YAML로 저장
 - 사용자에게 추출된 프로필 요약을 보여주고 확인 요청
 
 **Case C: 프로필 없음 + 이력서 없음**
@@ -139,7 +139,7 @@ echo "{\"skill\":\"auto\",\"ts\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"pid\":$$}"
 ```
 
 체크 기준:
-- 프로필: `~/.jobstack/profiles/default.yaml` 존재
+- 프로필: `$_JS_STATE/profiles/default.yaml` 존재
 - 이력서: 이력서 파일 감지됨
 - 이력서 첨삭: 이력서가 있고 아직 첨삭 안 한 경우 (analytics에 resume 스킬 기록 없음)
 - 기업분석: 채용공고 감지되었거나 company-cache에 리포트 존재

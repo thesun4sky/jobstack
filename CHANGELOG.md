@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.2.0] - 2026-07-03
+
+### Fixed
+- 봇↔스킬 경계 드리프트 정리 (딥다이브 C1~C4)
+  - `/mock-interview` — AskUserQuestion 자기모순 제거: 면접 답변은 자유서술로 받는다는
+    정책과 상충하던 "AskUserQuestion으로 답변을 받습니다" 잔재 지시 3곳 정정
+  - 하드코딩 `~/.jobstack` 경로 16곳을 `$_JS_STATE` 표기로 치환
+    (auto, company-research, mock-interview, retro, strategy, tracker —
+    봇 러너의 `JOBSTACK_STATE_DIR` 강제·`Write(~/*)` deny 정책과 상충 해소)
+  - 사용자 노출 추천 명령을 Telegram 언더스코어 표기로 정정
+    (`/cover-letter` → `/cover_letter` 등 — 하이픈 표기는 봇에서 탭 불가)
+
+### Changed
+- 유령 스킬 추천 제거 (운영자 확정 정책)
+  - `/tracker` 추천·연동 안내 제거 — 봇 네이티브 `/track`·`/myapps`로 일원화
+    (tracker 스킬 자체는 CLI 용도로 잔존)
+  - `/ncs` 추천 제거 — `/cover-letter`에 "공기업·공공기관 지원 시 NCS 직업기초능력
+    관점 보강" 소절로 흡수
+
+### Added
+- `templates/BOT-COMMAND-STYLE.md` — 사용자 노출 추천 명령 표기 규칙 문서화
+- `test/test-no-home-paths.sh` — `~/.jobstack` 하드코딩 재발 방지 린트
+  (프리앰블의 `${JOBSTACK_STATE_DIR:-$HOME/.jobstack}` 폴백은 예외)
+
 ## [0.1.1] - 2026-04-07
 
 ### Fixed

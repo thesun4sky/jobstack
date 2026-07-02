@@ -374,7 +374,7 @@ site:jobkorea.co.kr "{직무}" 채용
   → https://www.wanted.co.kr/wd/xxxxx
 ```
 
-캘린더 결과를 `$_JS_STATE/tracker/` 디렉토리에 저장하여 `/tracker` 스킬과 연동합니다.
+캘린더 결과를 `$_JS_STATE/tracker/` 디렉토리에 저장합니다. 지원 현황 관리는 봇 네이티브 명령 `/track`·`/myapps`를 사용하도록 안내합니다.
 
 > **CHOICES 블록 위치**: 캘린더 출력 후 **맨 마지막**에 [CHOICES] 블록을 한 번만 포함하세요.
 > 중간에 끼워 넣거나 생략하면 봇이 인라인 버튼을 생성하지 못합니다.
@@ -397,9 +397,9 @@ site:jobkorea.co.kr "{직무}" 채용
 
 ### 다음 스킬 추천
 
-- 관심 공고 확정 → `/company-research` (해당 기업 분석)
+- 관심 공고 확정 → `/company_research` (해당 기업 분석)
 - 관심 공고 확정 → `/resume` (해당 공고 맞춤 이력서)
-- 관심 공고 확정 → `/cover-letter` (해당 공고 맞춤 자소서)
+- 관심 공고 확정 → `/cover_letter` (해당 공고 맞춤 자소서)
 
 ## 시각화 이미지 생성
 

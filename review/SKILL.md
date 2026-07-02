@@ -110,7 +110,7 @@ Glob으로 현재 폴더의 모든 지원 서류를 수집합니다:
 
 ## Phase 3: 키워드 정합성
 
-채용공고(또는 company-cache)와 대조합니다. **company-cache 파일명 날짜가 7일 초과이면 "⚠️ {N}일 전 분석 캐시입니다. `/company-research`로 재분석을 권장합니다."라고 먼저 안내**합니다.
+채용공고(또는 company-cache)와 대조합니다. **company-cache 파일명 날짜가 7일 초과이면 "⚠️ {N}일 전 분석 캐시입니다. `/company_research`로 재분석을 권장합니다."라고 먼저 안내**합니다.
 
 대조 항목:
 - 채용공고의 핵심 키워드가 이력서에 반영되었는가?
@@ -191,4 +191,4 @@ Glob으로 현재 폴더의 모든 지원 서류를 수집합니다:
 $CLAUDE_SKILL_DIR/../bin/jobstack-view <결과파일.md>
 ```
 
-다음 추천: `/mock-interview` (면접 예상 질문으로 모의면접)
+다음 추천: `/mock_interview` (면접 예상 질문으로 모의면접)

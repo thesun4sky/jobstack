@@ -22,9 +22,9 @@ $CLAUDE_SKILL_DIR/../bin/jobstack-view <결과파일.md>
 ### 다음 스킬 추천
 
 완료 시 진행 상태에 따라 다음으로 진행할 스킬을 추천합니다:
-- 전략 완료 → `/company-research` 또는 `/resume`
-- 기업분석 완료 → `/cover-letter` 또는 `/resume`
-- 이력서 완료 → `/cover-letter`
-- 자소서 완료 → `/review` 또는 `/mock-interview`
-- 통합 리뷰 완료 → `/mock-interview`
+- 전략 완료 → `/company_research` 또는 `/resume`
+- 기업분석 완료 → `/cover_letter` 또는 `/resume`
+- 이력서 완료 → `/cover_letter`
+- 자소서 완료 → `/review` 또는 `/mock_interview`
+- 통합 리뷰 완료 → `/mock_interview`
 - 모의면접 완료 → `/retro`

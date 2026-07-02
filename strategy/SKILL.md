@@ -77,7 +77,7 @@ echo "{\"skill\":\"strategy\",\"ts\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"pid\":
 5. **강점/차별점**: "본인의 가장 큰 강점이나 차별점은 무엇이라고 생각하세요?"
 6. **목표**: "취업 목표 시기가 있으세요? (예: 2026년 상반기)"
 
-각 답변을 받은 후 프로필을 `~/.jobstack/profiles/default.yaml`에 저장합니다.
+각 답변을 받은 후 프로필을 `$_JS_STATE/profiles/default.yaml`에 저장합니다.
 
 **YAML 프로필 형식:**
 ```yaml
@@ -162,12 +162,12 @@ AWS 경험           ●○○○○       4     자격증 + 사이드 프로젝
 
 | 주차 | 활동 | jobstack 스킬 |
 |------|------|-------------|
-| 1-2주 | 기업 분석 3개 + NCS 매핑 | /company-research, /ncs |
+| 1-2주 | 기업 분석 3개 | /company_research |
 | 3-4주 | 이력서 작성 + 첨삭 | /resume |
-| 5-6주 | 자소서 초안 + 기업별 맞춤 | /cover-letter |
+| 5-6주 | 자소서 초안 + 기업별 맞춤 (공기업은 NCS 관점 보강) | /cover_letter |
 | 7-8주 | 포트폴리오 정리 | /portfolio |
 | 9주 | 통합 리뷰 | /review |
-| 10-12주 | 모의면접 + 지원 | /mock-interview, /tracker |
+| 10-12주 | 모의면접 + 지원 현황 관리 | /mock_interview, /track |
 
 로드맵을 현재 디렉토리에 `strategy-roadmap.md`로 저장합니다.
 
@@ -184,9 +184,9 @@ $CLAUDE_SKILL_DIR/../bin/jobstack-view strategy-roadmap.md
 전략 수립이 완료되었습니다.
 
 추천 다음 단계:
-1. /company-research — 목표 기업 분석 (Tier 1 기업부터)
+1. /company_research — 목표 기업 분석 (Tier 1 기업부터)
 2. /resume — 이력서 작성/첨삭
-3. /job-search — 채용공고 탐색
+3. /job_search — 채용공고 탐색
 ```
 
 ---

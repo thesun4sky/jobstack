@@ -187,8 +187,8 @@ WebSearch로 연봉 정보를 수집합니다.
 
 ### 다음 스킬 추천
 
-- 연봉 분석 완료 → `/mock-interview` (연봉 협상 롤플레이)
-- 오퍼 비교 완료 → `/company-research` (최종 후보 기업 분석)
+- 연봉 분석 완료 → `/mock_interview` (연봉 협상 롤플레이)
+- 오퍼 비교 완료 → `/company_research` (최종 후보 기업 분석)
 
 ## 시각화 이미지 생성
 
