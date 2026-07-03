@@ -1,29 +1,31 @@
-# lint-conventions.sh 예외 목록 — 형식: 파일경로부분::라인정규식
+# lint-conventions.sh 예외 목록 — 형식: 파일경로부분::검사종류::라인정규식
+#   검사종류: slop(AI만능표현) | banned(금지표현) | number(시장수치)
+#   검사 종류를 분리 지정해, 수치 예외가 AI만능·금지 표현 위반까지 숨기지 않도록 한다.
 # 규칙을 인용하는 라인('금지'·'만능' 포함)은 자동 예외라 여기 등록할 필요 없음.
 
 # ETHOS.md — 코칭 철학 원문 보존 (원칙 7의 어휘는 산출물 금지어와 별개)
-ETHOS.md::체계적
+ETHOS.md::slop::체계적
 
 # voice.md 유래 공유 예시 문구 (수치화 코칭의 고정 예시)
-SKILL.md::매출 30% 성장 기여
+SKILL.md::number::매출 30% 성장 기여
 
 # company-research #122 스코어 결정성 블록의 방법론 임계값
-company-research/SKILL.md::적합도 60% 미만
+company-research/SKILL.md::number::적합도 60% 미만
 
 # mock-interview 질문 배분 방법론 상수 (미끼 40 / 공고 40 / 압박 20)
-mock-interview/SKILL.md::미끼 질문|채용공고 기반|압박/돌발
+mock-interview/SKILL.md::number::미끼 질문|채용공고 기반|압박/돌발
 
 # salary 오퍼 비교표 예시 행 (방법론 예제 — 시장 통계 아님)
-salary/SKILL.md::기본 연봉|성과급|성장 가능성|워라밸|기술 스택|출퇴근
+salary/SKILL.md::number::기본 연봉|성과급|성장 가능성|워라밸|기술 스택|출퇴근
 
 # cover-letter 수치화 코칭 예시 표의 After 열 예시 문구
-cover-letter/SKILL.md::업무효율성 10%|분실율 90%
+cover-letter/SKILL.md::number::업무효율성 10%|분실율 90%
 
 # job-search 매칭 스코어 등급 기준 (방법론 상수)
-job-search/SKILL.md::80%\+|60~79%|60% 미만
+job-search/SKILL.md::number::80%\+|60~79%|60% 미만
 
 # resume 키워드 커버리지 체크 기준 (방법론 상수)
-resume/SKILL.md::80% 이상
+resume/SKILL.md::number::80% 이상
 
 # strategy Tier 분류의 역량 매칭 기준 (방법론 상수)
-strategy/SKILL.md::역량 매칭 70%
+strategy/SKILL.md::number::역량 매칭 70%

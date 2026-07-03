@@ -37,13 +37,19 @@ RE_QUOTE_EXEMPT='금지|만능'
 FAIL_COUNT=0
 WARN_COUNT=0
 
-is_allowed() { # $1=파일경로 $2=라인내용
-  local file="$1" content="$2" entry fsub pat
+is_allowed() { # $1=파일경로 $2=라인내용 $3=검사종류(slop|banned|number)
+  # allowlist 형식: 파일경로부분::검사종류::라인정규식
+  # 검사 종류를 분리해, 수치(number) 예외가 AI만능(slop)·금지(banned) 위반까지
+  # 숨기는 것을 방지한다.
+  local file="$1" content="$2" kind="$3" entry fsub ekind pat rest
   [ -f "$ALLOW" ] || return 1
   while IFS= read -r entry; do
     case "$entry" in ''|'#'*) continue ;; esac
     fsub="${entry%%::*}"
-    pat="${entry#*::}"
+    rest="${entry#*::}"
+    ekind="${rest%%::*}"
+    pat="${rest#*::}"
+    [ "$ekind" = "$kind" ] || continue
     if [[ "$file" == *"$fsub"* ]] && echo "$content" | grep -qE "$pat"; then
       return 0
     fi
@@ -68,11 +74,11 @@ scan_file() { # $1=file $2=check3여부(1|0)
 
     # ① AI 만능 표현 / ② 금지 표현 (규칙 인용 라인 제외)
     if ! echo "$content" | grep -qE "$RE_QUOTE_EXEMPT"; then
-      if echo "$content" | grep -qE "$RE_SLOP" && ! is_allowed "$rel" "$content"; then
+      if echo "$content" | grep -qE "$RE_SLOP" && ! is_allowed "$rel" "$content" slop; then
         echo "$rel:$lineno:AI만능표현:$(echo "$content" | grep -oE "$RE_SLOP" | head -1)"
         FAIL_COUNT=$((FAIL_COUNT + 1))
       fi
-      if echo "$content" | grep -qE "$RE_BANNED" && ! is_allowed "$rel" "$content"; then
+      if echo "$content" | grep -qE "$RE_BANNED" && ! is_allowed "$rel" "$content" banned; then
         echo "$rel:$lineno:금지표현:$(echo "$content" | grep -oE "$RE_BANNED" | head -1)"
         FAIL_COUNT=$((FAIL_COUNT + 1))
       fi
@@ -82,7 +88,7 @@ scan_file() { # $1=file $2=check3여부(1|0)
     if [ "$check3" = "1" ] \
        && echo "$content" | grep -qE "$RE_NUMBER" \
        && ! echo "$content" | grep -qE "$RE_NUM_EXEMPT" \
-       && ! is_allowed "$rel" "$content"; then
+       && ! is_allowed "$rel" "$content" number; then
       if [ "$MODE" = "warn" ]; then
         echo "$rel:$lineno:수치하드코딩(warn):$(echo "$content" | grep -oE "$RE_NUMBER" | head -1)"
         WARN_COUNT=$((WARN_COUNT + 1))
@@ -107,13 +113,18 @@ run_scan() { # $1=루트 (self-test용 오버라이드)
 if [ -n "$SELF_TEST" ]; then
   # 픽스처: 위반이 든 가짜 스킬로 검출 자체를 검증
   TMP=$(mktemp -d)
-  mkdir -p "$TMP/fake-skill" "$TMP/templates"
+  mkdir -p "$TMP/fake-skill" "$TMP/salary" "$TMP/templates"
   cat > "$TMP/fake-skill/SKILL.md" <<'FIXTURE'
 포괄적 분석을 제공합니다.
 합격 보장을 약속합니다.
 국내 기업의 도입률은 87.3%에 달합니다.
 반영률 목표는 85%+ 입니다.
 FIXTURE
+  # 유형 분리 검증: 'number' allowlist('성과급')에 걸리는 라인이라도
+  # 그 라인의 slop 위반('다각적')은 여전히 검출돼야 한다.
+  cat > "$TMP/salary/SKILL.md" <<'FIXTURE2'
+성과급 제도는 다각적으로 운영됩니다.
+FIXTURE2
   REPO_SAVE="$REPO"; REPO="$TMP"
   RESULT=$(run_scan "$TMP")
   REPO="$REPO_SAVE"
@@ -122,8 +133,9 @@ FIXTURE
   if echo "$RESULT" | grep -q 'AI만능표현' \
      && echo "$RESULT" | grep -q '금지표현' \
      && echo "$RESULT" | grep -q '수치하드코딩' \
-     && ! echo "$RESULT" | grep -q '85%'; then
-    echo "[PASS] self-test — 3종 검출 + 반영률 예외 동작 (${HITS}건 검출)"
+     && ! echo "$RESULT" | grep -q '85%' \
+     && echo "$RESULT" | grep -qE 'salary/SKILL.md:[0-9]+:AI만능표현'; then
+    echo "[PASS] self-test — 3종 검출 + 반영률 예외 + 유형 분리(number 예외가 slop 위반 안 숨김) (${HITS}건 검출)"
     exit 0
   else
     echo "[FAIL] self-test — 기대 검출 불일치:"
@@ -143,7 +155,7 @@ fi
 
 if [ "${FAILS:-0}" -gt 0 ]; then
   echo "[FAIL] 컨벤션 위반 ${FAILS}건 (경고 ${WARNS:-0}건) — templates/guardrails.md §3·§6 참조"
-  echo "  의도된 예외라면 test/lint-allowlist.txt에 '파일경로부분::라인정규식' 형식으로 추가하세요"
+  echo "  의도된 예외라면 test/lint-allowlist.txt에 '파일경로부분::검사종류::라인정규식' 형식으로 추가하세요"
   exit 1
 fi
 echo "[PASS] 컨벤션 린트 통과 (경고 ${WARNS:-0}건)"

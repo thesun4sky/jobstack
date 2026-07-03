@@ -36,7 +36,7 @@ $_JS_STATE/defense-maps/<회사명>_<직무>_<YYYYMMDD>.yaml
 | `id` | string | `dm-001` 형식 일련번호 |
 | `sentence` | string | 미끼/위험 문장 원문 |
 | `location` | string | 위치 (문항 번호·단락) |
-| `bait_type` | enum | `수치` \| `기술선택` \| `역할범위` \| `성과` \| `갈등판단` |
+| `bait_type` | enum | `수치` \| `기술선택` \| `역할범위` \| `성과` \| `갈등·판단` |
 | `questions` | list | 예상 꼬리질문 **2개 이상** — 각각 `{q, intent, difficulty}` |
 | `questions[].q` | string | 예상 질문 |
 | `questions[].intent` | string | 검증 의도 (면접관이 확인하려는 것) |

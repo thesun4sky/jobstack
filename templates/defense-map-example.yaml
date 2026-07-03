@@ -1,5 +1,7 @@
 # defense-map 예시 — 스키마 정의는 docs/defense-map-schema.md 참조
 # 저장 위치: $_JS_STATE/defense-maps/<회사명>_<직무>_<YYYYMMDD>.yaml
+# 주의: 이 파일은 필드 형식을 보여주는 축약본(entry 2개)이다.
+#       실제 cover-letter 산출물은 미끼 5개 배치 원칙에 따라 entries 5개 이상이어야 한다.
 schema_version: 1
 source_skill: cover-letter
 created_at: "2026-07-03T18:30:00+09:00"
