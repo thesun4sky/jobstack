@@ -32,6 +32,20 @@ fi
 
 OUT="${2:-${IN%.md}.docx}"
 
+# 가드레일: 미확인 placeholder가 남은 채로 제출용 파일이 나가지 않도록 차단.
+# pandoc 존재 여부와 무관하게 **가장 먼저** 검사한다 — pandoc 미설치 환경에서도
+# 미확인 정보가 그대로 제출되지 않도록 한다.
+# exit 4 = "placeholder 미보완" 전용 코드. 호출 스킬은 exit 4를 markdown 복붙 폴백
+# 대상에서 제외하고, 남은 항목을 사용자에게 채우도록 요청해야 한다(fallback 금지).
+# (templates/guardrails.md §1 — 미확인 정보는 placeholder로 유지하되 제출 전 채워야 함)
+PLACEHOLDERS=$(grep -nE '\[[^]]*(확인 필요|입력 필요|추정)[^]]*\]' "$IN" || true)
+if [ -n "$PLACEHOLDERS" ]; then
+  echo "차단: 미확인 placeholder가 남아 있어 변환하지 않습니다 — 아래 항목을 먼저 채우세요:" >&2
+  echo "$PLACEHOLDERS" | sed 's/^/  /' >&2
+  echo "(이 파일은 markdown 복붙 폴백 대상이 아닙니다 — 항목을 채운 뒤 다시 시도하세요)" >&2
+  exit 4
+fi
+
 if ! command -v pandoc >/dev/null 2>&1; then
   cat >&2 <<'MSG'
 pandoc 미설치 — .docx 변환을 건너뜁니다.
@@ -51,15 +65,6 @@ fi
 # ATS 경고: 입력에 마크다운 표가 있으면 표 그대로 docx에 들어간다 (파싱 위험)
 if grep -qE '^\|.*\|' "$IN"; then
   echo "경고: 입력에 표가 있습니다 — ATS 파서가 표 내용을 누락할 수 있으니 목록 형식 전환을 권장합니다" >&2
-fi
-
-# 가드레일: 미확인 placeholder가 남은 채로 제출용 파일이 나가지 않도록 차단
-# (templates/guardrails.md §1 — 미확인 정보는 placeholder로 유지하되 제출 전 채워야 함)
-PLACEHOLDERS=$(grep -nE '\[[^]]*(확인 필요|입력 필요|추정)[^]]*\]' "$IN" || true)
-if [ -n "$PLACEHOLDERS" ]; then
-  echo "차단: 미확인 placeholder가 남아 있어 변환하지 않습니다 — 아래 항목을 먼저 채우세요:" >&2
-  echo "$PLACEHOLDERS" | sed 's/^/  /' >&2
-  exit 4
 fi
 
 if pandoc "$IN" -o "$OUT" "${REF_ARGS[@]+"${REF_ARGS[@]}"}" 2>/dev/null; then

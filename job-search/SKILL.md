@@ -19,7 +19,7 @@ benefits-from: [strategy]
 # ─── jobstack 프리앰블 ─────────────────────────
 _JS_STATE="${JOBSTACK_STATE_DIR:-$HOME/.jobstack}"
 mkdir -p "$_JS_STATE/analytics" "$_JS_STATE/profiles" "$_JS_STATE/tracker" \
-         "$_JS_STATE/company-cache" "$_JS_STATE/interview-history" "$_JS_STATE/sessions"
+         "$_JS_STATE/company-cache" "$_JS_STATE/interview-history" "$_JS_STATE/sessions" "$_JS_STATE/defense-maps"
 
 # 세션 추적
 echo "$$" > "$_JS_STATE/sessions/$$"
@@ -453,7 +453,7 @@ echo '{"skill":"job-search","ts":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","pid":'$$',"
   → https://www.wanted.co.kr/wd/xxxxx
 ```
 
-캘린더 결과를 `$_JS_STATE/tracker/`에 공고별 YAML로 저장합니다 — 회사명·직무·마감일·URL·추출 키워드·자소서 문항을 필드로 기록하고, 상태 필드는 canonical 상태 모델(저장은 영문 키, 신규 항목 기본값 `preparing`)을 따릅니다. 지원 현황 관리는 봇 네이티브 명령 `/track`·`/myapps`를 사용하도록 안내합니다.
+캘린더·공고 검색 결과는 **관심 공고 북마크**이지 지원 현황이 아니므로, `$_JS_STATE/tracker/applications.jsonl`(실제 지원 항목 전용 계약)에 넣지 않습니다. 대신 `$_JS_STATE/job-cache/`에 공고별 YAML로 저장합니다 — 회사명·직무·마감일·URL·추출 키워드·자소서 문항을 필드로 기록하고, 상태 필드는 `bookmark`로 둡니다(canonical 지원 상태 `preparing`을 쓰지 않습니다 — `docs/tracker-states.md`가 관심 공고를 tracker 파이프라인에서 제외하고 job-search 축으로 분리하도록 명시). **사용자가 실제로 지원을 결심/제출한 경우에만** tracker에 편입하도록 안내합니다: 봇 환경은 네이티브 `/track`·`/myapps`, CLI는 tracker 스킬로 추가.
 
 > **CHOICES 블록 위치**: 캘린더 출력 후 **맨 마지막**에 [CHOICES] 블록을 한 번만 포함하세요.
 > 중간에 끼워 넣거나 생략하면 봇이 인라인 버튼을 생성하지 못합니다.

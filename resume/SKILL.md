@@ -24,7 +24,7 @@ benefits-from: [strategy, company-research, experience-bank]
 # ─── jobstack 프리앰블 ─────────────────────────
 _JS_STATE="${JOBSTACK_STATE_DIR:-$HOME/.jobstack}"
 mkdir -p "$_JS_STATE/analytics" "$_JS_STATE/profiles" "$_JS_STATE/tracker" \
-         "$_JS_STATE/company-cache" "$_JS_STATE/interview-history" "$_JS_STATE/sessions"
+         "$_JS_STATE/company-cache" "$_JS_STATE/interview-history" "$_JS_STATE/sessions" "$_JS_STATE/defense-maps"
 
 # 세션 추적
 echo "$$" > "$_JS_STATE/sessions/$$"
@@ -372,7 +372,7 @@ CI/CD              ❌          경력 #1 성과에 추가
 > fi
 > ```
 >
-> **독립 CLI 실행 폴백**: `render-docx.sh`가 없는(jobclaw 워크스페이스 밖) 환경에서는 `command -v pandoc`으로 변환 도구를 확인합니다 — 있으면 `${CLAUDE_SKILL_DIR}/../bin/jobstack-export`로 md→docx 변환하고, 없으면 마크다운/HTML 파일로 산출한 뒤 변환 방법을 간단히 안내합니다. (폴백 경로에도 위 placeholder 잔존 스캔을 동일하게 적용합니다.)
+> **독립 CLI 실행 폴백**: `render-docx.sh`가 없는(jobclaw 워크스페이스 밖) 환경에서는 `${CLAUDE_SKILL_DIR}/../bin/jobstack-export`로 md→docx 변환을 시도합니다. jobstack-export는 placeholder 잔존을 먼저 검사하므로, **exit 4(미확인 placeholder)면 마크다운 폴백을 주지 말고** 출력된 항목을 사용자에게 채우도록 요청한 뒤 재시도합니다. pandoc 미설치(exit 2)일 때만 마크다운/HTML로 산출하고 변환 방법을 안내합니다.
 
 첨삭 모드에서는 변경사항을 시각적으로 보여줍니다:
 
@@ -469,6 +469,20 @@ PROFILE="$_JS_STATE/profiles/default.yaml"
 4. **선택지** — `A) ... B) ... C) ...`
 
 **한 번에 하나의 질문만.** 여러 질문을 묶지 않기. 답을 받고 다음 질문으로.
+
+---
+
+## 퍼널 텔레메트리 (docs/telemetry-events.md)
+
+첨삭 흐름의 각 시점에 규격 이벤트를 `$_JS_STATE/analytics/skill-usage.jsonl`에 append합니다(실패해도 무시). PII(문서 내용·회사명) 금지, 메타만 기록:
+- 첨삭 대상 이력서를 받으면(Phase 2B 진입) → `submitted`
+- 진단 출력을 마치면 → `diagnosed`
+- 재리뷰 delta 경로(#117)로 재진단하면 → `second_review`
+
+```bash
+echo '{"skill":"resume","ts":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","pid":'$$',"event":"diagnosed"}' \
+  >> "$_JS_STATE/analytics/skill-usage.jsonl" 2>/dev/null || true
+```
 
 ---
 

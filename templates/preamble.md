@@ -7,7 +7,7 @@
 #   4) __SKILL_NAME__ 은 스킬 디렉토리명 리터럴로 치환 (basename 동적 계산 금지 — 심링크 경유 시 오판)
 _JS_STATE="${JOBSTACK_STATE_DIR:-$HOME/.jobstack}"
 mkdir -p "$_JS_STATE/analytics" "$_JS_STATE/profiles" "$_JS_STATE/tracker" \
-         "$_JS_STATE/company-cache" "$_JS_STATE/interview-history" "$_JS_STATE/sessions"
+         "$_JS_STATE/company-cache" "$_JS_STATE/interview-history" "$_JS_STATE/sessions" "$_JS_STATE/defense-maps"
 
 # 세션 추적
 echo "$$" > "$_JS_STATE/sessions/$$"

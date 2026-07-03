@@ -17,29 +17,55 @@ FAIL=0
 # input.jsonl의 모든 v1 status가 docs/tracker-states.md 매핑표에 존재하는지 검증.
 echo "## tracker v1-compat (결정적)"
 INPUT="$GOLDEN/tracker/v1-compat/input.jsonl"
-if [ ! -f "$INPUT" ] || [ ! -f "$STATES_DOC" ]; then
-  echo "  [SKIP] 입력 또는 tracker-states.md 없음"
+TRAITS_TRK="$GOLDEN/tracker/v1-compat/expected-traits.yaml"
+if [ ! -f "$INPUT" ] || [ ! -f "$STATES_DOC" ] || [ ! -f "$TRAITS_TRK" ]; then
+  echo "  [SKIP] 입력·tracker-states.md·expected-traits.yaml 중 없음"
 else
-  # input.jsonl에서 status 값들 추출
-  statuses=$(python3 -c "
-import json,sys
-seen=set()
-for line in open('$INPUT'):
-    line=line.strip()
+  # expected-traits.yaml의 v1_to_v2_mapping이 정답이다.
+  # (1) input.jsonl의 모든 status가 expected 매핑에 있고,
+  # (2) 그 expected 영문 키가 docs/tracker-states.md의 실제 매핑과 **정확히** 일치하는지 검증.
+  #     — 매핑 값이 틀리면(예: 최종합격→final) FAIL. '아무 영문 키 존재'가 아니다.
+  RESULT=$(python3 - "$INPUT" "$TRAITS_TRK" "$STATES_DOC" <<'PY'
+import json, re, sys
+inp, traits_path, doc = sys.argv[1], sys.argv[2], sys.argv[3]
+
+# input.jsonl의 v1 status 집합
+statuses = set()
+for line in open(inp, encoding='utf-8'):
+    line = line.strip()
     if line:
-        seen.add(json.loads(line)['status'])
-print('\n'.join(sorted(seen)))
-" 2>/dev/null)
-  while IFS= read -r st; do
-    [ -z "$st" ] && continue
-    # tracker-states.md 매핑표에 '| <한글> | `<영문>` |' 행이 있는지
-    if grep -qE "^\| $st \| \`[a-z0-9_]+\`" "$STATES_DOC"; then
-      echo "  [PASS] '$st' 매핑 존재"
-    else
-      echo "  [FAIL] '$st' 가 docs/tracker-states.md 매핑표에 없음 — 하위호환 깨짐"
-      FAIL=$((FAIL+1))
-    fi
-  done <<< "$statuses"
+        statuses.add(json.loads(line)['status'])
+
+# expected-traits.yaml의 v1_to_v2_mapping 파싱
+traits = open(traits_path, encoding='utf-8').read()
+m = re.search(r'v1_to_v2_mapping:\s*\n((?:\s+\S.*\n)+)', traits)
+expected = {}
+if m:
+    for k, v in re.findall(r'^\s+(\S+):\s*(\S+)\s*$', m.group(1), re.M):
+        expected[k] = v
+
+# docs/tracker-states.md의 실제 매핑표 파싱: | 준비중 | `preparing` |
+actual = {}
+for k, v in re.findall(r'^\|\s*(\S+)\s*\|\s*`([a-z0-9_]+)`', open(doc, encoding='utf-8').read(), re.M):
+    actual[k] = v
+
+fail = 0
+for st in sorted(statuses):
+    exp = expected.get(st)
+    act = actual.get(st)
+    if exp is None:
+        print(f"  [FAIL] '{st}' 가 expected-traits.yaml 매핑에 없음"); fail += 1
+    elif act is None:
+        print(f"  [FAIL] '{st}' 가 docs/tracker-states.md 매핑표에 없음 — 하위호환 깨짐"); fail += 1
+    elif act != exp:
+        print(f"  [FAIL] '{st}' 매핑 불일치 — 기대 '{exp}', 실제 '{act}'"); fail += 1
+    else:
+        print(f"  [PASS] '{st}' → '{act}' (정답 일치)")
+sys.exit(1 if fail else 0)
+PY
+)
+  echo "$RESULT"
+  echo "$RESULT" | grep -q '\[FAIL\]' && FAIL=$((FAIL+1))
 fi
 
 # ── trait 케이스 (인자로 산출물 지정 시) ──

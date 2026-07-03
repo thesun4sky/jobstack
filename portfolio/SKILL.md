@@ -22,7 +22,7 @@ benefits-from: [strategy]
 # ─── jobstack 프리앰블 ─────────────────────────
 _JS_STATE="${JOBSTACK_STATE_DIR:-$HOME/.jobstack}"
 mkdir -p "$_JS_STATE/analytics" "$_JS_STATE/profiles" "$_JS_STATE/tracker" \
-         "$_JS_STATE/company-cache" "$_JS_STATE/interview-history" "$_JS_STATE/sessions"
+         "$_JS_STATE/company-cache" "$_JS_STATE/interview-history" "$_JS_STATE/sessions" "$_JS_STATE/defense-maps"
 
 # 세션 추적
 echo "$$" > "$_JS_STATE/sessions/$$"

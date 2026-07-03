@@ -66,6 +66,14 @@ else
   log_test "FAIL" "전체 16개 스킬 설치" "설치된 수: $SKILL_COUNT"
 fi
 
+# 언더스코어 alias — README/스킬 본문이 안내하는 언더스코어 명령이 실제로 설치됐는지
+ALIAS_COUNT=$(ls -d "$HOME/.claude/commands"/{cover_letter,company_research,mock_interview,job_search,experience_bank,career_history,scout_profile} 2>/dev/null | wc -l | tr -d ' ')
+if [ "$ALIAS_COUNT" -eq 7 ]; then
+  log_test "PASS" "언더스코어 alias 7개 설치 (/cover_letter 등)"
+else
+  log_test "FAIL" "언더스코어 alias 설치" "설치된 수: $ALIAS_COUNT"
+fi
+
 # 1.2 jobstack-config
 echo ""
 echo "### jobstack-config"
@@ -87,7 +95,7 @@ fi
 # 1.3 상태 디렉토리
 echo ""
 echo "### 상태 디렉토리"
-for dir in profiles tracker company-cache interview-history analytics sessions; do
+for dir in profiles tracker company-cache interview-history analytics sessions defense-maps; do
   if [ -d "$HOME/.jobstack/$dir" ]; then
     log_test "PASS" "디렉토리: ~/.jobstack/$dir"
   else

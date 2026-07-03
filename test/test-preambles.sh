@@ -50,8 +50,8 @@ for s in $SKILLS; do
   # (d) 죽은 세션 파일이 stale 루프로 제거됐는지
   [ -e "$STATE_DIR/sessions/$DEAD_PID" ] && errors+=("stale PID $DEAD_PID not removed")
 
-  # (e) 6개 상태 디렉토리 생성 확인
-  for d in analytics profiles tracker company-cache interview-history sessions; do
+  # (e) 상태 디렉토리 생성 확인
+  for d in analytics profiles tracker company-cache interview-history sessions defense-maps; do
     [ -d "$STATE_DIR/$d" ] || errors+=("missing dir: $d")
   done
 
