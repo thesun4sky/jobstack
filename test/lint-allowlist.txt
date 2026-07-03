@@ -18,6 +18,12 @@ mock-interview/SKILL.md::number::미끼 질문|채용공고 기반|압박/돌발
 # salary 오퍼 비교표 예시 행 (방법론 예제 — 시장 통계 아님)
 salary/SKILL.md::number::기본 연봉|성과급|성장 가능성|워라밸|기술 스택|출퇴근
 
+# salary 교차검증 규칙 — 소스 간 편차 예시(방법론 상수, 시장 통계 아님)
+salary/SKILL.md::number::소스 간 1,000만원 이상 차이
+
+# salary 입사 후 인상 난이도 rule-of-thumb (골든타임·재직 인상 안내)
+salary/SKILL.md::number::연 5%
+
 # cover-letter 수치화 코칭 예시 표의 After 열 예시 문구
 cover-letter/SKILL.md::number::업무효율성 10%|분실율 90%
 
@@ -29,3 +35,7 @@ resume/SKILL.md::number::80% 이상
 
 # strategy Tier 분류의 역량 매칭 기준 (방법론 상수)
 strategy/SKILL.md::number::역량 매칭 70%
+strategy/SKILL.md::number::역량 매칭 50% 미만
+
+# review 개인정보 점검 — 채용절차법 제4조의3 법정 과태료 상한 (법률 고정값, 시장 통계 아님)
+review/SKILL.md::number::500만원 이하 과태료
