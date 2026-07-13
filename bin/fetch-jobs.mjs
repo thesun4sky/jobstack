@@ -9,6 +9,7 @@
  */
 
 import { chromium } from 'playwright';
+import { logFailure } from './fetch-diag.mjs';
 
 const [, , platform, keyword, arg3, arg4, arg5] = process.argv;
 // arg3이 숫자가 아니면 career로 해석 (limit 생략 호출: fetch-jobs.mjs platform keyword entry)
@@ -84,6 +85,8 @@ await context.addInitScript(() => {
 
 const page = await context.newPage();
 let jobs = [];
+let lastHtml = '';   // 진단용: 마지막으로 확보한 HTML (setContent/직접 fetch)
+let lastStatus = 0;  // 진단용: 마지막 HTTP 상태 코드
 
 try {
   if (platform === 'jumpit') {
@@ -94,7 +97,8 @@ try {
     // 지역 필터: 점핏은 지역명을 키워드에 포함
     if (location && LOCATION_KO[location]) jtParams.set('keyword', `${keyword} ${LOCATION_KO[location]}`);
     const url = `https://jumpit.saramin.co.kr/search?${jtParams.toString()}`;
-    await page.goto(url, { waitUntil: 'commit', timeout: 15000 });
+    const _resp = await page.goto(url, { waitUntil: 'commit', timeout: 15000 });
+    lastStatus = _resp?.status() || 0;
     await page.waitForTimeout(5000);
 
     jobs = await page.evaluate((lim) => {
@@ -122,7 +126,8 @@ try {
 
   } else if (platform === 'programmers') {
     const url = `https://career.programmers.co.kr/job_positions?query=${encodeURIComponent(keyword)}`;
-    await page.goto(url, { waitUntil: 'commit', timeout: 15000 });
+    const _resp = await page.goto(url, { waitUntil: 'commit', timeout: 15000 });
+    lastStatus = _resp?.status() || 0;
     await page.waitForTimeout(5000);
 
     jobs = await page.evaluate((lim) => {
@@ -157,8 +162,10 @@ try {
         timeout: 15000,
         headers: { 'Accept-Language': 'ko-KR,ko;q=0.9' },
       });
-      if (!resp.ok()) throw new Error(`HTTP ${resp.status()}`);
+      lastStatus = resp.status();
       const html = await resp.text();
+      lastHtml = html;
+      if (!resp.ok()) throw new Error(`HTTP ${resp.status()}`);
       await page.setContent(html, { waitUntil: 'domcontentloaded', timeout: 10000 });
 
       jobs = await page.evaluate((lim) => {
@@ -229,7 +236,8 @@ try {
 
     try {
       // 원티드 SPA 트래커가 계속 폴링해 networkidle 도달이 어려움 → domcontentloaded + 카드 셀렉터 대기.
-      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 25000 });
+      const _resp = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 25000 });
+      lastStatus = _resp?.status() || 0;
       // state: 'attached' — Wanted 카드는 viewport 밖 lazy-render라 기본값 'visible'은 timeout.
       // try-catch — 검색 결과 0건이면 카드가 안 나타나므로 정상 케이스로 처리, 5초 단축.
       try {
@@ -335,7 +343,8 @@ try {
     const jkParams = new URLSearchParams({ stext: jkKeyword, posted: '7', ord: 'RegDate' });
     const url = `https://www.jobkorea.co.kr/Search/?${jkParams.toString()}`;
     try {
-      await page.goto(url, { waitUntil: 'networkidle', timeout: 25000 });
+      const _resp = await page.goto(url, { waitUntil: 'networkidle', timeout: 25000 });
+      lastStatus = _resp?.status() || 0;
       await page.waitForTimeout(3000);
 
       jobs = await page.evaluate((lim) => {
@@ -408,6 +417,16 @@ try {
     } catch (err) {
       process.stderr.write(`jobkorea scrape error: ${err.message}\n`);
     }
+  }
+
+  // 0건 수집 시 실패 원인 진단 — "차단"과 "결과 없음"을 구분해 stderr에 남긴다.
+  if (jobs.length === 0) {
+    let diagHtml = lastHtml;
+    // 사람인은 직접 fetch한 HTML(lastHtml)을 쓰고, page.goto 계열은 로드된 DOM을 확보한다.
+    if (!diagHtml) {
+      try { diagHtml = await page.content(); } catch { /* page 미로드 */ }
+    }
+    logFailure(platform, diagHtml, lastStatus);
   }
 } catch (err) {
   process.stderr.write(`Error fetching ${platform}: ${err.message}\n`);
