@@ -70,6 +70,11 @@ if [ -f "$_JS_BROWSER_SCRIPT" ]; then
 fi
 echo "BROWSER_SCRAPER_AVAILABLE=$BROWSER_SCRAPER_AVAILABLE"
 
+# 크롤러 0건 수집 진단 로그 — fetch-jobs.mjs가 차단(challenge)/결과없음(empty_result)을
+# 이 파일에 append 한다. stdout JSON(공고 결과)에는 영향 없으므로 호출 시 2>/dev/null 유지 가능.
+mkdir -p "$_JS_STATE/analytics" 2>/dev/null || true
+export JOBSTACK_FETCH_DIAG_LOG="$_JS_STATE/analytics/fetch-diag.log"
+
 # 활성 세션 수
 for _f in "$_JS_STATE/sessions/"*; do
   [ -f "$_f" ] || continue
@@ -268,6 +273,11 @@ HTML 페이지(wd/{id})가 아닌 **API detail endpoint**를 사용하세요 —
 
 > 잡코리아는 Tailwind CSS 기반으로 전면 개편되어 단순 curl/WebFetch로는 목록 추출 불가.
 > `BROWSER_SCRAPER_AVAILABLE=true`일 때 Playwright를 사용하세요.
+
+> **진단 로그**: 아래 호출은 `2>/dev/null`로 stderr를 버려도 됩니다. 0건 수집 시
+> `fetch-jobs.mjs`가 원인(challenge/empty_result 등)을 preamble에서 export한
+> `$JOBSTACK_FETCH_DIAG_LOG`(`$_JS_STATE/analytics/fetch-diag.log`)에 append하므로,
+> 어느 사이트가 왜 막히는지는 이 파일에 보존됩니다. 실시간으로 원인을 보려면 `2>/dev/null`을 떼세요.
 
 ```bash
 # career 인수: entry(신입) | experienced(경력) | 생략(전체)

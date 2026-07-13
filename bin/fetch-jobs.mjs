@@ -9,30 +9,7 @@
  */
 
 import { chromium } from 'playwright';
-
-// ─── 수집 실패 진단 ───────────────────────────────────────────────────────────
-// HTTP 200을 받아도 WAF 챌린지 페이지일 수 있다("200은 성공이 아니라 검사 시작").
-// 0건 결과의 원인을 challenge / too_small / empty_result / no_html 로 분류해
-// stderr 진단 로그로 남긴다. stdout JSON(사용자 대면 출력)에는 영향 없음.
-// 마커는 소문자로 통일 — html.toLowerCase()와 대조해 WAF 응답의 케이싱 변형을 흡수한다.
-const CHALLENGE_MARKERS = [
-  'just a moment', 'cf-browser-verification', '/cdn-cgi/challenge-platform',
-  'datadome', 'g-recaptcha', 'recaptcha', '자동입력 방지',
-  'access denied', '접근이 차단', 'request unsuccessful',
-];
-function classifyFailure(html, status) {
-  if (!html) return { cause: 'no_html', detail: `status=${status || 'n/a'}` };
-  const lower = html.toLowerCase();
-  const hit = CHALLENGE_MARKERS.find(m => lower.includes(m));
-  if (hit) return { cause: 'challenge', detail: `marker="${hit}" status=${status || 'n/a'}` };
-  // len 은 UTF-16 코드유닛 수(바이트 아님) — 한글 HTML에서 바이트와 다르므로 명시적으로 len 표기.
-  if (html.length < 3000) return { cause: 'too_small', detail: `len=${html.length} status=${status || 'n/a'}` };
-  return { cause: 'empty_result', detail: `len=${html.length} status=${status || 'n/a'}` };
-}
-function logFailure(platform, html, status) {
-  const { cause, detail } = classifyFailure(html, status);
-  process.stderr.write(`[fetch-jobs:diag] platform=${platform} cause=${cause} ${detail}\n`);
-}
+import { logFailure } from './fetch-diag.mjs';
 
 const [, , platform, keyword, arg3, arg4, arg5] = process.argv;
 // arg3이 숫자가 아니면 career로 해석 (limit 생략 호출: fetch-jobs.mjs platform keyword entry)
@@ -120,7 +97,8 @@ try {
     // 지역 필터: 점핏은 지역명을 키워드에 포함
     if (location && LOCATION_KO[location]) jtParams.set('keyword', `${keyword} ${LOCATION_KO[location]}`);
     const url = `https://jumpit.saramin.co.kr/search?${jtParams.toString()}`;
-    await page.goto(url, { waitUntil: 'commit', timeout: 15000 });
+    const _resp = await page.goto(url, { waitUntil: 'commit', timeout: 15000 });
+    lastStatus = _resp?.status() || 0;
     await page.waitForTimeout(5000);
 
     jobs = await page.evaluate((lim) => {
@@ -148,7 +126,8 @@ try {
 
   } else if (platform === 'programmers') {
     const url = `https://career.programmers.co.kr/job_positions?query=${encodeURIComponent(keyword)}`;
-    await page.goto(url, { waitUntil: 'commit', timeout: 15000 });
+    const _resp = await page.goto(url, { waitUntil: 'commit', timeout: 15000 });
+    lastStatus = _resp?.status() || 0;
     await page.waitForTimeout(5000);
 
     jobs = await page.evaluate((lim) => {
@@ -257,7 +236,8 @@ try {
 
     try {
       // 원티드 SPA 트래커가 계속 폴링해 networkidle 도달이 어려움 → domcontentloaded + 카드 셀렉터 대기.
-      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 25000 });
+      const _resp = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 25000 });
+      lastStatus = _resp?.status() || 0;
       // state: 'attached' — Wanted 카드는 viewport 밖 lazy-render라 기본값 'visible'은 timeout.
       // try-catch — 검색 결과 0건이면 카드가 안 나타나므로 정상 케이스로 처리, 5초 단축.
       try {
@@ -363,7 +343,8 @@ try {
     const jkParams = new URLSearchParams({ stext: jkKeyword, posted: '7', ord: 'RegDate' });
     const url = `https://www.jobkorea.co.kr/Search/?${jkParams.toString()}`;
     try {
-      await page.goto(url, { waitUntil: 'networkidle', timeout: 25000 });
+      const _resp = await page.goto(url, { waitUntil: 'networkidle', timeout: 25000 });
+      lastStatus = _resp?.status() || 0;
       await page.waitForTimeout(3000);
 
       jobs = await page.evaluate((lim) => {
