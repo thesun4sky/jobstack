@@ -10,6 +10,30 @@
 
 import { chromium } from 'playwright';
 
+// ─── 수집 실패 진단 ───────────────────────────────────────────────────────────
+// HTTP 200을 받아도 WAF 챌린지 페이지일 수 있다("200은 성공이 아니라 검사 시작").
+// 0건 결과의 원인을 challenge / too_small / empty_result / no_html 로 분류해
+// stderr 진단 로그로 남긴다. stdout JSON(사용자 대면 출력)에는 영향 없음.
+// 마커는 소문자로 통일 — html.toLowerCase()와 대조해 WAF 응답의 케이싱 변형을 흡수한다.
+const CHALLENGE_MARKERS = [
+  'just a moment', 'cf-browser-verification', '/cdn-cgi/challenge-platform',
+  'datadome', 'g-recaptcha', 'recaptcha', '자동입력 방지',
+  'access denied', '접근이 차단', 'request unsuccessful',
+];
+function classifyFailure(html, status) {
+  if (!html) return { cause: 'no_html', detail: `status=${status || 'n/a'}` };
+  const lower = html.toLowerCase();
+  const hit = CHALLENGE_MARKERS.find(m => lower.includes(m));
+  if (hit) return { cause: 'challenge', detail: `marker="${hit}" status=${status || 'n/a'}` };
+  // len 은 UTF-16 코드유닛 수(바이트 아님) — 한글 HTML에서 바이트와 다르므로 명시적으로 len 표기.
+  if (html.length < 3000) return { cause: 'too_small', detail: `len=${html.length} status=${status || 'n/a'}` };
+  return { cause: 'empty_result', detail: `len=${html.length} status=${status || 'n/a'}` };
+}
+function logFailure(platform, html, status) {
+  const { cause, detail } = classifyFailure(html, status);
+  process.stderr.write(`[fetch-jobs:diag] platform=${platform} cause=${cause} ${detail}\n`);
+}
+
 const [, , platform, keyword, arg3, arg4, arg5] = process.argv;
 // arg3이 숫자가 아니면 career로 해석 (limit 생략 호출: fetch-jobs.mjs platform keyword entry)
 let limit, career;
@@ -84,6 +108,8 @@ await context.addInitScript(() => {
 
 const page = await context.newPage();
 let jobs = [];
+let lastHtml = '';   // 진단용: 마지막으로 확보한 HTML (setContent/직접 fetch)
+let lastStatus = 0;  // 진단용: 마지막 HTTP 상태 코드
 
 try {
   if (platform === 'jumpit') {
@@ -157,8 +183,10 @@ try {
         timeout: 15000,
         headers: { 'Accept-Language': 'ko-KR,ko;q=0.9' },
       });
-      if (!resp.ok()) throw new Error(`HTTP ${resp.status()}`);
+      lastStatus = resp.status();
       const html = await resp.text();
+      lastHtml = html;
+      if (!resp.ok()) throw new Error(`HTTP ${resp.status()}`);
       await page.setContent(html, { waitUntil: 'domcontentloaded', timeout: 10000 });
 
       jobs = await page.evaluate((lim) => {
@@ -408,6 +436,16 @@ try {
     } catch (err) {
       process.stderr.write(`jobkorea scrape error: ${err.message}\n`);
     }
+  }
+
+  // 0건 수집 시 실패 원인 진단 — "차단"과 "결과 없음"을 구분해 stderr에 남긴다.
+  if (jobs.length === 0) {
+    let diagHtml = lastHtml;
+    // 사람인은 직접 fetch한 HTML(lastHtml)을 쓰고, page.goto 계열은 로드된 DOM을 확보한다.
+    if (!diagHtml) {
+      try { diagHtml = await page.content(); } catch { /* page 미로드 */ }
+    }
+    logFailure(platform, diagHtml, lastStatus);
   }
 } catch (err) {
   process.stderr.write(`Error fetching ${platform}: ${err.message}\n`);
