@@ -38,6 +38,7 @@ export function fetchViaIsFetch(url, opts = {}) {
   try {
     res = spawn(venvPy, [script, url], {
       timeout: timeoutMs,
+      killSignal: 'SIGKILL', // 프로세스 경계 — graceful cleanup 불필요, 좀비 방지
       maxBuffer: 32 * 1024 * 1024, // 사람인 검색 HTML ~2.4MB 여유
       encoding: 'utf8',
     });
