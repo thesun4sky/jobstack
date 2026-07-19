@@ -356,6 +356,7 @@ try {
       jobs = verifyResult.jobs;
     } catch (err) {
       process.stderr.write(`wanted scrape error: ${err.message}\n`);
+      jobs = []; // fail-closed: 검증을 못 거친 수집분은 내보내지 않는다
     }
 
   } else if (platform === 'jobkorea') {
