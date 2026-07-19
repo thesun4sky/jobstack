@@ -11,6 +11,7 @@
 
 import { logFailure } from './fetch-diag.mjs';
 import { verifyWantedJobs, verifyInputs } from './wanted-verify.mjs';
+import { fetchViaIsFetch } from './is-fetch-adapter.mjs';
 
 const [, , platform, keyword, arg3, arg4, arg5] = process.argv;
 
@@ -175,7 +176,7 @@ try {
     }, limit);
 
   } else if (platform === 'saramin') {
-    // page.goto()는 TLS 핑거프린팅으로 차단됨 → context.request.get()으로 HTML fetch 후 setContent 파싱
+    // HTML fetch 전략은 아래 try 블록 참조(is-fetch 우선 → Playwright 폴백), 파싱은 setContent.
     // career: URL 파라미터 미지원 → 키워드에 신입/경력 추가
     const srKeyword = career === 'entry' ? `${keyword} 신입`
       : career === 'experienced' ? `${keyword} 경력` : keyword;
@@ -185,14 +186,28 @@ try {
     if (location === 'remote') srParams.set('searchword', `${srKeyword} 재택`);
     const url = `https://www.saramin.co.kr/zf_user/search?${srParams.toString()}`;
     try {
-      const resp = await context.request.get(url, {
-        timeout: 15000,
-        headers: { 'Accept-Language': 'ko-KR,ko;q=0.9' },
-      });
-      lastStatus = resp.status();
-      const html = await resp.text();
-      lastHtml = html;
-      if (!resp.ok()) throw new Error(`HTTP ${resp.status()}`);
+      // fetch 계층만 교체 — is-fetch(curl_cffi TLS 임퍼소네이션) 우선, 실패/부재 시
+      // 현행 context.request.get 폴백. 확보한 HTML 은 동일하게 setContent 로 넘겨
+      // 파서는 0줄 수정한다(PoC 실증 §1-1: 사람인 파서가 curl_cffi HTML 과 100% 호환).
+      let html;
+      const adapted = fetchViaIsFetch(url);
+      if (adapted) {
+        html = adapted.html;
+        lastStatus = adapted.status;
+        lastHtml = html;
+        process.stderr.write(`[fetch-jobs:diag] saramin fetch_via=is-fetch verdict=${adapted.verdict}\n`);
+      } else {
+        // page.goto()는 TLS 핑거프린팅으로 차단됨 → context.request.get()으로 HTML fetch.
+        const resp = await context.request.get(url, {
+          timeout: 15000,
+          headers: { 'Accept-Language': 'ko-KR,ko;q=0.9' },
+        });
+        lastStatus = resp.status();
+        html = await resp.text();
+        lastHtml = html; // ok 여부와 무관하게 확보 — 0건 진단(logFailure)이 에러 페이지를 분류할 수 있게.
+        process.stderr.write('[fetch-jobs:diag] saramin fetch_via=playwright\n');
+        if (!resp.ok()) throw new Error(`HTTP ${resp.status()}`);
+      }
       await page.setContent(html, { waitUntil: 'domcontentloaded', timeout: 10000 });
 
       jobs = await page.evaluate((lim) => {

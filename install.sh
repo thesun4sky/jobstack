@@ -1,11 +1,18 @@
 #!/usr/bin/env bash
 # jobstack installer
 # Usage: cd jobstack && ./install.sh
-#   or:  ./install.sh --prefix  (adds jobstack- prefix to skill names)
+#   or:  ./install.sh --prefix               (adds jobstack- prefix to skill names)
+#   or:  ./install.sh --with-insane-search   (also builds bin/.is-venv for is-fetch.py)
 set -euo pipefail
 
 PREFIX=""
-[ "${1:-}" = "--prefix" ] && PREFIX="jobstack-"
+WITH_INSANE_SEARCH="0"
+for arg in "$@"; do
+  case "$arg" in
+    --prefix) PREFIX="jobstack-" ;;
+    --with-insane-search) WITH_INSANE_SEARCH="1" ;;
+  esac
+done
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SKILLS_DIR="$HOME/.claude/commands"
@@ -56,6 +63,19 @@ done
 # 3. bin 스크립트 권한
 echo "[3/3] 스크립트 권한 설정..."
 chmod +x "$SCRIPT_DIR/bin/"*
+
+# 4. insane-search 어댑터 venv (opt-in) — bin/is-fetch.py 가 쓰는 curl_cffi 를
+#    격리 venv 에 설치한다. 시스템 pip 직접 설치는 PEP 668(externally-managed)로
+#    막히므로 venv 필수(실행계획 §1-3). 실패는 그대로 종료(set -e) — silent 금지.
+#    플래그 없으면 이 단계는 건너뛰고 현행 동작 그대로.
+if [ "$WITH_INSANE_SEARCH" = "1" ]; then
+  echo "[4/4] insane-search 어댑터 venv 설치 (curl_cffi)..."
+  VENV_DIR="$SCRIPT_DIR/bin/.is-venv"
+  python3 -m venv "$VENV_DIR"
+  "$VENV_DIR/bin/pip" install --no-cache-dir --upgrade pip >/dev/null
+  "$VENV_DIR/bin/pip" install --no-cache-dir "curl_cffi>=0.15,<0.16"
+  echo "  → $VENV_DIR (curl_cffi)"
+fi
 
 echo ""
 echo "설치 완료!"

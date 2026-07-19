@@ -28,3 +28,10 @@ Thumbs.db
 # Browser scraper dependencies (npm install on first use)
 bin/node_modules/
 bin/package-lock.json
+
+# insane-search 어댑터 venv (install.sh --with-insane-search / Docker 빌드가 생성)
+bin/.is-venv/
+
+# Python bytecode cache (is-fetch.py 실행 부산물)
+__pycache__/
+*.pyc
