@@ -58,6 +58,21 @@ echo "SKILL_NAME=company-research"
 TODAY=$(TZ=Asia/Seoul date +%Y-%m-%d 2>/dev/null || date +%Y-%m-%d)
 echo "TODAY=$TODAY"
 
+# ─── jobstack bin 경로 해석 (원티드 verify·is-fetch 폴백에 사용) ─────────────
+# prod 컨테이너는 SKILL.md만 ~/.claude/commands/company-research/로 복사하고 bin은
+# /app/skills/jobstack/bin에만 있어 CLAUDE_SKILL_DIR/../bin이 실제 위치와 다르다.
+# → 스크립트 존재를 검증하고 틀리면 알려진 절대경로로 fallback(job-search와 동일 관례).
+if [ -n "$CLAUDE_SKILL_DIR" ]; then
+  _JS_BIN="${CLAUDE_SKILL_DIR}/../bin"
+fi
+if [ ! -f "${_JS_BIN:-}/fetch-jobs.mjs" ]; then
+  for _try in "/app/skills/jobstack/bin" "$HOME/.claude/skills/jobstack/bin" "/var/jobclaw/skills/jobstack/bin"; do
+    [ -f "$_try/fetch-jobs.mjs" ] && { _JS_BIN="$_try"; break; }
+  done
+fi
+_JS_BROWSER_SCRIPT="${_JS_BIN:-}/fetch-jobs.mjs"
+echo "JS_BIN=${_JS_BIN:-unresolved}"
+
 # 텔레메트리
 echo "{\"skill\":\"company-research\",\"ts\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"pid\":$$}" \
   >> "$_JS_STATE/analytics/skill-usage.jsonl" 2>/dev/null || true
@@ -144,7 +159,9 @@ echo "{\"skill\":\"company-research\",\"ts\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",
 > - 마감일이 오늘(`$TODAY`) **이전**인 채용공고는 **절대 포함하지 않습니다**
 > - **원티드 공고(`wanted.co.kr/wd/{id}`)는 HTML/스니펫으로 진행 여부를 판정하지 않습니다** — 페이지가 마감
 >   배너를 JS로 렌더링해 항상 "진행 중"처럼 보입니다(2026-07-19 prod 오판 사고). 포함 전 반드시
->   `node "${CLAUDE_SKILL_DIR}/../bin/fetch-jobs.mjs" verify <url>...`로 전수 판정하고 `active`만 포함합니다.
+>   `node "$_JS_BROWSER_SCRIPT" verify "<url>"...`로 전수 판정하고 `active`만 포함합니다.
+>   (`$_JS_BROWSER_SCRIPT`는 preamble에서 실제 bin 위치로 해석됨 — 원시 `${CLAUDE_SKILL_DIR}/../bin`은
+>   prod에서 경로가 어긋나 verify가 실패한다. verify 실행이 불가하면 **원티드 공고는 포함하지 않습니다**(fail-closed).)
 > - 마감일 확인이 불가한 공고는 "마감일 미확인"으로 표시하고 사용자에게 원본 URL 직접 확인을 안내합니다
 > - **훈련 데이터(training data)에 있는 채용공고 정보는 절대 사용하지 않습니다** — 채용공고는 반드시 실시간 WebSearch/WebFetch로 획득한 내용만 사용합니다
 > - **기업 사실 수치도 채용공고와 동일 강도로 출처 강제(#121)**: 매출·영업이익·직원수·복리후생·기술스택·잡플래닛/블라인드 평점 등 구체적 수치는 **실시간 조회로 확보한 값만** 단정합니다. 훈련 데이터 기억으로 채우지 말고, 확보하지 못한 수치는 **"(출처 미확보)"**로 표기하고 구체 숫자 단정을 하지 마세요. 결과물의 각 수치 뒤에는 가능하면 출처(URL/매체)를 인라인 표기합니다.

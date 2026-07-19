@@ -24,8 +24,14 @@ if (platform === 'verify') {
     process.exit(1);
   }
   const verdicts = await verifyInputs(inputs);
-  process.stdout.write(JSON.stringify(verdicts, null, 2) + '\n');
-  process.exit(0);
+  // write 콜백으로 flush 완료를 기다린 뒤 종료 — 즉시 process.exit(0)하면 대량 출력이
+  // OS 버퍼로 flush되기 전에 잘릴 수 있다(리뷰 반영).
+  await new Promise((resolve) => {
+    process.stdout.write(JSON.stringify(verdicts, null, 2) + '\n', resolve);
+  });
+  // 전건 판정 불가(bad_input/전건 unknown)면 비정상 종료로 오케스트레이터가 실패를 구분하게 한다.
+  const allBad = verdicts.length > 0 && verdicts.every((v) => v.verdict === 'unknown');
+  process.exit(allBad ? 2 : 0);
 }
 
 const { chromium } = await import('playwright');
@@ -59,7 +65,10 @@ const LOCATION_KO = {
 };
 
 if (!platform || !keyword) {
-  process.stderr.write('Usage: fetch-jobs.mjs <platform> <keyword> [limit] [career] [location]\n');
+  process.stderr.write(
+    'Usage: fetch-jobs.mjs <platform> <keyword> [limit] [career] [location]\n'
+    + '       fetch-jobs.mjs verify <wanted-url|id> [<wanted-url|id>...]\n',
+  );
   process.exit(1);
 }
 

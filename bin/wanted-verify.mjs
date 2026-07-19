@@ -35,10 +35,20 @@ export function extractWantedId(input) {
  */
 export function classifyDetail(json, now = new Date()) {
   const job = json?.job;
-  if (!job || typeof job !== 'object' || typeof job.status === 'undefined') {
+  // 형태 엄격 검증 — status 는 문자열, hidden 은 (있으면) 불리언이어야 한다.
+  // status:null(typeof 'object')이나 hidden:"true"(문자열) 같은 변형/드리프트 응답을
+  // active 로 통과시키지 않고 unknown 으로 돌려 outage 경로에서 잡히게 한다(리뷰 반영).
+  if (!job || typeof job !== 'object' || typeof job.status !== 'string'
+      || (job.hidden !== undefined && typeof job.hidden !== 'boolean')) {
     return { verdict: 'unknown', cause: 'parse' };
   }
-  const dueTime = job.due_time ? String(job.due_time).slice(0, 10) : null;
+  // due_time 은 (있으면) YYYY-MM-DD 로 시작하는 문자열이어야 한다. 아니면 unknown.
+  let dueTime = null;
+  if (job.due_time !== null && job.due_time !== undefined) {
+    const s = String(job.due_time);
+    if (!/^\d{4}-\d{2}-\d{2}/.test(s)) return { verdict: 'unknown', cause: 'parse' };
+    dueTime = s.slice(0, 10);
+  }
   const base = { status: job.status, hidden: job.hidden === true, dueTime };
   if (job.status !== 'active' || job.hidden === true) {
     return { verdict: 'closed', cause: 'status', ...base };
@@ -85,7 +95,14 @@ export async function fetchWantedDetail(id, opts = {}) {
         return last;
       }
       let json;
-      try { json = await resp.json(); } catch { return { verdict: 'unknown', cause: 'parse' }; }
+      try {
+        json = await resp.json();
+      } catch (err) {
+        // 바디 수신 중 타임아웃도 여기서 reject된다 — abort 계열은 바깥 catch(timeout+재시도)로
+        // 넘겨 헤더 단계 타임아웃과 동일하게 처리한다. 순수 JSON 파싱 오류만 parse로.
+        if (err?.name === 'TimeoutError' || err?.name === 'AbortError') throw err;
+        return { verdict: 'unknown', cause: 'parse' };
+      }
       return classifyDetail(json, opts.now);
     } catch (err) {
       last = { verdict: 'unknown', cause: err?.name === 'TimeoutError' || err?.name === 'AbortError' ? 'timeout' : 'network' };
@@ -159,7 +176,9 @@ export async function verifyWantedJobs(jobs, opts = {}) {
 /** verify 서브커맨드 본체: URL/ID 목록 → 판정 배열 (Playwright 불필요). */
 export async function verifyInputs(inputs, opts = {}) {
   const out = [];
-  for (const input of inputs) {
+  const delayMs = opts.delayMs ?? 200;
+  for (let i = 0; i < inputs.length; i++) {
+    const input = inputs[i];
     const id = extractWantedId(input);
     if (!id) {
       out.push({ input: String(input), id: null, verdict: 'unknown', cause: 'bad_input' });
@@ -175,7 +194,8 @@ export async function verifyInputs(inputs, opts = {}) {
       due_time: r.dueTime ?? null,
       ...(r.cause ? { cause: r.cause } : {}),
     });
-    if (opts.delayMs !== 0) await new Promise((res) => setTimeout(res, opts.delayMs ?? 200));
+    // 마지막 항목 뒤에는 rate-limit 지연을 넣지 않는다(verifyWantedJobs와 동일 관례).
+    if (delayMs > 0 && i < inputs.length - 1) await new Promise((res) => setTimeout(res, delayMs));
   }
   return out;
 }

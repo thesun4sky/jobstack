@@ -39,6 +39,11 @@ eq('classify: due 경과', classifyDetail(J({ status: 'active', hidden: false, d
 eq('classify: datetime due 절삭', classifyDetail(J({ status: 'active', hidden: false, due_time: '2026-07-31T23:59:59' }), NOW).dueTime, '2026-07-31');
 eq('classify: job 누락 → unknown', classifyDetail({}, NOW), { verdict: 'unknown', cause: 'parse' });
 eq('classify: status 필드 누락 → unknown', classifyDetail(J({ hidden: false }), NOW).verdict, 'unknown');
+// 형태 엄격 검증(리뷰 반영) — 변형/드리프트 응답은 active로 통과시키지 않고 unknown
+eq('classify: status null → unknown', classifyDetail(J({ status: null, hidden: false }), NOW).verdict, 'unknown');
+eq('classify: hidden 문자열 → unknown', classifyDetail(J({ status: 'active', hidden: 'true' }), NOW).verdict, 'unknown');
+eq('classify: due_time 비ISO → unknown(D-NaN 방지)', classifyDetail(J({ status: 'active', hidden: false, due_time: 'garbage' }), NOW).verdict, 'unknown');
+eq('classify: hidden 생략 → active 허용', classifyDetail(J({ status: 'active', due_time: null }), NOW).verdict, 'active');
 
 // ── formatDeadlineFields (parseDeadline 호환 계약 포함) ─────────────────────
 eq('format: null → 상시채용', formatDeadlineFields(null, NOW), { deadline: '상시채용', dRemaining: '상시채용' });
