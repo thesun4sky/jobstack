@@ -21,13 +21,15 @@ export const DEFAULT_IS_FETCH = join(HERE, 'is-fetch.py');
  * @param {string} url
  * @param {object} [opts] venvPy·script·timeoutMs·exists·spawn 주입(테스트용)
  * @returns {{ html: string, status: number, verdict: string } | null}
- *   null = 어댑터 미가용/실패(venv 부재·exit≠0·타임아웃·challenge/error·비JSON) → 폴백 신호
+ *   null = 어댑터 미가용/실패(venv 부재·exit≠0·타임아웃·strong_ok 아님·비JSON) → 폴백 신호
+ * timeoutMs 는 is-fetch.py 의 최악 소요(2 프로필 × TIMEOUT_S)보다 커야 첫 프로필 타임아웃
+ * 후 두 번째 결과가 유실되지 않는다(리뷰 반영: 25s ≥ 2×10s).
  */
 export function fetchViaIsFetch(url, opts = {}) {
   const {
     venvPy = DEFAULT_VENV_PY,
     script = DEFAULT_IS_FETCH,
-    timeoutMs = 20000,
+    timeoutMs = 25000,
     exists = existsSync,
     spawn = spawnSync,
   } = opts;
@@ -54,7 +56,9 @@ export function fetchViaIsFetch(url, opts = {}) {
   } catch {
     return null;
   }
-  // challenge/error = 어댑터가 못 뚫음 → 현행 경로 폴백. strong_ok/too_small + html = 채택.
-  if (parsed.verdict === 'challenge' || parsed.verdict === 'error' || !parsed.html) return null;
+  // strong_ok + html 만 채택. too_small(에러 페이지·열화 응답 포함)·challenge·error 는
+  // 현행 Playwright 경로로 폴백한다 — too_small 을 채택하면 사람인이 0건을 확정으로 처리해
+  // 폴백을 잃는다(리뷰 반영). is-fetch 는 status>=400 을 error 로 분류하므로 4xx/5xx 도 폴백.
+  if (parsed.verdict !== 'strong_ok' || !parsed.html) return null;
   return { html: parsed.html, status: parsed.status ?? 0, verdict: parsed.verdict };
 }

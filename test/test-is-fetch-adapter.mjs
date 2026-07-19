@@ -59,13 +59,17 @@ try {
     assert.equal(r.html, bigHtml);
   });
 
-  check('too_small JSON → 채택(폴백 아님)', () => {
+  check('too_small JSON → null(폴백) — 열화 응답을 채택해 사람인 폴백 잃지 않게(리뷰 반영)', () => {
     const py = fakeAdapter('small', {
       stdout: JSON.stringify({ html: '<html>tiny</html>', verdict: 'too_small', status: 200 }),
     });
-    const r = fetchViaIsFetch('https://x', { venvPy: py });
-    assert.ok(r);
-    assert.equal(r.verdict, 'too_small');
+    assert.equal(fetchViaIsFetch('https://x', { venvPy: py }), null);
+  });
+
+  check('타임아웃(status null) → null(폴백)', () => {
+    // spawn 주입으로 타임아웃 결과(status null)를 흉내낸다.
+    const fakeSpawn = () => ({ status: null, stdout: '' });
+    assert.equal(fetchViaIsFetch('https://x', { venvPy: '/fake', exists: () => true, spawn: fakeSpawn }), null);
   });
 
   check('challenge verdict → null(폴백)', () => {

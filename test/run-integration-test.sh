@@ -36,7 +36,7 @@ echo ""
 echo "## 0. 린트 게이트"
 echo ""
 
-for lint in test-preambles.sh test-command-style.sh test-no-home-paths.sh lint-conventions.sh run-golden.sh test-fetch-diag.mjs test-wanted-verify.mjs test-is-fetch-adapter.mjs; do
+for lint in test-preambles.sh test-command-style.sh test-no-home-paths.sh lint-conventions.sh run-golden.sh test-fetch-diag.mjs test-wanted-verify.mjs test-is-fetch-adapter.mjs test-is-fetch-ssrf.mjs; do
   if [ ! -x "$SCRIPT_DIR/$lint" ]; then
     log_test "FAIL" "린트: $lint" "스크립트 없음 또는 실행 권한 없음"
     continue

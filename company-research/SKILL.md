@@ -170,7 +170,7 @@ echo "{\"skill\":\"company-research\",\"ts\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",
 > ⚠️ **WebSearch/WebFetch 차단 시 처리 규칙**
 >
 > 도구 실패(차단, 타임아웃, 오류)가 발생하면:
-> - **1차 재시도 — is-fetch 어댑터**: 차단된 URL 을 `python3 "${CLAUDE_SKILL_DIR}/../bin/is-fetch.py" <URL>` 로 다시 확보합니다(curl_cffi TLS 임퍼소네이션). stdout JSON 의 `verdict` 가 `strong_ok`/`too_small` 이고 `html` 이 있으면 그 본문으로 분석을 이어갑니다. `challenge`/`error` 이거나 exit 3(어댑터 미설치)이면 재시도를 접고 아래 폴백으로 넘어갑니다.
+> - **1차 재시도 — is-fetch 어댑터**: 차단된 URL 을 `python3 "$_JS_BIN/is-fetch.py" "<URL>"` 로 다시 확보합니다(curl_cffi TLS 임퍼소네이션). **URL 은 반드시 큰따옴표로 감쌉니다** — `&`·`?` 가 든 URL이 셸에서 쪼개지거나 명령이 주입되는 것을 막습니다. `$_JS_BIN` 은 preamble에서 실제 bin 위치로 해석됨(원시 `${CLAUDE_SKILL_DIR}/../bin`은 prod에서 어긋남). stdout JSON 의 `verdict` 가 `strong_ok`/`too_small` 이고 `html` 이 있으면 그 본문으로 분석을 이어갑니다. `challenge`/`error` 이거나 exit 3(어댑터 미설치)이면 재시도를 접고 아래 폴백으로 넘어갑니다.
 > - 위 재시도로도 확보 실패 시: 채용공고(항목 3) 섹션을 **완전히 스킵**합니다 — 훈련 데이터로 대체 절대 금지
 > - 나머지 항목(기업 개요, 재무, CEO 메시지, 뉴스, 평판)은 수집 가능한 만큼 진행
 > - 완료 시 `DONE_WITH_CONCERNS`로 표시합니다. 실패 원인을 1줄로 명시하되, **반드시 다음 행동을 병기**합니다: "채용공고 본문·CEO 신년사·인재상 페이지 내용을 붙여넣어 주시면 분석을 완성합니다."

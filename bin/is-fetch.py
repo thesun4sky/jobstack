@@ -24,9 +24,12 @@ venv 구조: bin/.is-venv/bin/python 이 자기 자신을 재실행하는 부트
 시스템 python3 로 호출돼도(예: SKILL.md 의 `python3 .../is-fetch.py`) curl_cffi 가
 없으면 venv python 으로 execv 재실행한다. venv 부재 시 exit 3(no-op).
 """
+import ipaddress
 import json
 import os
+import socket
 import sys
+from urllib.parse import urljoin, urlparse
 
 # ── fetch-diag.mjs 와 동기화 필수 (test-is-fetch-adapter.mjs 가 강제) ──────────
 # 마커는 소문자로 통일 — html.lower() 와 대조해 WAF 응답의 케이싱 변형을 흡수한다.
@@ -38,7 +41,7 @@ CHALLENGE_MARKERS = [
 TOO_SMALL_LEN = 3000  # fetch-diag.mjs classifyFailure 의 html.length < 3000 미러
 
 IMPERSONATE_PROFILES = ('safari', 'chrome')  # safari → chrome 순환(최대 2회)
-TIMEOUT_S = 15
+TIMEOUT_S = 10  # 프로필당 요청 타임아웃. 2 프로필 최악 20s < 어댑터 25s(리뷰 반영)
 MAX_REDIRECTS = 10  # curl_cffi 기본값(30) 의존 금지 — 오픈 리다이렉트 경유 SSRF 표면 축소
 MAX_RESPONSE_BYTES = 10_000_000  # 응답 크기 상한 — 초과 시 error (OOM 방지)
 # verdict 우선순위 — 프로필을 순환하며 가장 좋은 결과를 채택한다.
@@ -46,10 +49,12 @@ _VERDICT_RANK = {'strong_ok': 3, 'too_small': 2, 'challenge': 1, 'error': 0}
 
 
 def classify(html, status):
-    """fetch-diag.mjs classifyFailure 미러 — html 없으면 error, 챌린지 마커 →
-    challenge, 3000자 미만 → too_small, 그 외 정상 → strong_ok. status 는 미사용
-    (fetch-diag 와 동일하게 verdict 는 본문 기준)."""
+    """fetch-diag.mjs classifyFailure 미러 + HTTP 상태 반영. html 없거나 status>=400 →
+    error(에러 페이지를 strong_ok로 채택해 사람인 폴백을 잃지 않게 함, 리뷰 반영), 챌린지 마커
+    → challenge, 3000자 미만 → too_small, 그 외 정상 → strong_ok."""
     if not html:
+        return 'error'
+    if status is not None and status >= 400:
         return 'error'
     lower = html.lower()
     if any(m in lower for m in CHALLENGE_MARKERS):
@@ -61,6 +66,39 @@ def classify(html, status):
 
 def _diag(msg):
     sys.stderr.write(msg + '\n')
+
+
+# ── SSRF 가드 (리뷰 반영) ──────────────────────────────────────────────────
+# is-fetch는 SKILL.md 지시로 WebSearch 결과·사용자 유래 URL을 받는다. 스킴 제한 +
+# 해석 IP가 사설/루프백/링크로컬/메타데이터(169.254.169.254)면 거부해, 내부망 응답이
+# stdout으로 유출되는 것을 막는다. 리다이렉트는 수동 추종하며 매 홉을 재검증한다.
+def _host_is_safe(host):
+    """host의 모든 해석 IP가 공인(글로벌)이면 True. 사설/예약 대역이 하나라도 있으면 False."""
+    if not host:
+        return False
+    try:
+        infos = socket.getaddrinfo(host, None)
+    except OSError:
+        return False
+    for info in infos:
+        ip = info[4][0]
+        try:
+            addr = ipaddress.ip_address(ip.split('%')[0])  # zone id 제거(IPv6 link-local)
+        except ValueError:
+            return False
+        if (addr.is_private or addr.is_loopback or addr.is_link_local
+                or addr.is_reserved or addr.is_multicast or addr.is_unspecified):
+            return False
+    return True
+
+
+def _url_is_safe(url):
+    parsed = urlparse(url)
+    if parsed.scheme not in ('http', 'https'):
+        return False, f'scheme={parsed.scheme or "none"}'
+    if not _host_is_safe(parsed.hostname):
+        return False, f'host={parsed.hostname}'
+    return True, ''
 
 
 # 재실행 sentinel — 이미 venv python 으로 재실행한 뒤에도 import 가 실패하면
@@ -110,6 +148,65 @@ def _emit(html, verdict, status, detail):
     sys.stdout.write('\n')
 
 
+def _read_capped(resp):
+    """스트리밍으로 본문을 읽되 MAX_RESPONSE_BYTES 초과 시 즉시 중단(압축폭탄·거대응답 OOM 방지).
+    상한 초과면 (None, True). 정상이면 (text, False)."""
+    chunks = []
+    total = 0
+    try:
+        for chunk in resp.iter_content():
+            if not chunk:
+                continue
+            total += len(chunk)
+            if total > MAX_RESPONSE_BYTES:
+                return None, True
+            chunks.append(chunk)
+    except Exception:  # noqa: BLE001 — 스트림 오류는 error로 흡수
+        return None, True
+    raw = b''.join(chunks)
+    enc = getattr(resp, 'encoding', None) or 'utf-8'
+    try:
+        return raw.decode(enc, errors='replace'), False
+    except (LookupError, TypeError):
+        return raw.decode('utf-8', errors='replace'), False
+
+
+def _fetch_with_guarded_redirects(cffi_requests, url, profile):
+    """리다이렉트를 수동 추종하며 매 홉의 URL을 SSRF 재검증하고, 본문은 스트리밍 상한으로 읽는다.
+    반환: (html, status, verdict)."""
+    current = url
+    try:
+        for _hop in range(MAX_REDIRECTS + 1):
+            resp = cffi_requests.get(
+                current,
+                impersonate=profile,
+                timeout=TIMEOUT_S,
+                allow_redirects=False,  # 수동 추종 — 각 홉을 재검증(공개→내부망 리다이렉트 차단)
+                stream=True,
+                headers={'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7'},
+            )
+            status = resp.status_code
+            location = resp.headers.get('location') if 300 <= status < 400 else None
+            if location:
+                nxt = urljoin(current, location)
+                safe, why = _url_is_safe(nxt)
+                if not safe:
+                    _diag(f'is-fetch: {profile} blocked redirect ({why})')
+                    return '', status, 'error'
+                current = nxt
+                continue
+            html, too_big = _read_capped(resp)
+            if too_big:
+                _diag(f'is-fetch: {profile} response too large (> {MAX_RESPONSE_BYTES}B)')
+                return '', status, 'error'
+            return html or '', status, classify(html, status)
+        _diag(f'is-fetch: {profile} too many redirects')
+        return '', None, 'error'
+    except Exception as err:  # noqa: BLE001 — 네트워크/프로토콜 오류 전반은 error 로
+        _diag(f'is-fetch: {profile} failed — {err.__class__.__name__}')
+        return '', None, 'error'
+
+
 def main(argv):
     url = None
     selectors = []
@@ -132,28 +229,18 @@ def main(argv):
         _diag('Usage: is-fetch.py <URL> [--selector <substr>]...')
         return 2
 
+    # SSRF: 최초 URL 스킴·호스트 검증. 위험하면 네트워크를 아예 건드리지 않고 error.
+    safe, why = _url_is_safe(url)
+    if not safe:
+        _diag(f'is-fetch: blocked unsafe url ({why})')
+        _emit('', 'error', None, f'blocked_unsafe_url {why}')
+        return 0
+
     cffi_requests = _load_curl_cffi()  # 미가용이면 exit 3 (아래로 반환하지 않음)
 
     best_html, best_status, best_verdict = '', None, 'error'
     for profile in IMPERSONATE_PROFILES:
-        try:
-            resp = cffi_requests.get(
-                url,
-                impersonate=profile,
-                timeout=TIMEOUT_S,
-                max_redirects=MAX_REDIRECTS,
-                headers={'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7'},
-            )
-            status = resp.status_code
-            if len(resp.content) > MAX_RESPONSE_BYTES:
-                html, verdict = '', 'error'
-                _diag(f'is-fetch: {profile} response too large ({len(resp.content)}B > {MAX_RESPONSE_BYTES}B)')
-            else:
-                html = resp.text or ''
-                verdict = classify(html, status)
-        except Exception as err:  # noqa: BLE001 — 네트워크/프로토콜 오류 전반은 error 로
-            html, status, verdict = '', None, 'error'
-            _diag(f'is-fetch: {profile} failed — {err.__class__.__name__}')
+        html, status, verdict = _fetch_with_guarded_redirects(cffi_requests, url, profile)
         if _VERDICT_RANK[verdict] > _VERDICT_RANK[best_verdict]:
             best_html, best_status, best_verdict = html, status, verdict
         if best_verdict == 'strong_ok':
