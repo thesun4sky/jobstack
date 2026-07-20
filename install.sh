@@ -1,11 +1,18 @@
 #!/usr/bin/env bash
 # jobstack installer
 # Usage: cd jobstack && ./install.sh
-#   or:  ./install.sh --prefix  (adds jobstack- prefix to skill names)
+#   or:  ./install.sh --prefix               (adds jobstack- prefix to skill names)
+#   or:  ./install.sh --with-insane-search   (also builds bin/.is-venv for is-fetch.py)
 set -euo pipefail
 
 PREFIX=""
-[ "${1:-}" = "--prefix" ] && PREFIX="jobstack-"
+WITH_INSANE_SEARCH="0"
+for arg in "$@"; do
+  case "$arg" in
+    --prefix) PREFIX="jobstack-" ;;
+    --with-insane-search) WITH_INSANE_SEARCH="1" ;;
+  esac
+done
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SKILLS_DIR="$HOME/.claude/commands"
@@ -56,6 +63,45 @@ done
 # 3. bin 스크립트 권한
 echo "[3/3] 스크립트 권한 설정..."
 chmod +x "$SCRIPT_DIR/bin/"*
+
+# 4. insane-search 어댑터 venv (opt-in) — bin/is-fetch.py 가 쓰는 curl_cffi 를
+#    격리 venv 에 설치한다. 시스템 pip 직접 설치는 PEP 668(externally-managed)로
+#    막히므로 venv 필수(실행계획 §1-3). 실패는 그대로 종료(set -e) — silent 금지.
+#    플래그 없으면 이 단계는 건너뛰고 현행 동작 그대로.
+#    ⚠️ curl_cffi>=0.15 는 Python >=3.10 필요 — macOS 기본 python3(3.9) 등에서 venv 는
+#    만들어져도 pip 설치가 실패한다(리뷰 반영). >=3.10 인터프리터를 탐색하고, 못 찾으면
+#    명확한 에러로 종료한다. JOBSTACK_PYTHON 으로 강제 지정 가능.
+if [ "$WITH_INSANE_SEARCH" = "1" ]; then
+  echo "[4/4] insane-search 어댑터 venv 설치 (curl_cffi)..."
+  VENV_DIR="$SCRIPT_DIR/bin/.is-venv"
+
+  # >=3.10 인터프리터 선택: JOBSTACK_PYTHON override → python3.15..3.10 → python3(버전검사).
+  _py_ok() { "$1" -c 'import sys; raise SystemExit(0 if sys.version_info[:2] >= (3,10) else 1)' >/dev/null 2>&1; }
+  IS_PYTHON=""
+  # JOBSTACK_PYTHON 이 '명시적으로' 지정됐는데 없거나 <3.10 이면, 조용히 폴백하지 않고 즉시 에러
+  # ('강제 지정' 계약 준수, 리뷰 반영).
+  if [ -n "${JOBSTACK_PYTHON:-}" ]; then
+    if command -v "$JOBSTACK_PYTHON" >/dev/null 2>&1 && _py_ok "$JOBSTACK_PYTHON"; then
+      IS_PYTHON="$JOBSTACK_PYTHON"
+    else
+      echo "ERROR: JOBSTACK_PYTHON='$JOBSTACK_PYTHON' 이 없거나 Python >=3.10 이 아닙니다 ($("$JOBSTACK_PYTHON" --version 2>&1 || echo 'not found'))." >&2
+      exit 1
+    fi
+  else
+    for _cand in python3.15 python3.14 python3.13 python3.12 python3.11 python3.10 python3; do
+      if command -v "$_cand" >/dev/null 2>&1 && _py_ok "$_cand"; then IS_PYTHON="$_cand"; break; fi
+    done
+  fi
+  if [ -z "$IS_PYTHON" ]; then
+    echo "ERROR: curl_cffi 는 Python >=3.10 이 필요합니다. python3.10+ 를 설치하거나 JOBSTACK_PYTHON 으로 지정하세요 (현재 python3: $(python3 --version 2>&1 || echo 'not found'))." >&2
+    exit 1
+  fi
+  echo "  → 인터프리터: $IS_PYTHON ($("$IS_PYTHON" --version 2>&1))"
+  "$IS_PYTHON" -m venv "$VENV_DIR"
+  "$VENV_DIR/bin/pip" install --no-cache-dir --upgrade pip >/dev/null
+  "$VENV_DIR/bin/pip" install --no-cache-dir "curl_cffi>=0.15,<0.16"
+  echo "  → $VENV_DIR (curl_cffi)"
+fi
 
 echo ""
 echo "설치 완료!"
