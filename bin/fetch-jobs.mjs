@@ -190,7 +190,9 @@ try {
       // 현행 context.request.get 폴백. 확보한 HTML 은 동일하게 setContent 로 넘겨
       // 파서는 0줄 수정한다(PoC 실증 §1-1: 사람인 파서가 curl_cffi HTML 과 100% 호환).
       let html;
-      const adapted = fetchViaIsFetch(url);
+      // item_recruit(사람인 검색 카드 클래스)를 셀렉터로 넘겨, 로그인/soft-block 페이지처럼
+      // 크기·상태만 충족하고 카드가 없는 HTML은 too_small로 강등→Playwright 폴백하게 한다.
+      const adapted = fetchViaIsFetch(url, { selectors: ['item_recruit'] });
       if (adapted) {
         html = adapted.html;
         lastStatus = adapted.status;

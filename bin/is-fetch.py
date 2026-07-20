@@ -29,6 +29,7 @@ import json
 import os
 import socket
 import sys
+import time
 from urllib.parse import urljoin, urlparse
 
 # ── fetch-diag.mjs 와 동기화 필수 (test-is-fetch-adapter.mjs 가 강제) ──────────
@@ -41,7 +42,12 @@ CHALLENGE_MARKERS = [
 TOO_SMALL_LEN = 3000  # fetch-diag.mjs classifyFailure 의 html.length < 3000 미러
 
 IMPERSONATE_PROFILES = ('safari', 'chrome')  # safari → chrome 순환(최대 2회)
-TIMEOUT_S = 10  # 프로필당 요청 타임아웃. 2 프로필 최악 20s < 어댑터 25s(리뷰 반영)
+TIMEOUT_S = 8  # 단일 요청 타임아웃(홉당)
+# 프로필당 전체 리다이렉트 체인 예산. per-request timeout은 홉마다 재부여되므로(curl_cffi는
+# CURLOPT_TIMEOUT=단일 transfer), 이 예산으로 체인 총 시간을 bound한다 — 2 프로필×PROFILE_BUDGET_S
+# 가 어댑터 SIGKILL(25s)·직접호출 경로 상한을 넘지 않게 한다(리뷰 반영: 홉 누적으로 20s 상한이
+# 깨지던 문제).
+PROFILE_BUDGET_S = 11
 MAX_REDIRECTS = 10  # curl_cffi 기본값(30) 의존 금지 — 오픈 리다이렉트 경유 SSRF 표면 축소
 MAX_RESPONSE_BYTES = 10_000_000  # 응답 크기 상한 — 초과 시 error (OOM 방지)
 # verdict 우선순위 — 프로필을 순환하며 가장 좋은 결과를 채택한다.
@@ -69,16 +75,26 @@ def _diag(msg):
 
 
 # ── SSRF 가드 (리뷰 반영) ──────────────────────────────────────────────────
-# is-fetch는 SKILL.md 지시로 WebSearch 결과·사용자 유래 URL을 받는다. 스킴 제한 +
-# 해석 IP가 사설/루프백/링크로컬/메타데이터(169.254.169.254)면 거부해, 내부망 응답이
-# stdout으로 유출되는 것을 막는다. 리다이렉트는 수동 추종하며 매 홉을 재검증한다.
+# is-fetch는 SKILL.md 지시로 WebSearch 결과·사용자 유래 URL을 받는다. 스킴(http/https)
+# 제한 + 해석 IP가 글로벌 공인이 아니면(사설/CGNAT/루프백/링크로컬/메타데이터 등) 거부해,
+# 내부망 응답이 stdout으로 유출되는 것을 막는다. 리다이렉트는 수동 추종하며 매 홉을 재검증한다.
+# ⚠️ 잔여 위험(문서화): getaddrinfo 검증 IP와 curl 실제 연결 IP가 분리돼 DNS rebinding/TOCTOU가
+#    이론상 가능하다(공인 도메인으로 통과시킨 뒤 재해석으로 내부 IP 연결). 완전 차단은 검증 IP를
+#    연결에 고정(CURLOPT_RESOLVE)해야 하나 curl_cffi 0.15에 안정 API가 없어 미적용. 이 도구는
+#    opt-in·"WebFetch 차단 시 폴백" 게이트 뒤에서만 쓰이고 직접 IP·메타데이터·스킴 등 주요 벡터는
+#    차단되므로, DNS-rebinding은 수용 가능한 잔여 위험으로 둔다(악용에 공격자 도메인+빠른 DNS 플립
+#    +에이전트가 그 URL을 폴백 fetch하는 3중 조건 필요).
 def _host_is_safe(host):
-    """host의 모든 해석 IP가 공인(글로벌)이면 True. 사설/예약 대역이 하나라도 있으면 False."""
+    """host의 모든 해석 IP가 '글로벌 공인'이면 True. 하나라도 비공인이면 False.
+    블랙리스트(사설/루프백/…) 대신 is_global 화이트리스트를 쓴다 — 블랙리스트는 CGNAT
+    (100.64.0.0/10, is_private=False)처럼 빠지는 특수대역이 있어 SSRF가 우회된다(리뷰 반영)."""
     if not host:
         return False
     try:
         infos = socket.getaddrinfo(host, None)
     except OSError:
+        return False
+    if not infos:
         return False
     for info in infos:
         ip = info[4][0]
@@ -86,8 +102,10 @@ def _host_is_safe(host):
             addr = ipaddress.ip_address(ip.split('%')[0])  # zone id 제거(IPv6 link-local)
         except ValueError:
             return False
-        if (addr.is_private or addr.is_loopback or addr.is_link_local
-                or addr.is_reserved or addr.is_multicast or addr.is_unspecified):
+        # IPv4 매핑된 IPv6(::ffff:a.b.c.d)는 내장 IPv4로 환원해 판정.
+        if getattr(addr, 'ipv4_mapped', None) is not None:
+            addr = addr.ipv4_mapped
+        if not addr.is_global:
             return False
     return True
 
@@ -171,16 +189,30 @@ def _read_capped(resp):
         return raw.decode('utf-8', errors='replace'), False
 
 
-def _fetch_with_guarded_redirects(cffi_requests, url, profile):
+def _fetch_with_guarded_redirects(cffi_requests, url, profile, deadline=None):
     """리다이렉트를 수동 추종하며 매 홉의 URL을 SSRF 재검증하고, 본문은 스트리밍 상한으로 읽는다.
-    반환: (html, status, verdict)."""
+    반환: (html, status, verdict).
+    ⚠️ curl_cffi stream=True 는 백그라운드 스레드가 본문을 무제한 큐에 계속 내려받으므로,
+    3xx·초과·오류로 조기 반환하는 모든 경로에서 resp.close()로 다운로드를 중단해야 한다 —
+    안 그러면 폐기된 리다이렉트 응답 본문이 계속 버퍼링돼 크기 상한이 무력화되고 핸들/스레드가
+    누수된다(리뷰 반영). deadline: 전체 리다이렉트 체인의 monotonic 마감시각(홉당 재부여되는
+    per-request timeout이 누적되지 않게 상한)."""
     current = url
-    try:
-        for _hop in range(MAX_REDIRECTS + 1):
+    for _hop in range(MAX_REDIRECTS + 1):
+        # 남은 체인 예산으로 이번 홉 타임아웃을 조인다 — 예산 소진 시 종료(홉 누적 방지).
+        req_timeout = TIMEOUT_S
+        if deadline is not None:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                _diag(f'is-fetch: {profile} overall deadline exceeded')
+                return '', None, 'error'
+            req_timeout = max(1, min(TIMEOUT_S, remaining))
+        resp = None
+        try:
             resp = cffi_requests.get(
                 current,
                 impersonate=profile,
-                timeout=TIMEOUT_S,
+                timeout=req_timeout,
                 allow_redirects=False,  # 수동 추종 — 각 홉을 재검증(공개→내부망 리다이렉트 차단)
                 stream=True,
                 headers={'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7'},
@@ -188,6 +220,8 @@ def _fetch_with_guarded_redirects(cffi_requests, url, profile):
             status = resp.status_code
             location = resp.headers.get('location') if 300 <= status < 400 else None
             if location:
+                resp.close()  # 3xx 본문 다운로드 즉시 중단(스트림 abort)
+                resp = None
                 nxt = urljoin(current, location)
                 safe, why = _url_is_safe(nxt)
                 if not safe:
@@ -200,11 +234,18 @@ def _fetch_with_guarded_redirects(cffi_requests, url, profile):
                 _diag(f'is-fetch: {profile} response too large (> {MAX_RESPONSE_BYTES}B)')
                 return '', status, 'error'
             return html or '', status, classify(html, status)
-        _diag(f'is-fetch: {profile} too many redirects')
-        return '', None, 'error'
-    except Exception as err:  # noqa: BLE001 — 네트워크/프로토콜 오류 전반은 error 로
-        _diag(f'is-fetch: {profile} failed — {err.__class__.__name__}')
-        return '', None, 'error'
+        except Exception as err:  # noqa: BLE001 — 네트워크/프로토콜 오류 전반은 error 로
+            _diag(f'is-fetch: {profile} failed — {err.__class__.__name__}')
+            return '', None, 'error'
+        finally:
+            # 조기 반환·예외 어느 경로든 남은 스트림을 닫아 백그라운드 다운로드/핸들 누수를 막는다.
+            if resp is not None:
+                try:
+                    resp.close()
+                except Exception:  # noqa: BLE001
+                    pass
+    _diag(f'is-fetch: {profile} too many redirects')
+    return '', None, 'error'
 
 
 def main(argv):
@@ -240,7 +281,8 @@ def main(argv):
 
     best_html, best_status, best_verdict = '', None, 'error'
     for profile in IMPERSONATE_PROFILES:
-        html, status, verdict = _fetch_with_guarded_redirects(cffi_requests, url, profile)
+        deadline = time.monotonic() + PROFILE_BUDGET_S
+        html, status, verdict = _fetch_with_guarded_redirects(cffi_requests, url, profile, deadline)
         if _VERDICT_RANK[verdict] > _VERDICT_RANK[best_verdict]:
             best_html, best_status, best_verdict = html, status, verdict
         if best_verdict == 'strong_ok':

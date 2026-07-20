@@ -35,6 +35,8 @@ const BLOCKED = [
   ['GCP metadata', 'http://169.254.169.254/latest/meta-data/'],
   ['사설대역', 'http://10.0.0.1/'],
   ['localhost 이름', 'http://localhost:8080/'],
+  ['CGNAT 100.64/10(블랙리스트 우회)', 'http://100.64.0.1/'],  // is_global 화이트리스트로만 차단됨
+  ['IPv4-mapped IPv6 루프백', 'http://[::ffff:127.0.0.1]/'],
 ];
 
 for (const [label, url] of BLOCKED) {

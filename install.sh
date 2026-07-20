@@ -75,15 +75,25 @@ if [ "$WITH_INSANE_SEARCH" = "1" ]; then
   echo "[4/4] insane-search 어댑터 venv 설치 (curl_cffi)..."
   VENV_DIR="$SCRIPT_DIR/bin/.is-venv"
 
-  # >=3.10 인터프리터 선택: JOBSTACK_PYTHON override → python3.13..3.10 → python3(버전검사).
+  # >=3.10 인터프리터 선택: JOBSTACK_PYTHON override → python3.15..3.10 → python3(버전검사).
   _py_ok() { "$1" -c 'import sys; raise SystemExit(0 if sys.version_info[:2] >= (3,10) else 1)' >/dev/null 2>&1; }
   IS_PYTHON=""
-  for _cand in "${JOBSTACK_PYTHON:-}" python3.13 python3.12 python3.11 python3.10 python3; do
-    [ -n "$_cand" ] || continue
-    if command -v "$_cand" >/dev/null 2>&1 && _py_ok "$_cand"; then IS_PYTHON="$_cand"; break; fi
-  done
+  # JOBSTACK_PYTHON 이 '명시적으로' 지정됐는데 없거나 <3.10 이면, 조용히 폴백하지 않고 즉시 에러
+  # ('강제 지정' 계약 준수, 리뷰 반영).
+  if [ -n "${JOBSTACK_PYTHON:-}" ]; then
+    if command -v "$JOBSTACK_PYTHON" >/dev/null 2>&1 && _py_ok "$JOBSTACK_PYTHON"; then
+      IS_PYTHON="$JOBSTACK_PYTHON"
+    else
+      echo "ERROR: JOBSTACK_PYTHON='$JOBSTACK_PYTHON' 이 없거나 Python >=3.10 이 아닙니다 ($("$JOBSTACK_PYTHON" --version 2>&1 || echo 'not found'))." >&2
+      exit 1
+    fi
+  else
+    for _cand in python3.15 python3.14 python3.13 python3.12 python3.11 python3.10 python3; do
+      if command -v "$_cand" >/dev/null 2>&1 && _py_ok "$_cand"; then IS_PYTHON="$_cand"; break; fi
+    done
+  fi
   if [ -z "$IS_PYTHON" ]; then
-    echo "ERROR: curl_cffi 는 Python >=3.10 이 필요합니다. python3.10+ 를 설치하거나 JOBSTACK_PYTHON 으로 지정하세요 (현재 python3: $(python3 --version 2>&1))." >&2
+    echo "ERROR: curl_cffi 는 Python >=3.10 이 필요합니다. python3.10+ 를 설치하거나 JOBSTACK_PYTHON 으로 지정하세요 (현재 python3: $(python3 --version 2>&1 || echo 'not found'))." >&2
     exit 1
   fi
   echo "  → 인터프리터: $IS_PYTHON ($("$IS_PYTHON" --version 2>&1))"

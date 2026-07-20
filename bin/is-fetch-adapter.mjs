@@ -19,11 +19,14 @@ export const DEFAULT_IS_FETCH = join(HERE, 'is-fetch.py');
 /**
  * is-fetch.py 어댑터로 URL HTML 을 확보한다.
  * @param {string} url
- * @param {object} [opts] venvPy·script·timeoutMs·exists·spawn 주입(테스트용)
+ * @param {object} [opts] venvPy·script·timeoutMs·exists·spawn·selectors 주입
+ *   selectors: 확보한 HTML 에 반드시 있어야 할 substr 목록(예: 사람인 카드 클래스). is-fetch.py 가
+ *   strong_ok 여도 셀렉터 0건이면 too_small 로 강등 → 폴백. 로그인/soft-block 페이지가 크기·상태만
+ *   충족해 채택돼 파서 0건→폴백 상실되는 것을 막는다(리뷰 반영).
  * @returns {{ html: string, status: number, verdict: string } | null}
  *   null = 어댑터 미가용/실패(venv 부재·exit≠0·타임아웃·strong_ok 아님·비JSON) → 폴백 신호
- * timeoutMs 는 is-fetch.py 의 최악 소요(2 프로필 × TIMEOUT_S)보다 커야 첫 프로필 타임아웃
- * 후 두 번째 결과가 유실되지 않는다(리뷰 반영: 25s ≥ 2×10s).
+ * timeoutMs 는 is-fetch.py 프로필 예산(2 프로필 × PROFILE_BUDGET_S=11 ≈ 22s)보다 커야 두 번째
+ * 프로필 결과가 SIGKILL 로 잘리지 않는다(25s). 초과 시엔 SIGKILL→null→Playwright 폴백이라 안전.
  */
 export function fetchViaIsFetch(url, opts = {}) {
   const {
@@ -32,13 +35,17 @@ export function fetchViaIsFetch(url, opts = {}) {
     timeoutMs = 25000,
     exists = existsSync,
     spawn = spawnSync,
+    selectors = [],
   } = opts;
 
   if (!exists(venvPy)) return null; // venv 미설치 = 어댑터 no-op → 폴백
 
+  const args = [script, url];
+  for (const s of selectors) { args.push('--selector', s); }
+
   let res;
   try {
-    res = spawn(venvPy, [script, url], {
+    res = spawn(venvPy, args, {
       timeout: timeoutMs,
       killSignal: 'SIGKILL', // 프로세스 경계 — graceful cleanup 불필요, 좀비 방지
       maxBuffer: 32 * 1024 * 1024, // 사람인 검색 HTML ~2.4MB 여유
