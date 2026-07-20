@@ -44,6 +44,10 @@ eq('classify: status null → unknown', classifyDetail(J({ status: null, hidden:
 eq('classify: hidden 문자열 → unknown', classifyDetail(J({ status: 'active', hidden: 'true' }), NOW).verdict, 'unknown');
 eq('classify: due_time 비ISO → unknown(D-NaN 방지)', classifyDetail(J({ status: 'active', hidden: false, due_time: 'garbage' }), NOW).verdict, 'unknown');
 eq('classify: hidden 생략 → active 허용', classifyDetail(J({ status: 'active', due_time: null }), NOW).verdict, 'active');
+// due_time 완전 달력검증(리뷰 반영) — prefix만 검사하면 통과하던 비실존 날짜를 unknown으로
+eq('classify: due_time 9999-99-99garbage → unknown', classifyDetail(J({ status: 'active', hidden: false, due_time: '9999-99-99garbage' }), NOW).verdict, 'unknown');
+eq('classify: due_time 2026-13-45(달력불가) → unknown', classifyDetail(J({ status: 'active', hidden: false, due_time: '2026-13-45' }), NOW).verdict, 'unknown');
+eq('classify: due_time 2026-07-31T23:59:59(정상 datetime) → active', classifyDetail(J({ status: 'active', hidden: false, due_time: '2026-07-31T23:59:59' }), NOW).verdict, 'active');
 
 // ── formatDeadlineFields (parseDeadline 호환 계약 포함) ─────────────────────
 eq('format: null → 상시채용', formatDeadlineFields(null, NOW), { deadline: '상시채용', dRemaining: '상시채용' });

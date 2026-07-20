@@ -20,6 +20,16 @@ export function kstDateStr(now = new Date()) {
   return new Date(now.getTime() + KST_OFFSET_MS).toISOString().slice(0, 10);
 }
 
+/** "YYYY-MM-DD"가 실제 달력 날짜인지 검증(예: 2026-13-45, 9999-99-99 거부). 유효하면 그 문자열, 아니면 null. */
+function validIsoDate(s) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+  if (!m) return null;
+  const y = +m[1], mo = +m[2], d = +m[3];
+  const dt = new Date(Date.UTC(y, mo - 1, d));
+  // 롤오버 없이 성분이 그대로 유지돼야 실제 날짜 (2026-13-45 → 다른 달로 롤오버 → 거부).
+  return dt.getUTCFullYear() === y && dt.getUTCMonth() === mo - 1 && dt.getUTCDate() === d ? s : null;
+}
+
 /** URL 또는 숫자 문자열에서 원티드 job ID 추출. 실패 시 null. */
 export function extractWantedId(input) {
   const s = String(input ?? '').trim();
@@ -42,12 +52,12 @@ export function classifyDetail(json, now = new Date()) {
       || (job.hidden !== undefined && typeof job.hidden !== 'boolean')) {
     return { verdict: 'unknown', cause: 'parse' };
   }
-  // due_time 은 (있으면) YYYY-MM-DD 로 시작하는 문자열이어야 한다. 아니면 unknown.
+  // due_time 은 (있으면) 앞 10자가 '실제 달력 날짜' YYYY-MM-DD 여야 한다. prefix만 검사하면
+  // "9999-99-99garbage"·"2026-13-45" 가 active 로 통과(fail-open)하므로 완전 검증한다(리뷰 반영).
   let dueTime = null;
   if (job.due_time !== null && job.due_time !== undefined) {
-    const s = String(job.due_time);
-    if (!/^\d{4}-\d{2}-\d{2}/.test(s)) return { verdict: 'unknown', cause: 'parse' };
-    dueTime = s.slice(0, 10);
+    dueTime = validIsoDate(String(job.due_time).slice(0, 10));
+    if (dueTime === null) return { verdict: 'unknown', cause: 'parse' };
   }
   const base = { status: job.status, hidden: job.hidden === true, dueTime };
   if (job.status !== 'active' || job.hidden === true) {
@@ -203,8 +213,10 @@ export async function verifyInputs(inputs, opts = {}) {
       due_time: r.dueTime ?? null,
       ...(r.cause ? { cause: r.cause } : {}),
     });
-    // 마지막 항목 뒤에는 rate-limit 지연을 넣지 않는다(verifyWantedJobs와 동일 관례).
-    if (delayMs > 0 && i < inputs.length - 1) await new Promise((res) => setTimeout(res, delayMs));
+    // rate-limit 지연은 '뒤에 실제 API 호출이 남아있을 때만' 넣는다 — 마지막이거나 뒤가 전부
+    // bad_input(API 호출 없음)이면 불필요한 지연을 피한다(리뷰 반영).
+    const moreApiAhead = inputs.slice(i + 1).some((x) => extractWantedId(x) !== null);
+    if (delayMs > 0 && moreApiAhead) await new Promise((res) => setTimeout(res, delayMs));
   }
   return out;
 }
