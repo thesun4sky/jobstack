@@ -8,8 +8,7 @@
  * 소스에 전부 들어있는지로 강제한다(두 구현이 갈라지면 여기서 깨진다).
  */
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync, chmodSync, rmSync, readFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { fetchViaIsFetch } from '../bin/is-fetch-adapter.mjs';
@@ -29,15 +28,12 @@ const check = (name, fn) => {
   }
 };
 
-// 가짜 어댑터 스크립트(sh) — is-fetch.py 대역. 인자는 무시하고 고정 JSON 을 stdout 에 낸다.
-const tmp = mkdtempSync(join(tmpdir(), 'is-fetch-test-'));
-function fakeAdapter(name, { stdout = '', exitCode = 0 } = {}) {
-  const p = join(tmp, name);
-  const body = `#!/bin/sh\ncat <<'JSONEOF'\n${stdout}\nJSONEOF\nexit ${exitCode}\n`;
-  writeFileSync(p, body);
-  chmodSync(p, 0o755);
-  return p;
-}
+// 어댑터 결과는 spawn 주입으로 흉내낸다 — 실제 실행 파일을 /tmp 에 만들지 않는다.
+// (noexec 로 마운트된 러너에서 임시 실행 파일이 막혀 테스트가 깨지던 문제 회피, 리뷰 반영.)
+// exists:true 로 venv 존재를 가정하고 spawnSync 반환값({status, stdout})만 주입한다.
+const spawnReturning = (result) => () => result;
+const adapt = (spawnResult, opts = {}) =>
+  fetchViaIsFetch('https://x', { venvPy: '/fake/py', exists: () => true, spawn: spawnReturning(spawnResult), ...opts });
 
 try {
   // ── 1. venv 부재 → null(현행 Playwright 경로 폴백 신호) ──
@@ -49,10 +45,7 @@ try {
   // ── 2. 어댑터 경로 — 채택/폴백 분기 ──
   check('strong_ok JSON → html 채택', () => {
     const bigHtml = `<html>${'x'.repeat(5000)}</html>`;
-    const py = fakeAdapter('ok', {
-      stdout: JSON.stringify({ html: bigHtml, verdict: 'strong_ok', status: 200 }),
-    });
-    const r = fetchViaIsFetch('https://x', { venvPy: py });
+    const r = adapt({ status: 0, stdout: JSON.stringify({ html: bigHtml, verdict: 'strong_ok', status: 200 }) });
     assert.ok(r, 'null 이 아니어야 함');
     assert.equal(r.verdict, 'strong_ok');
     assert.equal(r.status, 200);
@@ -60,47 +53,31 @@ try {
   });
 
   check('too_small JSON → null(폴백) — 열화 응답을 채택해 사람인 폴백 잃지 않게(리뷰 반영)', () => {
-    const py = fakeAdapter('small', {
-      stdout: JSON.stringify({ html: '<html>tiny</html>', verdict: 'too_small', status: 200 }),
-    });
-    assert.equal(fetchViaIsFetch('https://x', { venvPy: py }), null);
+    assert.equal(adapt({ status: 0, stdout: JSON.stringify({ html: '<html>tiny</html>', verdict: 'too_small', status: 200 }) }), null);
   });
 
   check('타임아웃(status null) → null(폴백)', () => {
-    // spawn 주입으로 타임아웃 결과(status null)를 흉내낸다.
-    const fakeSpawn = () => ({ status: null, stdout: '' });
-    assert.equal(fetchViaIsFetch('https://x', { venvPy: '/fake', exists: () => true, spawn: fakeSpawn }), null);
+    assert.equal(adapt({ status: null, stdout: '' }), null);
   });
 
   check('challenge verdict → null(폴백)', () => {
-    const py = fakeAdapter('chal', {
-      stdout: JSON.stringify({ html: '<html>just a moment</html>', verdict: 'challenge', status: 403 }),
-    });
-    assert.equal(fetchViaIsFetch('https://x', { venvPy: py }), null);
+    assert.equal(adapt({ status: 0, stdout: JSON.stringify({ html: '<html>just a moment</html>', verdict: 'challenge', status: 403 }) }), null);
   });
 
   check('error verdict → null(폴백)', () => {
-    const py = fakeAdapter('err', {
-      stdout: JSON.stringify({ html: '', verdict: 'error', status: null }),
-    });
-    assert.equal(fetchViaIsFetch('https://x', { venvPy: py }), null);
+    assert.equal(adapt({ status: 0, stdout: JSON.stringify({ html: '', verdict: 'error', status: null }) }), null);
   });
 
   check('exit 3(curl_cffi 미설치 no-op) → null(폴백)', () => {
-    const py = fakeAdapter('exit3', { stdout: '', exitCode: 3 });
-    assert.equal(fetchViaIsFetch('https://x', { venvPy: py }), null);
+    assert.equal(adapt({ status: 3, stdout: '' }), null);
   });
 
   check('비-JSON stdout → null(폴백)', () => {
-    const py = fakeAdapter('garbage', { stdout: 'not json at all' });
-    assert.equal(fetchViaIsFetch('https://x', { venvPy: py }), null);
+    assert.equal(adapt({ status: 0, stdout: 'not json at all' }), null);
   });
 
   check('html 없는 strong_ok → null(폴백)', () => {
-    const py = fakeAdapter('nohtml', {
-      stdout: JSON.stringify({ html: '', verdict: 'strong_ok', status: 200 }),
-    });
-    assert.equal(fetchViaIsFetch('https://x', { venvPy: py }), null);
+    assert.equal(adapt({ status: 0, stdout: JSON.stringify({ html: '', verdict: 'strong_ok', status: 200 }) }), null);
   });
 
   // ── 3. verdict 분류 파이썬-노드 동기화 ──
@@ -117,8 +94,6 @@ try {
     const diag = readFileSync(join(BIN, 'fetch-diag.mjs'), 'utf8');
     assert.ok(/<\s*3000/.test(diag), 'fetch-diag.mjs 의 3000자 기준 확인 실패');
   });
-} finally {
-  rmSync(tmp, { recursive: true, force: true });
-}
+} finally { /* 임시 실행 파일 없음 — spawn 주입 방식이라 정리 불필요 */ }
 
 console.log(`\n[${process.exitCode ? 'FAIL' : 'PASS'}] test-is-fetch-adapter — ${pass} passed`);
