@@ -91,7 +91,16 @@ export async function fetchWantedDetail(id, opts = {}) {
       });
       if (!resp.ok) {
         last = { verdict: 'unknown', cause: `http_${resp.status}` };
-        if (resp.status >= 500 && attempt < retries) continue;
+        // 429/5xx는 1회 재시도. 429는 Retry-After(초, 최대 3s)만큼 짧게 대기해
+        // transient rate-limit이 원티드 섹션을 통째로 비우는(verify_outage) 것을 줄인다(리뷰 반영).
+        if ((resp.status === 429 || resp.status >= 500) && attempt < retries) {
+          if (resp.status === 429) {
+            const ra = parseInt(resp.headers?.get?.('retry-after') ?? '', 10);
+            const waitMs = Number.isFinite(ra) ? Math.min(ra, 3) * 1000 : 500;
+            if (waitMs > 0) await new Promise((r) => setTimeout(r, waitMs));
+          }
+          continue;
+        }
         return last;
       }
       let json;

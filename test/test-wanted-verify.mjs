@@ -56,7 +56,10 @@ eq('format: 날짜가 문자열 선두', formatDeadlineFields('2026-07-31', NOW)
 
 // ── fetchWantedDetail (mock fetch) ─────────────────────────────────────────
 const okResp = (job) => ({ ok: true, status: 200, json: async () => ({ job }) });
-const errResp = (status) => ({ ok: false, status, json: async () => ({}) });
+const errResp = (status, retryAfter) => ({
+  ok: false, status, json: async () => ({}),
+  headers: { get: (k) => (k === 'retry-after' && retryAfter != null ? String(retryAfter) : null) },
+});
 
 {
   const r = await fetchWantedDetail('1', { fetchImpl: async () => okResp({ status: 'active', hidden: false, due_time: null }), now: NOW });
@@ -72,10 +75,21 @@ const errResp = (status) => ({ ok: false, status, json: async () => ({}) });
   eq('fetch: 재시도 호출 수', calls, 2);
 }
 {
+  // 429는 Retry-After(상한 3s) 후 1회 재시도 — 재시도가 성공하면 채택.
   let calls = 0;
-  const r = await fetchWantedDetail('1', { fetchImpl: async () => { calls++; return errResp(429); }, now: NOW });
-  eq('fetch: 429 는 재시도 없이 unknown', r, { verdict: 'unknown', cause: 'http_429' });
-  eq('fetch: 429 호출 1회', calls, 1);
+  const r = await fetchWantedDetail('1', {
+    fetchImpl: async () => (++calls === 1 ? errResp(429, 0) : okResp({ status: 'active', hidden: false, due_time: null })),
+    now: NOW,
+  });
+  eq('fetch: 429 Retry-After 후 재시도 성공', r.verdict, 'active');
+  eq('fetch: 429 재시도 호출 2회', calls, 2);
+}
+{
+  // 429가 계속되면 재시도 1회 후 unknown/http_429.
+  let calls = 0;
+  const r = await fetchWantedDetail('1', { fetchImpl: async () => { calls++; return errResp(429, 0); }, now: NOW });
+  eq('fetch: 429 지속 → unknown', r, { verdict: 'unknown', cause: 'http_429' });
+  eq('fetch: 429 지속 호출 2회(재시도 1)', calls, 2);
 }
 {
   const abortErr = Object.assign(new Error('aborted'), { name: 'TimeoutError' });
