@@ -2,10 +2,10 @@
 /**
  * test-is-fetch-adapter.mjs — insane-search 어댑터 브리지 + verdict 동기화 회귀.
  *
- * 네트워크·curl_cffi·venv 없이 통과해야 한다. 어댑터 경로는 가짜 어댑터 스크립트(sh)를
- * venvPy 로 주입해 spawnSync 를 실제로 태우고, 폴백 선택은 exists 주입으로 검증한다.
- * verdict 분류의 파이썬-노드 동기화는 fetch-diag.mjs 의 CHALLENGE_MARKERS 가 is-fetch.py
- * 소스에 전부 들어있는지로 강제한다(두 구현이 갈라지면 여기서 깨진다).
+ * 네트워크·curl_cffi·venv 없이 통과해야 한다. 어댑터 경로는 spawn 을 주입해 spawnSync 의
+ * 반환값({status, stdout})만 흉내내고(임시 실행 파일을 만들지 않아 noexec /tmp 러너에서도
+ * 안전), 폴백 선택은 exists 주입으로 검증한다. verdict 분류의 파이썬-노드 동기화는
+ * fetch-diag.mjs 의 CHALLENGE_MARKERS 가 is-fetch.py 소스에 전부 들어있는지로 강제한다.
  */
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
