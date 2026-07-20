@@ -112,7 +112,7 @@ echo "{\"skill\":\"job-search\",\"ts\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"pid\
 
 사용자가 **공고 URL** 또는 **JD 원문**을 직접 제공하면 플랫폼 검색(Phase 2)을 건너뛰고 **Phase 3(분석) → Phase 4(매칭)** 로 직행합니다.
 
-- **URL 입력**: WebFetch로 본문을 확보합니다. 원티드 링크는 HTML 대신 API detail endpoint(`https://www.wanted.co.kr/api/v4/jobs/{id}`)를 사용합니다. 사람인 단축 URL은 Phase 2의 #118d 규칙(리다이렉트 재시도 → 실패 시에만 복붙 요청)을 따릅니다.
+- **URL 입력**: WebFetch로 본문을 확보합니다. **원티드 링크는 분석·북마크 전에 반드시 생사 판정**합니다 — `node "$_JS_BROWSER_SCRIPT" verify "<url>"`로 판정해 `active`가 아니면(closed/unknown) **분석하지 않고** "이미 마감된 공고로 확인됩니다"로 안내합니다(직접 입력 경로도 마감 공고 재노출 방지 — Phase 2 게이트와 동일 fail-closed). HTML/스니펫으로 판정하지 않습니다. 사람인 단축 URL은 Phase 2의 #118d 규칙(리다이렉트 재시도 → 실패 시에만 복붙 요청)을 따릅니다.
 - **원문 붙여넣기**: 붙여넣은 텍스트를 그대로 공고 본문으로 취급합니다.
 - 두 경우 모두 **본문을 확보한 상태**이므로 Phase 4의 '본문 미확보 시 점수 금지' 가드를 충족해 매칭 스코어를 산출할 수 있습니다.
 - 분석 결과(추출 키워드·자소서 문항)는 관심 공고 북마크로서 `$_JS_STATE/job-cache/`에 저장합니다(실제 지원 항목 전용인 tracker/applications.jsonl과 분리 — 사용자가 지원을 결심하면 그때 tracker에 편입).
@@ -201,17 +201,20 @@ echo "{\"skill\":\"job-search\",\"ts\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"pid\
 > - "This job is no longer available", "Job closed", "Expired"
 > 날짜 필터로 통과했더라도 페이지 본문에 위 문구가 있으면 마감 처리합니다.
 >
-> **⚠️ 원티드 공고 검증 — API detail endpoint 사용 (HTML WebFetch 금지):**
-> Wanted 페이지(`wd/{id}`)는 JavaScript로 마감 메시지를 렌더링하므로 WebFetch로는 마감 감지 불가.
-> 반드시 `https://www.wanted.co.kr/api/v4/jobs/{id}` JSON API를 사용하세요.
-> `status: "close"` 또는 `hidden: true`이면 즉시 제외. `due_time:null` 공고 최대 10개까지 확인.
-> **ID 범위 검증**: API 목록에 없는 ID는 훈련 데이터 출처이므로 절대 포함 금지.
+> **⚠️ 원티드 공고 생사 판정 — 반드시 verify 명령 사용 (HTML WebFetch 금지):**
+> Wanted 페이지(`wd/{id}`)는 JavaScript로 마감 메시지를 렌더링하므로 HTML로는 마감 감지가 불가하고,
+> 상시채용(due_time:null) 공고를 "진행 중"으로 오판합니다(2026-07-19 prod 사고: HTML 재확인이 마감 3건을 전부 진행 중으로 오판).
+> 출력에 포함하려는 **모든** 원티드 링크는 출처 불문(WebSearch·캐시·과거 산출물 포함) 아래 명령으로 **전수** 판정합니다(상한 없음):
+> `node "$_JS_BROWSER_SCRIPT" verify "<url|id>" ["<url|id>"...]` → `verdict`가 `active`인 것만 포함, `closed`/`unknown`은 제외.
+> (`fetch-jobs.mjs wanted` 수집 결과는 스크립트가 내부에서 이미 전수 검증하므로 재실행 불필요.)
+> 사용자가 "마감 여부 확인해줘"라고 재확인을 요청한 경우에도 동일합니다 — verify 결과만 신뢰하고 HTML 열람으로 판정하지 않습니다.
+> **ID 범위 검증**: API 목록/검색 결과에 없는 ID는 훈련 데이터 출처이므로 절대 포함 금지.
 
 **플랫폼별 접근 방법 (v0.4.0 실제 테스트 검증):**
 
 | 플랫폼 | 방법 | 마감일 포함 | 비고 |
 |--------|------|------------|------|
-| 원티드 | ✅ JSON API + API detail 검증 | ✅ due_time 필드 | IT/스타트업 특화 |
+| 원티드 | ✅ fetch-jobs.mjs (detail 전수 검증 내장) | ✅ due_time 실값 | IT/스타트업 특화 |
 | 잡코리아 | ✅ Playwright (Tailwind 개편 대응) | ✅ MM/DD 마감일 | 대기업/공기업 공채 |
 | 사람인 | ✅ Playwright (스텔스 모드) | ✅ 날짜 파싱 | 봇 감지 우회 적용 |
 | 점핏 | ✅ Playwright | ✅ D-N 잔여일 | IT 직군 특화 |
@@ -224,12 +227,23 @@ echo "{\"skill\":\"job-search\",\"ts\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"pid\
 - **TTL은 2일**입니다. 2일이 지난 캐시는 폐기하고 재수집합니다.
 - **캐시 재사용 시 마감 재검증 3단계**(모두 통과한 공고만 출력 — 마감 공고 재노출로 마감 필터 강점이 무너지지 않게 합니다):
   1. 마감일 필터를 오늘(KST) 기준으로 재적용
-  2. 원티드 공고는 API detail(`status`/`hidden`)을 재검증
-  3. `due_time:null`·상시채용 공고는 본문 마감 문구를 재확인
+  2. 원티드 공고는 `node "$_JS_BROWSER_SCRIPT" verify "<url>"...`로 전수 재검증(`active`만 통과)
+  3. 원티드 외 상시채용·채용시마감 공고는 본문 마감 문구를 재확인
 - **기술태그 규칙**: 목록 페이지에서 추출, 30자 미만·최대 8개, 사람인은 태그가 노출되지 않으므로 생략합니다. (fetch-jobs.mjs에 기구현)
 - **매칭 top-3 fallback**: 프로필이 없어 AI 매칭 top-3를 만들 수 없으면 마감임박순 정렬로 대체합니다.
 
-#### 1단계: 원티드 API
+#### 1단계: 원티드 — fetch-jobs.mjs (detail 전수 검증 내장)
+
+**1차 경로는 스크립트 실행입니다.** 수집된 전 건을 `api/v4/jobs/{id}`로 전수 검증(fail-closed)하고 deadline을 실값(`YYYY-MM-DD 마감` / `상시채용`)으로 채워 반환하므로, 별도 마감 확인이 필요 없습니다:
+
+```bash
+node "$_JS_BROWSER_SCRIPT" wanted "{키워드}" 20 [entry|experienced]
+```
+
+- stderr의 `[fetch-jobs:diag] wanted verified=N excluded_closed=M`으로 검증 결과를 확인할 수 있습니다.
+- `verify_outage`(검증 실패율이 과반) 시 빈 배열이 반환됩니다 — 원티드 섹션을 생략하고 타 플랫폼 결과로 진행합니다(미검증 공고를 내보내지 않습니다).
+
+**보조 경로 (스크립트 실행 불가 시에만): JSON 목록 API 직접 조회**
 
 직무 카테고리에 맞는 API URL 사용:
 
@@ -262,12 +276,10 @@ API 응답에서 얻은 job ID 목록만 사용하세요. API 목록의 최소 I
 ID가 목록에 없으면 훈련 데이터에서 기억한 것이므로 **즉시 제외**.
 (예: 현재 API 목록이 360,092~360,429 범위라면, ID 66113은 목록에 없으므로 절대 포함 금지)
 
-**원티드 공고 마감 검증 — API detail endpoint 사용 (전체, 최대 10개):**
-HTML 페이지(wd/{id})가 아닌 **API detail endpoint**를 사용하세요 — HTML은 JS 렌더링이 필요해 마감 감지가 불가합니다.
-`due_time: null`인 공고에 대해 `WebFetch("https://www.wanted.co.kr/api/v4/jobs/{id}")`를 실행하고:
-- JSON에서 `"status": "close"` 이거나 `"hidden": true`이면 **즉시 제외**
-- `"status": "active"`이고 `"hidden": false`이면 포함 가능
-- 최대 10개까지 확인 (JSON이라 HTML보다 빠름)
+**보조 경로로 얻은 공고는 출력 전 전 건 verify 필수 (상한 없음):**
+목록 API의 status는 조회 시점 값일 뿐이므로, 보조 경로로 수집한 공고는 출력 전에
+`node "$_JS_BROWSER_SCRIPT" verify "<id>" ["<id>"...]`로 전수 판정하고 `active`만 포함합니다.
+(위 "마감 공고 필터링 규칙"의 원티드 생사 판정 규칙과 동일 — HTML WebFetch 판정 금지.)
 
 #### 2단계: 잡코리아 Playwright 브라우저 스크래핑
 
@@ -351,8 +363,17 @@ site:wanted.co.kr "{직무}" 2026
 site:jobkorea.co.kr "{직무}" 채용
 ```
 
-> ⚠️ WebSearch(구글) 결과는 **이미 마감된 공고가 포함**될 수 있습니다.
-> 검색 스니펫에서 마감일/게재일을 반드시 확인하고, 확인 불가하면 "미확인" 표시 후 사용자에게 원본 URL 확인 요청.
+> ⚠️ WebSearch(구글) 결과는 **이미 마감된 공고가 포함**될 수 있습니다 — 구글 인덱스는 수주~수개월 전
+> 스냅샷이라, 2026-07-19 prod 사고에서 이 경로로 유입된 원티드 공고 3건이 전부 마감 상태였습니다.
+>
+> **하드게이트 (예외 없음):**
+> 1. **원티드 링크(`wanted.co.kr/wd/{id}`)**: 출력 전 반드시 `node "$_JS_BROWSER_SCRIPT" verify "<url>"...`로
+>    전수 판정 — `active`만 포함, `closed`/`unknown`은 목록에서 제외합니다. 스니펫의 날짜·"상시채용" 문구로
+>    판정하지 않습니다.
+> 2. **잡코리아·사람인·점핏 링크**: 스니펫에서 마감일/게재일을 확인하고, 본문 마감 문구 필터(위 규칙)를 적용합니다.
+> 3. **뉴스 기사·회사 채용페이지 등 비플랫폼 소스**: 마감 판정이 불가하므로 공고로 단정하지 말고
+>    "⚠️ 모집 여부 원문 직접 확인 필요" 라벨을 반드시 붙입니다.
+> 확인 불가하면 "미확인" 표시 후 사용자에게 원본 URL 확인을 요청합니다.
 
 #### fallback UX (수집 실패 시)
 

@@ -2,16 +2,39 @@
 /**
  * Playwright-based job listing fetcher for JS-rendered platforms.
  * Usage: node fetch-jobs.mjs <platform> <keyword> [limit] [career] [location]
+ *        node fetch-jobs.mjs verify <url|id> [<url|id>...]
  * Platform: jumpit | jobkorea | saramin | wanted
  * Career: entry (신입) | experienced (경력) | (생략시 전체)
  * Location: seoul|gyeonggi|busan|incheon|daejeon|daegu|gwangju|remote (생략시 전체)
  * Outputs JSON array to stdout.
  */
 
-import { chromium } from 'playwright';
 import { logFailure } from './fetch-diag.mjs';
+import { verifyWantedJobs, verifyInputs } from './wanted-verify.mjs';
 
 const [, , platform, keyword, arg3, arg4, arg5] = process.argv;
+
+// ─── verify 서브커맨드 — 원티드 공고 생사 확인 (Playwright 불필요) ─────────────
+// WebSearch 유입 링크·캐시 재사용·"마감 여부 확인" 요청의 표준 판정 도구.
+// HTML 페이지는 마감 배너를 JS 렌더링해 판정 불가 → detail API만 신뢰.
+if (platform === 'verify') {
+  const inputs = process.argv.slice(3);
+  if (inputs.length === 0) {
+    process.stderr.write('Usage: fetch-jobs.mjs verify <wanted-url|id> [<wanted-url|id>...]\n');
+    process.exit(1);
+  }
+  const verdicts = await verifyInputs(inputs);
+  // write 콜백으로 flush 완료를 기다린 뒤 종료 — 즉시 process.exit(0)하면 대량 출력이
+  // OS 버퍼로 flush되기 전에 잘릴 수 있다(리뷰 반영).
+  await new Promise((resolve) => {
+    process.stdout.write(JSON.stringify(verdicts, null, 2) + '\n', resolve);
+  });
+  // 전건 판정 불가(bad_input/전건 unknown)면 비정상 종료로 오케스트레이터가 실패를 구분하게 한다.
+  const allBad = verdicts.length > 0 && verdicts.every((v) => v.verdict === 'unknown');
+  process.exit(allBad ? 2 : 0);
+}
+
+const { chromium } = await import('playwright');
 // arg3이 숫자가 아니면 career로 해석 (limit 생략 호출: fetch-jobs.mjs platform keyword entry)
 let limit, career;
 if (arg3 && isNaN(parseInt(arg3, 10))) {
@@ -42,7 +65,10 @@ const LOCATION_KO = {
 };
 
 if (!platform || !keyword) {
-  process.stderr.write('Usage: fetch-jobs.mjs <platform> <keyword> [limit] [career] [location]\n');
+  process.stderr.write(
+    'Usage: fetch-jobs.mjs <platform> <keyword> [limit] [career] [location]\n'
+    + '       fetch-jobs.mjs verify <wanted-url|id> [<wanted-url|id>...]\n',
+  );
   process.exit(1);
 }
 
@@ -87,6 +113,7 @@ const page = await context.newPage();
 let jobs = [];
 let lastHtml = '';   // 진단용: 마지막으로 확보한 HTML (setContent/직접 fetch)
 let lastStatus = 0;  // 진단용: 마지막 HTTP 상태 코드
+let wantedScraped = 0; // wanted 검증 전 수집 건수 — 전량 제외 시 0건 진단 오분류 방지
 
 try {
   if (platform === 'jumpit') {
@@ -329,8 +356,16 @@ try {
         }
         return results;
       }, { lim: limit, careerArg: career });
+
+      // 마감 검증(전수, fail-closed) — 카드 텍스트는 마감일을 거의 못 뽑고
+      // (prod 실측 136/136 "마감일 미확인") 마감 공고 감지도 불가하므로,
+      // detail API로 생사 판정 + deadline 을 due_time 실값으로 교체한다.
+      wantedScraped = jobs.length;
+      const verifyResult = await verifyWantedJobs(jobs);
+      jobs = verifyResult.jobs;
     } catch (err) {
       process.stderr.write(`wanted scrape error: ${err.message}\n`);
+      jobs = []; // fail-closed: 검증을 못 거친 수집분은 내보내지 않는다
     }
 
   } else if (platform === 'jobkorea') {
@@ -420,7 +455,9 @@ try {
   }
 
   // 0건 수집 시 실패 원인 진단 — "차단"과 "결과 없음"을 구분해 stderr에 남긴다.
-  if (jobs.length === 0) {
+  // wanted 는 수집은 됐지만 검증에서 전량 제외된 경우가 있어(verify_outage/전부 마감)
+  // 그때는 challenge/empty_result 로 오분류하지 않도록 건너뛴다(검증 진단 라인이 이미 남음).
+  if (jobs.length === 0 && !(platform === 'wanted' && wantedScraped > 0)) {
     let diagHtml = lastHtml;
     // 사람인은 직접 fetch한 HTML(lastHtml)을 쓰고, page.goto 계열은 로드된 DOM을 확보한다.
     if (!diagHtml) {
