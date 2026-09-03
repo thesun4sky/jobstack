@@ -24,7 +24,7 @@
 
 `job_link_tags`는 **일반 직무 연결 태그**까지만 담는다. NCS 능력단위 매핑은 ncs 스킬이 이 카드를 입력으로 이어받아 별도로 수행한다(경계 준수, 이 스키마는 관여하지 않음).
 
-`ai_usage`가 존재(비-null)하면 `tool`·`task`·`effect` 세 필드 모두 문자열이어야 `bin/jobstack-exp.mjs validate`를 통과한다. `add`는 세 플래그(`--ai-usage-tool`/`--ai-usage-task`/`--ai-usage-effect`)를 함께 요구해 처음부터 불완전한 값이 저장되지 않게 하고, `update`는 필드 하나씩 나눠 채우는 것을 허용한다 — 세 필드가 모두 채워지기 전까지는 `validate`가 실패 상태로 남는다(의도된 동작, 미완성 카드를 조용히 통과시키지 않는다).
+`ai_usage`가 존재(비-null)하면 `tool`·`task`·`effect` 세 필드 모두 문자열이어야 `bin/jobstack-exp.mjs validate`를 통과한다. `add`는 세 플래그(`--ai-usage-tool`/`--ai-usage-task`/`--ai-usage-effect`)를 함께 요구하고, `update`도 갱신 결과 세 값이 모두 채워져야 저장한다 — `ai_usage`가 없던 카드에 한 플래그만 주면 거부되고, 이미 완전한 `ai_usage`가 있는 카드는 일부 필드만 갱신할 수 있다(불완전한 `ai_usage`가 저장되는 경로를 두지 않는다. 그 밖의 필드는 `update`가 그대로 쓰고 `validate`가 완성도 게이트다).
 
 ---
 
