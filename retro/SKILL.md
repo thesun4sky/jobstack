@@ -12,54 +12,19 @@ allowed-tools:
   - Write
   - Grep
   - AskUserQuestion
+  - WebSearch
 benefits-from: [mock-interview, tracker]
 ---
 
-```bash
-# ─── jobstack 프리앰블 ─────────────────────────
-_JS_STATE="${JOBSTACK_STATE_DIR:-$HOME/.jobstack}"
-mkdir -p "$_JS_STATE/analytics" "$_JS_STATE/profiles" "$_JS_STATE/tracker" \
-         "$_JS_STATE/company-cache" "$_JS_STATE/interview-history" "$_JS_STATE/sessions" "$_JS_STATE/defense-maps" "$_JS_STATE/job-cache"
+!`bash "${CLAUDE_SKILL_DIR}/scripts/preamble.sh" retro "${CLAUDE_SESSION_ID}"`
 
-# 세션 추적
-echo "$$" > "$_JS_STATE/sessions/$$"
-trap 'rm -f "$_JS_STATE/sessions/$$"' EXIT
+> 위 실행 컨텍스트가 비어 있거나 `KEY=VALUE` 목록 대신 `!` 명령·정책 차단 문구가 그대로 보이면(`!` 주입이 꺼진 환경), 첫 Bash 명령으로 `bash "${CLAUDE_SKILL_DIR}/scripts/preamble.sh" retro`를 실행해 같은 컨텍스트를 확보하고 `${CLAUDE_SKILL_DIR}/references/guardrails.md`를 Read 하세요. 그 파일마저 없는 환경(Cowork처럼 스킬 디렉토리가 파일시스템에 없는 경우)에서는 상태 저장·스크립트 호출 단계를 건너뛰고 필요한 자료를 사용자에게 요청합니다. `STATE_WRITE_FAILED=true`가 보이면 `JOBSTACK_STATE_DIR` 경로를 사용자에게 확인합니다. 이 스킬의 Bash 스니펫은 첫 줄에 `. "${JOBSTACK_STATE_DIR:-$HOME/.jobstack}/env.sh"`를 두어 `$_JS_STATE`·`$_JS_BIN`·`$TODAY`를 불러옵니다.
 
-# 설정 로딩
-_JS_CONFIG="${CLAUDE_SKILL_DIR}/../bin/jobstack-config"
-if [ -x "$_JS_CONFIG" ]; then
-  PROACTIVE=$("$_JS_CONFIG" get proactive 2>/dev/null || echo "true")
-else
-  PROACTIVE="true"
-fi
+### 공통 가드레일 (references/guardrails.md)
 
-# 최근 면접 기록 확인
-echo "--- 최근 면접 기록 ---"
-RETRO_COUNT=$(ls "$_JS_STATE/interview-history/" 2>/dev/null | grep "^retro-" | wc -l | tr -d ' ')
-ls -t "$_JS_STATE/interview-history/" 2>/dev/null | head -5 || echo "기록 없음"
-echo "RETRO_HISTORY_COUNT=$RETRO_COUNT"
+!`sed '1{/^# /d;}' "${CLAUDE_SKILL_DIR}/references/guardrails.md"`
 
-# 최근 지원 현황 확인
-echo "--- 최근 지원 현황 ---"
-tail -5 "$_JS_STATE/tracker/applications.jsonl" 2>/dev/null || echo "기록 없음"
-
-# 활성 세션 수
-for _f in "$_JS_STATE/sessions/"*; do
-  [ -f "$_f" ] || continue
-  kill -0 "$(basename "$_f")" 2>/dev/null || rm -f "$_f"
-done
-ACTIVE_SESSIONS=$(ls "$_JS_STATE/sessions/" 2>/dev/null | wc -l | tr -d ' ')
-echo "ACTIVE_SESSIONS=$ACTIVE_SESSIONS"
-echo "PROACTIVE=$PROACTIVE"
-echo "SKILL_NAME=retro"
-
-# 텔레메트리
-echo "{\"skill\":\"retro\",\"ts\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"pid\":$$}" \
-  >> "$_JS_STATE/analytics/skill-usage.jsonl" 2>/dev/null || true
-```
-
-> **공통 가드레일**: 작업 시작 전 `${CLAUDE_SKILL_DIR}/../templates/guardrails.md` 를 Read 도구로 읽고 §1~§6 전 규칙을 준수하세요.
-
+!`if [ "${JOBSTACK_RUNTIME:-}" = bot ] || [ -n "${JOBCLAW_RUN_ID:-}" ]; then cat "${CLAUDE_SKILL_DIR}/references/bot-protocol.md"; fi`
 
 # 면접/지원 회고
 
@@ -93,7 +58,7 @@ C) 누적 패턴 분석 (여러 면접 경험 종합) ← 기록 3건+ 시 강�
 
 탈락은 어느 단계에서 떨어졌는지에 따라 진단 축이 완전히 다릅니다. 먼저 탈락 직전 단계를 확정합니다.
 
-1. `$_JS_STATE/tracker/applications.jsonl`에서 해당 건의 `status`를 확인합니다. 상태 어휘는 tracker 상태 모델을 따릅니다 — 저장은 영문 키지만 표시·판단은 한글 라벨(준비중/지원완료/서류합격/1차면접/2차면접/최종면접/최종합격/불합격/지원취소)로 합니다. 읽은 값이 영문 키거나 구버전 한글이면 `docs/tracker-states.md`의 매핑표로 한글 라벨로 정규화한 뒤 사용합니다.
+1. `$_JS_STATE/tracker/applications.jsonl`에서 해당 건의 `status`를 확인합니다. 상태 어휘는 tracker 상태 모델을 따릅니다 — 저장은 영문 키지만 표시·판단은 한글 라벨(준비중/지원완료/서류합격/1차면접/2차면접/최종면접/최종합격/불합격/지원취소)로 합니다. 읽은 값이 영문 키거나 구버전 한글이면 `${CLAUDE_SKILL_DIR}/references/tracker-states.md`의 매핑표로 한글 라벨로 정규화한 뒤 사용합니다.
 2. 기록이 없으면 AskUserQuestion 1회로 탈락 단계를 확인합니다:
    ```
    어느 단계에서 탈락했나요?
@@ -150,6 +115,10 @@ AskUserQuestion으로 하나씩 질문합니다:
 - 미끼 전략이 작동했는지 확인
 - **미끼 이후 방어 실패 지점 표시**: 자소서·답변으로 미끼를 던졌는데 꼬리질문에서 무너진 지점을 별도로 표시하고, 그 지점을 다음 `/mock_interview` 연습 대상으로 지정합니다.
 
+### 3.2.1 미끼 방어 준비율 (defense-map)
+
+`$_JS_STATE/defense-maps/`에 해당 회사의 defense-map(YAML, `${CLAUDE_SKILL_DIR}/references/defense-map-schema.md` 계약)이 있으면 최신 파일 1개를 Read해 **방어 준비율 = `defense_status: ready` entry 수 / 전체 entry 수**를 계산하고 회고 리포트의 참고 지표로 적습니다. 회사명은 공백 제거·소문자 부분일치로 느슨하게 매칭합니다. 면접에서 실제로 받은 질문이 defense-map의 `questions`와 겹치면 어떤 entry가 실전에서 통했는지(`ready`) 또는 막혔는지(`weak`) 회고에 기록합니다 — 파일 갱신 자체는 `/mock_interview` 종료 시 이뤄지므로 여기서는 읽기만 합니다. 파일이 없거나 형식이 맞지 않으면 이 지표를 생략하고 오류를 노출하지 않습니다.
+
 ### 3.3 패턴 분석
 
 interview-history 디렉토리에 이전 회고 파일이 있으면 분석합니다.
@@ -196,7 +165,7 @@ interview-history 디렉토리에 이전 회고 파일이 있으면 분석합니
 | ② 근거 부족 | 문제·역할·행동·변화 중 빠진 요소가 있음 | `/cover_letter` 소재 보강 (경험 전환 6단계) |
 | ③ 표현 문제 | 추상어·구조 때문에 전달이 약함 | `/review` |
 
-- 근거 보강은 `${CLAUDE_SKILL_DIR}/../templates/experience-methods.md` 의 §1(경험 전환 6단계)을 적용합니다.
+- 근거 보강은 `${CLAUDE_SKILL_DIR}/references/experience-methods.md` 의 §1(경험 전환 6단계)을 적용합니다.
 - **직무 변경 후 탈락**이면 '기준부터 재점검'합니다 — 같은 경험도 새 직무 공고의 키워드로 다시 해석해야 합니다.
 
 ### 3.5 전형 유형별 회고 축
@@ -255,15 +224,16 @@ actions: [1차 면접 대상 모의면접 2회, before→after 수치 3건 보�
 ---
 ```
 
-- `stage`는 tracker 한글 상태 라벨 중 하나로만 씁니다(canonical 매핑은 `docs/tracker-states.md`). `weakness_tags`는 위 고정 8태그 안에서만 씁니다 — 새 태그를 임의로 만들지 않습니다.
-- **제3자 PII 기록 금지**: 면접관 실명·연락처 등 제3자 정보를 회고 파일에 남기지 않습니다. 3등급 PII 정책(제3자=금지, 익명화·집계만)을 따르며, 자세한 규칙은 `${CLAUDE_SKILL_DIR}/../templates/guardrails.md` §1을 참조합니다.
+- `stage`는 tracker 한글 상태 라벨 중 하나로만 씁니다(canonical 매핑은 `${CLAUDE_SKILL_DIR}/references/tracker-states.md`). `weakness_tags`는 위 고정 8태그 안에서만 씁니다 — 새 태그를 임의로 만들지 않습니다.
+- **제3자 PII 기록 금지**: 면접관 실명·연락처 등 제3자 정보를 회고 파일에 남기지 않습니다. 3등급 PII 정책(제3자=금지, 익명화·집계만)을 따르며, 자세한 규칙은 `${CLAUDE_SKILL_DIR}/references/guardrails.md` §1을 참조합니다.
 - 지원 현황을 관리 중이면 봇 네이티브 명령 `/track`·`/myapps`에서 해당 건의 상태·메모를 갱신하도록 안내합니다.
 
-**회고 상세 기록:** 회고 모드(A/B/C)·탈락 단계·weakness_tags 등 회고 상세는 위 회고 산출 파일(`retro-{기업명}-{date}.md`)의 YAML 프론트매터에만 남깁니다. `skill-usage.jsonl`에는 프리앰블에서 이미 기록한 표준 텔레메트리 외에 별도 이벤트를 추가하지 않습니다 — 이벤트 규격은 `docs/telemetry-events.md`의 정의된 종류만 씁니다.
+**회고 상세 기록:** 회고 모드(A/B/C)·탈락 단계·weakness_tags 등 회고 상세는 위 회고 산출 파일(`retro-{기업명}-{date}.md`)의 YAML 프론트매터에만 남깁니다. `skill-usage.jsonl`에는 프리앰블에서 이미 기록한 표준 텔레메트리 외에 별도 이벤트를 추가하지 않습니다 — 이벤트 규격은 `${CLAUDE_SKILL_DIR}/references/telemetry-events.md`의 정의된 종류만 씁니다.
 
 **결과물 뷰어 안내:** 회고 파일을 저장한 뒤 다음 명령으로 브라우저에서 열 수 있음을 사용자에게 안내합니다.
 ```bash
-$CLAUDE_SKILL_DIR/../bin/jobstack-view <회고파일.md>
+. "${JOBSTACK_STATE_DIR:-$HOME/.jobstack}/env.sh"
+"$_JS_BIN/jobstack-view" <회고파일.md>
 ```
 
 ---

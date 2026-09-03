@@ -14,56 +14,15 @@ allowed-tools:
 benefits-from: [resume, cover-letter, portfolio, company-research, career-history, scout-profile]
 ---
 
-```bash
-# ─── jobstack 프리앰블 ─────────────────────────
-_JS_STATE="${JOBSTACK_STATE_DIR:-$HOME/.jobstack}"
-mkdir -p "$_JS_STATE/analytics" "$_JS_STATE/profiles" "$_JS_STATE/tracker" \
-         "$_JS_STATE/company-cache" "$_JS_STATE/interview-history" "$_JS_STATE/sessions" "$_JS_STATE/defense-maps" "$_JS_STATE/job-cache"
+!`bash "${CLAUDE_SKILL_DIR}/scripts/preamble.sh" review "${CLAUDE_SESSION_ID}"`
 
-# 세션 추적
-echo "$$" > "$_JS_STATE/sessions/$$"
-trap 'rm -f "$_JS_STATE/sessions/$$"' EXIT
+> 위 실행 컨텍스트가 비어 있거나 `KEY=VALUE` 목록 대신 `!` 명령·정책 차단 문구가 그대로 보이면(`!` 주입이 꺼진 환경), 첫 Bash 명령으로 `bash "${CLAUDE_SKILL_DIR}/scripts/preamble.sh" review`를 실행해 같은 컨텍스트를 확보하고 `${CLAUDE_SKILL_DIR}/references/guardrails.md`를 Read 하세요. 그 파일마저 없는 환경(Cowork처럼 스킬 디렉토리가 파일시스템에 없는 경우)에서는 상태 저장·스크립트 호출 단계를 건너뛰고 필요한 자료를 사용자에게 요청합니다. `STATE_WRITE_FAILED=true`가 보이면 `JOBSTACK_STATE_DIR` 경로를 사용자에게 확인합니다. 이 스킬의 Bash 스니펫은 첫 줄에 `. "${JOBSTACK_STATE_DIR:-$HOME/.jobstack}/env.sh"`를 두어 `$_JS_STATE`·`$_JS_BIN`·`$TODAY`를 불러옵니다.
 
-# 설정 로딩
-_JS_CONFIG="${CLAUDE_SKILL_DIR}/../bin/jobstack-config"
-if [ -x "$_JS_CONFIG" ]; then
-  PROACTIVE=$("$_JS_CONFIG" get proactive 2>/dev/null || echo "true")
-else
-  PROACTIVE="true"
-fi
+### 공통 가드레일 (references/guardrails.md)
 
-# 프로필 로딩
-PROFILE="$_JS_STATE/profiles/default.yaml"
-if [ -f "$PROFILE" ]; then
-  echo "PROFILE_EXISTS=true"
-  echo "--- 프로필 요약 ---"
-  head -20 "$PROFILE"
-  echo "---"
-else
-  echo "PROFILE_EXISTS=false"
-fi
+!`sed '1{/^# /d;}' "${CLAUDE_SKILL_DIR}/references/guardrails.md"`
 
-# 기업분석 캐시 확인
-echo "--- company-cache ---"
-ls "$_JS_STATE/company-cache/" 2>/dev/null | head -5 || echo "없음"
-
-# 활성 세션 수
-for _f in "$_JS_STATE/sessions/"*; do
-  [ -f "$_f" ] || continue
-  kill -0 "$(basename "$_f")" 2>/dev/null || rm -f "$_f"
-done
-ACTIVE_SESSIONS=$(ls "$_JS_STATE/sessions/" 2>/dev/null | wc -l | tr -d ' ')
-echo "ACTIVE_SESSIONS=$ACTIVE_SESSIONS"
-echo "PROACTIVE=$PROACTIVE"
-echo "SKILL_NAME=review"
-
-# 텔레메트리
-echo "{\"skill\":\"review\",\"ts\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"pid\":$$}" \
-  >> "$_JS_STATE/analytics/skill-usage.jsonl" 2>/dev/null || true
-```
-
-> **공통 가드레일**: 작업 시작 전 `${CLAUDE_SKILL_DIR}/../templates/guardrails.md` 를 Read 도구로 읽고 §1~§6 전 규칙을 준수하세요.
-
+!`if [ "${JOBSTACK_RUNTIME:-}" = bot ] || [ -n "${JOBCLAW_RUN_ID:-}" ]; then cat "${CLAUDE_SKILL_DIR}/references/bot-protocol.md"; fi`
 
 # 지원서류 통합 리뷰
 
@@ -169,7 +128,7 @@ AI풍 일반문장      치환 테스트 2종 통과
 - "결이요" 구조가 지켜지고 있는가?
 - 학생 톤이 남아있지 않은가?
 
-**치환 테스트 2종**: 지원동기·기업 관련 문단에 다음 두 테스트를 적용합니다. 판정 로직은 `${CLAUDE_SKILL_DIR}/../templates/humanize-check.md` §1을 참조합니다(스킬 본문에 자체 정의하지 않음).
+**치환 테스트 2종**: 지원동기·기업 관련 문단에 다음 두 테스트를 적용합니다. 판정 로직은 `${CLAUDE_SKILL_DIR}/references/humanize-check.md` §1을 참조합니다(스킬 본문에 자체 정의하지 않음).
 - **회사명 치환** — 회사명을 경쟁사로 바꿔도 문장이 성립하면 실패
 - **타 지원자 치환** — 주어를 다른 지원자로 바꿔도 성립하면 실패
 
@@ -190,7 +149,7 @@ AI풍 일반문장      치환 테스트 2종 통과
 
 즉답 근거가 서류에 없는 문장은 `⚠️위험`으로 표시하고, **면접 전 답변 준비 필수** 또는 **문장 수위 조정** 중 택일을 안내합니다.
 
-**defense-map 산출**: 미끼 문장·예상 질문·방어 판정의 매핑을 `${CLAUDE_SKILL_DIR}/../docs/defense-map-schema.md`의 YAML 계약 형식(schema_version 1, `source_skill: review`)으로 산출해 mock-interview가 소비할 수 있게 합니다. 저장 경로는 `$_JS_STATE/defense-maps/<회사명>_<직무>_<YYYYMMDD>.yaml`이며, Phase 6과 동일한 Bash heredoc 방식으로 기록합니다(`answer_hint`는 사용자가 확인하기 전이면 `null` — 추정 작성 금지).
+**defense-map 산출**: 미끼 문장·예상 질문·방어 판정의 매핑을 `${CLAUDE_SKILL_DIR}/references/defense-map-schema.md`의 YAML 계약 형식(schema_version 1, `source_skill: review`)으로 산출해 mock-interview가 소비할 수 있게 합니다. 저장 경로는 `$_JS_STATE/defense-maps/<회사명>_<직무>_<YYYYMMDD>.yaml`이며, Phase 6과 동일한 Bash heredoc 방식으로 기록합니다(`answer_hint`는 사용자가 확인하기 전이면 `null` — 추정 작성 금지).
 
 ---
 
@@ -215,7 +174,7 @@ AI풍 일반문장      치환 테스트 2종 통과
 ```
 
 ### 개인정보 점검 (제출 전 최종 필터)
-review는 제출 전 마지막 관문이므로 PII 최종 필터 위치로 적합합니다. 다음 3종을 인라인 기준으로 검사합니다(날조·외부출처 PII 금지 원칙은 `${CLAUDE_SKILL_DIR}/../templates/guardrails.md` §1 준수).
+review는 제출 전 마지막 관문이므로 PII 최종 필터 위치로 적합합니다. 다음 3종을 인라인 기준으로 검사합니다(날조·외부출처 PII 금지 원칙은 `${CLAUDE_SKILL_DIR}/references/guardrails.md` §1 준수).
 - **법정 금지항목** — 채용절차법 제4조의3이 금지하는 항목의 기재 여부: 용모·키·체중 등 신체 조건, 출신지역·혼인 여부·재산, 직계존비속 및 형제자매의 학력·직업·재산. 발견 시 삭제를 권고하고, **기업이 기재를 요구한 경우라면 법 위반 소지(500만원 이하 과태료)**임을 사용자 권리로 안내합니다.
 - **블라인드/공공기관(NCS) 식별정보** — 블라인드 전형 지원 시 자소서·경험기술서 내 학교명 등 식별정보 노출 검사(노출 시 불이익 가능).
 - **과다 개인정보** — 주민등록번호·상세 주소 등 채용에 불필요한 개인정보 기재.
@@ -228,14 +187,14 @@ review는 제출 전 마지막 관문이므로 PII 최종 필터 위치로 적�
 
 각 계층 안에서 다음 규칙으로 지적합니다:
 1. **위치·근거 표시** — 모든 지적은 `파일명 > 문항/섹션 + 원문 문장 인용` 형식으로 어디를 근거로 하는지 밝힙니다.
-2. **날조 금지** — 원문에 없는 내용을 근거로 지적하지 않습니다(`${CLAUDE_SKILL_DIR}/../templates/guardrails.md` §1 준수).
+2. **날조 금지** — 원문에 없는 내용을 근거로 지적하지 않습니다(`${CLAUDE_SKILL_DIR}/references/guardrails.md` §1 준수).
 3. **반박 시 재검증** — 사용자가 지적에 반박하면 해당 원문을 다시 Read해 재검증한 뒤 정정하거나 근거를 다시 제시합니다.
 
 ---
 
 ## Phase 5.5: 다음 행동 분기
 
-진단을 마친 뒤 AskUserQuestion으로 다음 행동을 확인합니다(구조는 `${CLAUDE_SKILL_DIR}/../templates/ask-user-question.md` 준수 — 한 번에 하나의 질문):
+진단을 마친 뒤 AskUserQuestion으로 다음 행동을 확인합니다(구조는 `${CLAUDE_SKILL_DIR}/references/ask-user-question.md` 준수 — 한 번에 하나의 질문):
 
 - **A) 지금 수정 반영 후 재점검** — 보완 항목을 반영하고 다시 점검합니다.
 - **B) 수정 후 나중에 다시 `/review`** — 지금은 진단만 받고, 나중에 수정본으로 재실행합니다.
@@ -258,16 +217,14 @@ review는 제출 전 마지막 관문이므로 PII 최종 필터 위치로 적�
 
 ### 출력·영속화
 1. **인라인 출력** — 질문 세트를 응답 본문에 바로 출력합니다.
-2. **파일 영속화** — 이 산출물에 한해 **Bash 파일 쓰기를 허용**합니다(allowed-tools에 Write를 추가하지 않고, resume/cover-letter #118b와 동일한 **File output protocol**을 따릅니다). 질문 세트를 소실 없이 남기기 위해:
-   - **런 디렉토리 환경(jobclaw)**: Bash heredoc으로 `runs/$JOBCLAW_RUN_ID/output/source.md`에 작성 후 `[OUTPUT_FILE: ...]` 마커를 출력합니다.
-   - **독립 CLI 환경(런 디렉토리 없음)**: Bash heredoc으로 현재 디렉토리에 `면접예상질문-{기업명}.md`로 저장한 뒤 아래 결과물 뷰어를 안내합니다.
+2. **파일 영속화** — 이 산출물에 한해 **Bash 파일 쓰기를 허용**합니다(allowed-tools에 Write를 추가하지 않습니다). 질문 세트를 소실 없이 남기기 위해 Bash heredoc으로 현재 디렉토리에 `면접예상질문-{기업명}.md`로 저장한 뒤 아래 결과물 뷰어를 안내합니다. (봇 환경의 파일 출력 규칙은 실행 컨텍스트가 `bot`일 때 주입되는 bot-protocol을 따릅니다.)
    ```bash
    cat > "면접예상질문-<기업명>.md" <<'EOF'
    # 면접 예상 질문 세트 — <기업명>
    ...
    EOF
    ```
-3. **질문↔미끼↔방어 판정 매핑**은 Phase 4의 defense-map 산출물(`${CLAUDE_SKILL_DIR}/../docs/defense-map-schema.md` YAML 계약)로 귀속해 mock-interview가 소비할 수 있게 합니다. 공고 기반 질문은 `location`에 "공고"를 표기합니다.
+3. **질문↔미끼↔방어 판정 매핑**은 Phase 4의 defense-map 산출물(`${CLAUDE_SKILL_DIR}/references/defense-map-schema.md` YAML 계약)로 귀속해 mock-interview가 소비할 수 있게 합니다. 공고 기반 질문은 `location`에 "공고"를 표기합니다.
 
 ---
 
@@ -280,8 +237,9 @@ review는 제출 전 마지막 관문이므로 PII 최종 필터 위치로 적�
 - **완료 (DONE)** — 재리뷰(2차 점검)에서 체크리스트 전항이 통과된 상태.
 - **우려사항 있는 완료 (DONE_WITH_CONCERNS)** — 1차 진단만 하고 종료했거나 보완 필요 항목이 남은 상태. 미재검 항목을 명시합니다.
 
-완료 시점에 텔레메트리 후속 이벤트를 남깁니다. 이벤트 스키마는 `${CLAUDE_SKILL_DIR}/../docs/telemetry-events.md`를 따릅니다. **최초 진단**은 `diagnosed`(추가 필드 없음)로, **재리뷰(2차 점검)**는 `second_review` 이벤트로 emit합니다(2차 점검 요청률 = second_review/diagnosed):
+완료 시점에 텔레메트리 후속 이벤트를 남깁니다. 이벤트 스키마는 `${CLAUDE_SKILL_DIR}/references/telemetry-events.md`를 따릅니다. **최초 진단**은 `diagnosed`(추가 필드 없음)로, **재리뷰(2차 점검)**는 `second_review` 이벤트로 emit합니다(2차 점검 요청률 = second_review/diagnosed):
 ```bash
+. "${JOBSTACK_STATE_DIR:-$HOME/.jobstack}/env.sh"
 # 최초 진단
 echo '{"skill":"review","ts":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","pid":'$$',"event":"diagnosed"}' \
   >> "$_JS_STATE/analytics/skill-usage.jsonl" 2>/dev/null || true
@@ -294,7 +252,8 @@ echo '{"skill":"review","ts":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","pid":'$$',"even
 ### 결과물 뷰어
 결과 파일 저장 시 브라우저 뷰어를 안내합니다:
 ```bash
-$CLAUDE_SKILL_DIR/../bin/jobstack-view <결과파일.md>
+. "${JOBSTACK_STATE_DIR:-$HOME/.jobstack}/env.sh"
+"$_JS_BIN/jobstack-view" <결과파일.md>
 ```
 
 다음 추천: `/mock_interview` (면접 예상 질문으로 모의면접). 이때 Phase 6에서 저장한 질문 세트 파일 경로를 함께 안내합니다.

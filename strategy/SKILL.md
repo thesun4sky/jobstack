@@ -13,52 +13,15 @@ allowed-tools:
   - WebSearch
 ---
 
-```bash
-# ─── jobstack 프리앰블 ─────────────────────────
-_JS_STATE="${JOBSTACK_STATE_DIR:-$HOME/.jobstack}"
-mkdir -p "$_JS_STATE/analytics" "$_JS_STATE/profiles" "$_JS_STATE/tracker" \
-         "$_JS_STATE/company-cache" "$_JS_STATE/interview-history" "$_JS_STATE/sessions" "$_JS_STATE/defense-maps" "$_JS_STATE/job-cache"
+!`bash "${CLAUDE_SKILL_DIR}/scripts/preamble.sh" strategy "${CLAUDE_SESSION_ID}"`
 
-# 세션 추적
-echo "$$" > "$_JS_STATE/sessions/$$"
-trap 'rm -f "$_JS_STATE/sessions/$$"' EXIT
+> 위 실행 컨텍스트가 비어 있거나 `KEY=VALUE` 목록 대신 `!` 명령·정책 차단 문구가 그대로 보이면(`!` 주입이 꺼진 환경), 첫 Bash 명령으로 `bash "${CLAUDE_SKILL_DIR}/scripts/preamble.sh" strategy`를 실행해 같은 컨텍스트를 확보하고 `${CLAUDE_SKILL_DIR}/references/guardrails.md`를 Read 하세요. 그 파일마저 없는 환경(Cowork처럼 스킬 디렉토리가 파일시스템에 없는 경우)에서는 상태 저장·스크립트 호출 단계를 건너뛰고 필요한 자료를 사용자에게 요청합니다. `STATE_WRITE_FAILED=true`가 보이면 `JOBSTACK_STATE_DIR` 경로를 사용자에게 확인합니다. 이 스킬의 Bash 스니펫은 첫 줄에 `. "${JOBSTACK_STATE_DIR:-$HOME/.jobstack}/env.sh"`를 두어 `$_JS_STATE`·`$_JS_BIN`·`$TODAY`를 불러옵니다.
 
-# 설정 로딩
-_JS_CONFIG="${CLAUDE_SKILL_DIR}/../bin/jobstack-config"
-if [ -x "$_JS_CONFIG" ]; then
-  PROACTIVE=$("$_JS_CONFIG" get proactive 2>/dev/null || echo "true")
-else
-  PROACTIVE="true"
-fi
+### 공통 가드레일 (references/guardrails.md)
 
-# 프로필 로딩
-PROFILE="$_JS_STATE/profiles/default.yaml"
-if [ -f "$PROFILE" ]; then
-  echo "PROFILE_EXISTS=true"
-  echo "--- 프로필 요약 ---"
-  head -30 "$PROFILE"
-  echo "---"
-else
-  echo "PROFILE_EXISTS=false"
-fi
+!`sed '1{/^# /d;}' "${CLAUDE_SKILL_DIR}/references/guardrails.md"`
 
-# 활성 세션 수
-for _f in "$_JS_STATE/sessions/"*; do
-  [ -f "$_f" ] || continue
-  kill -0 "$(basename "$_f")" 2>/dev/null || rm -f "$_f"
-done
-ACTIVE_SESSIONS=$(ls "$_JS_STATE/sessions/" 2>/dev/null | wc -l | tr -d ' ')
-echo "ACTIVE_SESSIONS=$ACTIVE_SESSIONS"
-echo "PROACTIVE=$PROACTIVE"
-echo "SKILL_NAME=strategy"
-
-# 텔레메트리
-echo "{\"skill\":\"strategy\",\"ts\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"pid\":$$}" \
-  >> "$_JS_STATE/analytics/skill-usage.jsonl" 2>/dev/null || true
-```
-
-> **공통 가드레일**: 작업 시작 전 `${CLAUDE_SKILL_DIR}/../templates/guardrails.md` 를 Read 도구로 읽고 §1~§6 전 규칙을 준수하세요.
-
+!`if [ "${JOBSTACK_RUNTIME:-}" = bot ] || [ -n "${JOBCLAW_RUN_ID:-}" ]; then cat "${CLAUDE_SKILL_DIR}/references/bot-protocol.md"; fi`
 
 # 취업전략 수립
 
@@ -266,7 +229,8 @@ target.industries에 공공기관·공기업이 포함되면:
 
 저장 후 브라우저에서 결과를 확인할 수 있도록 안내합니다:
 ```bash
-$CLAUDE_SKILL_DIR/../bin/jobstack-view strategy-roadmap.md
+. "${JOBSTACK_STATE_DIR:-$HOME/.jobstack}/env.sh"
+"$_JS_BIN/jobstack-view" strategy-roadmap.md
 ```
 
 ---
@@ -312,21 +276,3 @@ $CLAUDE_SKILL_DIR/../bin/jobstack-view strategy-roadmap.md
 - **우려사항 있는 완료 (DONE_WITH_CONCERNS)** — 완료했으나 사용자가 알아야 할 사항 존재. 우려사항 명시.
 - **차단됨 (BLOCKED)** — 진행 불가. 차단 요인과 시도한 내용 기술. **채용공고·최신 뉴스 등 시간 민감 데이터는 BLOCKED 시 훈련 데이터(training data)로 절대 대체하지 않습니다.** 해당 섹션을 스킵하고 `DONE_WITH_CONCERNS`로 완료 처리합니다.
 - **추가 정보 필요 (NEEDS_CONTEXT)** — 계속하기 위한 정보 부족. 필요한 내용 정확히 기술.
-
-## 시각화 이미지 생성
-
-전략 분석 완료 답변에서는 반드시 응답 맨 끝에 아래 마커를 추가한다:
-
-```
-[IMAGE_PROMPT: <영어 프롬프트>]
-```
-
-**트리거 조건 (필수):**
-- 취업 로드맵 타임라인, 역량 갭 분석, 목표 기업 맵 → **반드시** 추가
-- 단계별 전략 계획 (2단계 이상) → 추가
-- 짧은 단답, 오류 → 추가하지 않음.
-
-이 마커를 빠뜨리지 말 것 — 위 조건에 해당하면 응답의 가장 마지막 줄에 반드시 포함한다.
-
-**프롬프트 스타일:** professional infographic/diagram 스타일. 실제 목표 직무·기업·단계를 반영한다.
-예: `A clean job-search strategy roadmap infographic: a 3-stage timeline (역량 강화 → 지원 → 면접) with milestones, a competency gap chart, and target companies grouped by tier. Dark theme, Korean labels, green/yellow accents.`

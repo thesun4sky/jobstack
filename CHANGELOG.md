@@ -1,5 +1,52 @@
 # Changelog
 
+## [0.4.0] - 2026-09-03
+
+검토 보고서(`docs/plans/version-upgrade-review-2026-09.md`) P0 항목 U-01~U-06. 실측으로 확인한
+결함 3건을 고치고 실행 기반을 정리했다. 실행 기록은 `docs/plans/v1.0-execution-log.md`.
+
+### Fixed
+- **공유 템플릿이 CLI 설치에서 로드되지 않던 결함 (D-1, U-01)** — 심링크 설치에서
+  `${CLAUDE_SKILL_DIR}`이 심링크 경로로 치환되고 Read 도구가 `../templates/…`를 열지 못해
+  16개 스킬의 가드레일·방법론 참조 113곳이 실패했다. 참조를 스킬 안쪽 `references/`
+  복제본으로 바꾸고(`bin/gen-skill-docs.sh`가 동기화), 가드레일은 로드 시점 동적 주입으로
+  인라인한다. `test/test-skill-refs.sh`가 재발을 막는다.
+- **봇 전용 프로토콜의 CLI 누수 (D-2, U-02)** — `[IMAGE_PROMPT:]`(5개 스킬)·`[CHOICES]`·
+  `[OUTPUT_FILE:]`·`render-docx.sh` 지시를 SKILL.md 본문에서 빼고 `templates/bot-protocol.md`
+  + `templates/bot/<skill>.md`로 옮겼다. 프리앰블이 `JOBCLAW_RUN_ID`로 `JOBSTACK_RUNTIME=bot`을
+  판정할 때만 주입된다. ncs(CLI 전용)의 봇 마커는 제거.
+- **결과물 뷰어 (D-3, U-03)** — `</script>` 치환이 무효였던 버그(마크다운을 `<textarea>`에
+  HTML 이스케이프해 삽입), marked 18.0.11을 `bin/vendor/`에 인라인(오프라인 렌더), 렌더러
+  부재 시 원문 표시 폴백, 죽은 이스케이프 코드 제거.
+- **교차 모순 (U-06)** — retro `allowed-tools`에 WebSearch 추가·defense-map 방어 준비율 소비,
+  auto에 experience-bank·career-history·scout-profile·retro·salary·portfolio 라우팅 표,
+  `EXPERIENCES_EXIST`→`EXPERIENCES_EXISTS` 통일, ncs가 경험 카드를 입력으로 사용,
+  scout-profile `allowed-tools`를 실제 사용 도구로 축소, `fetch-jobs.mjs`의 미지원
+  programmers 분기 삭제.
+
+### Changed
+- **프리앰블 스크립트화 (U-04)** — 16개 스킬에 복사돼 드리프트하던 인라인 bash 프리앰블
+  (39~72줄)을 `bin/jobstack-preamble` 하나로 대체. SKILL.md 상단은 동적 주입 한 줄
+  (`!`bash "${CLAUDE_SKILL_DIR}/scripts/preamble.sh" <skill> "${CLAUDE_SESSION_ID}"``)이며
+  실행 컨텍스트·`env.sh`(`_JS_STATE`·`_JS_BIN`·`TODAY`)·텔레메트리 entry(`session` 필드 추가)를
+  낸다. Cowork·정책 차단 환경 폴백 안내 포함. SKILL.md 총 5,837줄 → 5,120줄.
+- **설치 위치** — `install.sh`가 Claude Code 표준 위치 `~/.claude/skills/`에 심링크하고
+  이 저장소가 만든 옛 `~/.claude/commands/` 심링크를 정리한다. `--with-insane-search`는
+  curl_cffi 0.16 계열로 상향.
+- **릴리스 위생 (U-05)** — GitHub Actions CI(린트 9종 + 격리 HOME 통합 테스트), README의
+  의존성·설치 설명 현행화, CLAUDE.md·CONTRIBUTING.md에 새 구조 반영, 7월 미기록 변경
+  소급 기재(아래).
+
+### 2026-07 미기록 변경 (0.3.0 이후 main 20커밋, PR #12·#13·#14·#16)
+- job-search v0.5.0 — 크롤러 0건 수집 시 실패 원인 진단 로깅(`bin/fetch-diag.mjs`,
+  `fetch-diag.log`), 원티드 마감 검증 코드 강제(`bin/wanted-verify.mjs`, `verify` 서브커맨드,
+  detail API 전수검증·fail-closed·429 Retry-After 재시도)
+- insane-search 흡수 Phase 1·2 — `bin/is-fetch.py`(curl_cffi TLS 임퍼소네이션, SSRF 가드,
+  리다이렉트 상한·응답 크기 가드) + `bin/is-fetch-adapter.mjs`, 사람인 수집을 어댑터 경유로,
+  company-research·salary의 WebFetch 실패 시 is-fetch 재시도, `install.sh --with-insane-search`
+- 테스트 4종 추가(`test-fetch-diag.mjs`, `test-wanted-verify.mjs`, `test-is-fetch-adapter.mjs`,
+  `test-is-fetch-ssrf.mjs`), 통합 검토·실행계획 문서(`claudedocs/`, `docs/plans/`)
+
 ## [0.3.0] - 2026-07-04
 
 tea-agent(헤르메스) 지식 자산 + 2026 채용시장 트렌드 분석 기반 전면 업그레이드.

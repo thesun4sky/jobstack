@@ -15,71 +15,15 @@ allowed-tools:
 benefits-from: [strategy]
 ---
 
-```bash
-# ─── jobstack 프리앰블 ─────────────────────────
-_JS_STATE="${JOBSTACK_STATE_DIR:-$HOME/.jobstack}"
-mkdir -p "$_JS_STATE/analytics" "$_JS_STATE/profiles" "$_JS_STATE/tracker" \
-         "$_JS_STATE/company-cache" "$_JS_STATE/interview-history" "$_JS_STATE/sessions" "$_JS_STATE/defense-maps" "$_JS_STATE/job-cache"
+!`bash "${CLAUDE_SKILL_DIR}/scripts/preamble.sh" company-research "${CLAUDE_SESSION_ID}"`
 
-# 세션 추적
-echo "$$" > "$_JS_STATE/sessions/$$"
-trap 'rm -f "$_JS_STATE/sessions/$$"' EXIT
+> 위 실행 컨텍스트가 비어 있거나 `KEY=VALUE` 목록 대신 `!` 명령·정책 차단 문구가 그대로 보이면(`!` 주입이 꺼진 환경), 첫 Bash 명령으로 `bash "${CLAUDE_SKILL_DIR}/scripts/preamble.sh" company-research`를 실행해 같은 컨텍스트를 확보하고 `${CLAUDE_SKILL_DIR}/references/guardrails.md`를 Read 하세요. 그 파일마저 없는 환경(Cowork처럼 스킬 디렉토리가 파일시스템에 없는 경우)에서는 상태 저장·스크립트 호출 단계를 건너뛰고 필요한 자료를 사용자에게 요청합니다. `STATE_WRITE_FAILED=true`가 보이면 `JOBSTACK_STATE_DIR` 경로를 사용자에게 확인합니다. 이 스킬의 Bash 스니펫은 첫 줄에 `. "${JOBSTACK_STATE_DIR:-$HOME/.jobstack}/env.sh"`를 두어 `$_JS_STATE`·`$_JS_BIN`·`$TODAY`를 불러옵니다.
 
-# 설정 로딩
-_JS_CONFIG="${CLAUDE_SKILL_DIR}/../bin/jobstack-config"
-if [ -x "$_JS_CONFIG" ]; then
-  PROACTIVE=$("$_JS_CONFIG" get proactive 2>/dev/null || echo "true")
-else
-  PROACTIVE="true"
-fi
+### 공통 가드레일 (references/guardrails.md)
 
-# 프로필 로딩
-PROFILE="$_JS_STATE/profiles/default.yaml"
-if [ -f "$PROFILE" ]; then
-  echo "PROFILE_EXISTS=true"
-  echo "--- 프로필 요약 ---"
-  head -20 "$PROFILE"
-  echo "---"
-else
-  echo "PROFILE_EXISTS=false"
-fi
+!`sed '1{/^# /d;}' "${CLAUDE_SKILL_DIR}/references/guardrails.md"`
 
-# 활성 세션 수
-for _f in "$_JS_STATE/sessions/"*; do
-  [ -f "$_f" ] || continue
-  kill -0 "$(basename "$_f")" 2>/dev/null || rm -f "$_f"
-done
-ACTIVE_SESSIONS=$(ls "$_JS_STATE/sessions/" 2>/dev/null | wc -l | tr -d ' ')
-echo "ACTIVE_SESSIONS=$ACTIVE_SESSIONS"
-echo "PROACTIVE=$PROACTIVE"
-echo "SKILL_NAME=company-research"
-
-# 오늘 날짜 (KST 기준) — 채용공고 마감일 필터링에 반드시 사용
-TODAY=$(TZ=Asia/Seoul date +%Y-%m-%d 2>/dev/null || date +%Y-%m-%d)
-echo "TODAY=$TODAY"
-
-# ─── jobstack bin 경로 해석 (원티드 verify·is-fetch 폴백에 사용) ─────────────
-# prod 컨테이너는 SKILL.md만 ~/.claude/commands/company-research/로 복사하고 bin은
-# /app/skills/jobstack/bin에만 있어 CLAUDE_SKILL_DIR/../bin이 실제 위치와 다르다.
-# → 스크립트 존재를 검증하고 틀리면 알려진 절대경로로 fallback(job-search와 동일 관례).
-if [ -n "$CLAUDE_SKILL_DIR" ]; then
-  _JS_BIN="${CLAUDE_SKILL_DIR}/../bin"
-fi
-if [ ! -f "${_JS_BIN:-}/fetch-jobs.mjs" ]; then
-  for _try in "/app/skills/jobstack/bin" "$HOME/.claude/skills/jobstack/bin" "/var/jobclaw/skills/jobstack/bin"; do
-    [ -f "$_try/fetch-jobs.mjs" ] && { _JS_BIN="$_try"; break; }
-  done
-fi
-_JS_BROWSER_SCRIPT="${_JS_BIN:-}/fetch-jobs.mjs"
-echo "JS_BIN=${_JS_BIN:-unresolved}"
-
-# 텔레메트리
-echo "{\"skill\":\"company-research\",\"ts\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"pid\":$$}" \
-  >> "$_JS_STATE/analytics/skill-usage.jsonl" 2>/dev/null || true
-```
-
-> **공통 가드레일**: 작업 시작 전 `${CLAUDE_SKILL_DIR}/../templates/guardrails.md` 를 Read 도구로 읽고 §1~§6 전 규칙을 준수하세요.
-
+!`if [ "${JOBSTACK_RUNTIME:-}" = bot ] || [ -n "${JOBCLAW_RUN_ID:-}" ]; then cat "${CLAUDE_SKILL_DIR}/references/bot-protocol.md"; fi`
 
 ---
 
@@ -160,8 +104,8 @@ echo "{\"skill\":\"company-research\",\"ts\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",
 > - **원티드 공고(`wanted.co.kr/wd/{id}`)는 HTML/스니펫으로 진행 여부를 판정하지 않습니다** — 페이지가 마감
 >   배너를 JS로 렌더링해 항상 "진행 중"처럼 보입니다(2026-07-19 prod 오판 사고). 포함 전 반드시
 >   `node "$_JS_BROWSER_SCRIPT" verify "<url>"...`로 전수 판정하고 `active`만 포함합니다.
->   (`$_JS_BROWSER_SCRIPT`는 preamble에서 실제 bin 위치로 해석됨 — 원시 `${CLAUDE_SKILL_DIR}/../bin`은
->   prod에서 경로가 어긋나 verify가 실패한다. verify 실행이 불가하면 **원티드 공고는 포함하지 않습니다**(fail-closed).)
+>   (`$_JS_BROWSER_SCRIPT`는 preamble이 env.sh에 적은 실제 bin 경로 — 스킬 디렉토리 기준 상대 경로로
+>   bin을 조합하면 prod에서 경로가 어긋나 verify가 실패한다. verify 실행이 불가하면 **원티드 공고는 포함하지 않습니다**(fail-closed).)
 > - 마감일 확인이 불가한 공고는 "마감일 미확인"으로 표시하고 사용자에게 원본 URL 직접 확인을 안내합니다
 > - **훈련 데이터(training data)에 있는 채용공고 정보는 절대 사용하지 않습니다** — 채용공고는 반드시 실시간 WebSearch/WebFetch로 획득한 내용만 사용합니다
 > - **기업 사실 수치도 채용공고와 동일 강도로 출처 강제(#121)**: 매출·영업이익·직원수·복리후생·기술스택·잡플래닛/블라인드 평점 등 구체적 수치는 **실시간 조회로 확보한 값만** 단정합니다. 훈련 데이터 기억으로 채우지 말고, 확보하지 못한 수치는 **"(출처 미확보)"**로 표기하고 구체 숫자 단정을 하지 마세요. 결과물의 각 수치 뒤에는 가능하면 출처(URL/매체)를 인라인 표기합니다.
@@ -170,11 +114,11 @@ echo "{\"skill\":\"company-research\",\"ts\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",
 > ⚠️ **WebSearch/WebFetch 차단 시 처리 규칙**
 >
 > 도구 실패(차단, 타임아웃, 오류)가 발생하면:
-> - **1차 재시도 — is-fetch 어댑터**: 차단된 URL 을 `python3 "$_JS_BIN/is-fetch.py" "<URL>"` 로 다시 확보합니다(curl_cffi TLS 임퍼소네이션). **URL 은 반드시 큰따옴표로 감쌉니다** — `&`·`?` 가 든 URL이 셸에서 쪼개지거나 명령이 주입되는 것을 막습니다. `$_JS_BIN` 은 preamble에서 실제 bin 위치로 해석됨(원시 `${CLAUDE_SKILL_DIR}/../bin`은 prod에서 어긋남). **stdout JSON 의 `verdict` 가 `strong_ok` 이고 `html` 이 있을 때만** 그 본문으로 분석을 이어갑니다. `too_small`(짧은 차단/로그인/빈 결과 페이지일 수 있음)·`challenge`·`error` 이거나 exit 3(어댑터 미설치)이면 재시도를 접고 아래 폴백으로 넘어갑니다 — **`too_small` HTML 을 정상 자료로 분석하지 않습니다**(잘못된 기업 분석 방지).
+> - **1차 재시도 — is-fetch 어댑터**: 차단된 URL 을 `python3 "$_JS_BIN/is-fetch.py" "<URL>"` 로 다시 확보합니다(curl_cffi TLS 임퍼소네이션). **URL 은 반드시 큰따옴표로 감쌉니다** — `&`·`?` 가 든 URL이 셸에서 쪼개지거나 명령이 주입되는 것을 막습니다. `$_JS_BIN` 은 preamble이 env.sh에 적은 실제 bin 경로다(스킬 디렉토리 기준 상대 경로로 조합하지 않는다). **stdout JSON 의 `verdict` 가 `strong_ok` 이고 `html` 이 있을 때만** 그 본문으로 분석을 이어갑니다. `too_small`(짧은 차단/로그인/빈 결과 페이지일 수 있음)·`challenge`·`error` 이거나 exit 3(어댑터 미설치)이면 재시도를 접고 아래 폴백으로 넘어갑니다 — **`too_small` HTML 을 정상 자료로 분석하지 않습니다**(잘못된 기업 분석 방지).
 > - 위 재시도로도 확보 실패 시: 채용공고(항목 3) 섹션을 **완전히 스킵**합니다 — 훈련 데이터로 대체 절대 금지
 > - 나머지 항목(기업 개요, 재무, CEO 메시지, 뉴스, 평판)은 수집 가능한 만큼 진행
 > - 완료 시 `DONE_WITH_CONCERNS`로 표시합니다. 실패 원인을 1줄로 명시하되, **반드시 다음 행동을 병기**합니다: "채용공고 본문·CEO 신년사·인재상 페이지 내용을 붙여넣어 주시면 분석을 완성합니다."
-> - **원칙**: 도구 한계를 막다른 안내로 끝내지 않는다 — 원인 1줄 + 필요 자료 요청을 항상 함께 제시한다. (자세한 전환 규칙은 `${CLAUDE_SKILL_DIR}/../templates/guardrails.md` §2 참조)
+> - **원칙**: 도구 한계를 막다른 안내로 끝내지 않는다 — 원인 1줄 + 필요 자료 요청을 항상 함께 제시한다. (자세한 전환 규칙은 `${CLAUDE_SKILL_DIR}/references/guardrails.md` §2 참조)
 > - 사용자가 붙여넣은 자료(공고 본문·CEO 신년사·잡플래닛 리뷰 텍스트 등)는 각 Phase의 **정식 입력 소스로 인정**하고 해당 단계를 진행합니다.
 
 **공공기관·공기업 분기 규칙:**
@@ -195,7 +139,7 @@ echo "{\"skill\":\"company-research\",\"ts\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",
 4. **CEO 메시지**: 최근 신년사, 주주서한, 언론 인터뷰 (경영 방향성 파악)
 5. **최근 뉴스**: 최근 3-6개월 주요 뉴스 5건 이상
 6. **기업 평판**: 잡플래닛/블라인드 등에서의 직원 평판, 면접 후기
-   - **PII 가드레일**: 리뷰를 인용할 때 작성자 닉네임·프로필 등 식별정보는 리포트·캐시에 기록하지 않습니다 — 집계 요약(불만 Top 3, 키워드 빈도)과 익명 인용만 사용합니다. (상세 규칙은 `${CLAUDE_SKILL_DIR}/../templates/guardrails.md` §1 참조)
+   - **PII 가드레일**: 리뷰를 인용할 때 작성자 닉네임·프로필 등 식별정보는 리포트·캐시에 기록하지 않습니다 — 집계 요약(불만 Top 3, 키워드 빈도)과 익명 인용만 사용합니다. (상세 규칙은 `${CLAUDE_SKILL_DIR}/references/guardrails.md` §1 참조)
 7. **전형 방식**: 아래 5개 항목을 실행 시 WebSearch로 확인합니다 — 연도·도입 기업명·전형명은 이 문서에 하드코딩하지 않고 검색으로 확인한 값만 사용합니다.
    - ① AI 서류평가 도입 여부 — 도입이 확인되면 표절·AI 작성 검사 대비를 안내합니다.
    - ② AI역량검사·화상면접 툴 사용 여부 — 도입이 확인되면 무료 연습 경로를 검색해 안내합니다.
@@ -264,7 +208,7 @@ Phase 1에서 수집한 정보를 기반으로, 7가지 소스별 키워드를 �
 - 웹 서비스가 있는 경우 -> 웹 분석 경로
 - B2B / 플랫폼인 경우 -> 산업 분석 경로
 
-> **리뷰 PII 가드레일**: 아래 세 경로에서 리뷰를 인용할 때 작성자 닉네임·프로필 등 식별정보는 리포트·캐시에 기록하지 않습니다 — 집계 요약과 익명 인용만 사용합니다. (`${CLAUDE_SKILL_DIR}/../templates/guardrails.md` §1)
+> **리뷰 PII 가드레일**: 아래 세 경로에서 리뷰를 인용할 때 작성자 닉네임·프로필 등 식별정보는 리포트·캐시에 기록하지 않습니다 — 집계 요약과 익명 인용만 사용합니다. (`${CLAUDE_SKILL_DIR}/references/guardrails.md` §1)
 
 **앱 분석 경로 (WebSearch + WebFetch):**
 1. 앱 스토어 리뷰 분석 (최근 3개월, 별점 1-3점 위주)
@@ -473,21 +417,3 @@ Write로 두 파일을 모두 저장합니다.
 - 면접 준비가 급하면 -> `/mock_interview` 추천: "'이미 팀원처럼' 브리핑을 면접에 바로 활용할 수 있습니다."
 - 연봉 수준 확인·협상 준비가 필요하면 -> `/salary` 추천: "연봉 데이터는 소스·시점별 편차가 크므로 단일 소스로 단정하지 않습니다."
 - 비교군 기업도 분석하려면 -> `/company_research` 재호출로 후보군을 나란히 비교할 수 있습니다.
-
-## 시각화 이미지 생성
-
-기업 분석 완료 답변에서는 반드시 응답 맨 끝에 아래 마커를 추가한다:
-
-```
-[IMAGE_PROMPT: <영어 프롬프트>]
-```
-
-**트리거 조건 (필수):**
-- 기업 종합 분석 결과 (핵심 가치/문화/기술스택/채용 포지션 포함) → **반드시** 추가
-- 직무 요구 역량 다이어그램, 복수 기업 비교 → 추가
-- 단순 단답, 오류 메시지 → 추가하지 않음
-
-이 마커를 빠뜨리지 말 것 — 위 조건에 해당하면 응답의 가장 마지막 줄에 반드시 포함한다.
-
-**프롬프트 스타일:** professional infographic/diagram 스타일. 실제 기업명·핵심 정보를 반영한다.
-예: `A professional company overview infographic for Kakao Corp: key values (connection, innovation, growth), tech stack (Go, Python, Kubernetes), team culture (flexible, hybrid), key products. Clean modern design, blue/yellow brand colors.`

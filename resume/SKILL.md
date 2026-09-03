@@ -16,56 +16,17 @@ allowed-tools:
 benefits-from: [strategy, company-research, experience-bank]
 ---
 
+!`bash "${CLAUDE_SKILL_DIR}/scripts/preamble.sh" resume "${CLAUDE_SESSION_ID}"`
+
+> 위 실행 컨텍스트가 비어 있거나 `KEY=VALUE` 목록 대신 `!` 명령·정책 차단 문구가 그대로 보이면(`!` 주입이 꺼진 환경), 첫 Bash 명령으로 `bash "${CLAUDE_SKILL_DIR}/scripts/preamble.sh" resume`를 실행해 같은 컨텍스트를 확보하고 `${CLAUDE_SKILL_DIR}/references/guardrails.md`를 Read 하세요. 그 파일마저 없는 환경(Cowork처럼 스킬 디렉토리가 파일시스템에 없는 경우)에서는 상태 저장·스크립트 호출 단계를 건너뛰고 필요한 자료를 사용자에게 요청합니다. `STATE_WRITE_FAILED=true`가 보이면 `JOBSTACK_STATE_DIR` 경로를 사용자에게 확인합니다. 이 스킬의 Bash 스니펫은 첫 줄에 `. "${JOBSTACK_STATE_DIR:-$HOME/.jobstack}/env.sh"`를 두어 `$_JS_STATE`·`$_JS_BIN`·`$TODAY`를 불러옵니다.
+
+### 공통 가드레일 (references/guardrails.md)
+
+!`sed '1{/^# /d;}' "${CLAUDE_SKILL_DIR}/references/guardrails.md"`
+
+!`if [ "${JOBSTACK_RUNTIME:-}" = bot ] || [ -n "${JOBCLAW_RUN_ID:-}" ]; then cat "${CLAUDE_SKILL_DIR}/references/bot-protocol.md"; fi`
+
 # /resume — 이력서 작성/첨삭 스킬
-
-## 프리앰블
-
-```bash
-# ─── jobstack 프리앰블 ─────────────────────────
-_JS_STATE="${JOBSTACK_STATE_DIR:-$HOME/.jobstack}"
-mkdir -p "$_JS_STATE/analytics" "$_JS_STATE/profiles" "$_JS_STATE/tracker" \
-         "$_JS_STATE/company-cache" "$_JS_STATE/interview-history" "$_JS_STATE/sessions" "$_JS_STATE/defense-maps" "$_JS_STATE/job-cache"
-
-# 세션 추적
-echo "$$" > "$_JS_STATE/sessions/$$"
-trap 'rm -f "$_JS_STATE/sessions/$$"' EXIT
-
-# 설정 로딩
-_JS_CONFIG="${CLAUDE_SKILL_DIR}/../bin/jobstack-config"
-if [ -x "$_JS_CONFIG" ]; then
-  PROACTIVE=$("$_JS_CONFIG" get proactive 2>/dev/null || echo "true")
-else
-  PROACTIVE="true"
-fi
-
-# 프로필 로딩
-PROFILE="$_JS_STATE/profiles/default.yaml"
-if [ -f "$PROFILE" ]; then
-  echo "PROFILE_EXISTS=true"
-  echo "--- 프로필 요약 ---"
-  head -20 "$PROFILE"
-  echo "---"
-else
-  echo "PROFILE_EXISTS=false"
-fi
-
-# 활성 세션 수
-for _f in "$_JS_STATE/sessions/"*; do
-  [ -f "$_f" ] || continue
-  kill -0 "$(basename "$_f")" 2>/dev/null || rm -f "$_f"
-done
-ACTIVE_SESSIONS=$(ls "$_JS_STATE/sessions/" 2>/dev/null | wc -l | tr -d ' ')
-echo "ACTIVE_SESSIONS=$ACTIVE_SESSIONS"
-echo "PROACTIVE=$PROACTIVE"
-echo "SKILL_NAME=resume"
-
-# 텔레메트리
-echo "{\"skill\":\"resume\",\"ts\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"pid\":$$}" \
-  >> "$_JS_STATE/analytics/skill-usage.jsonl" 2>/dev/null || true
-```
-
-> **공통 가드레일**: 작업 시작 전 `${CLAUDE_SKILL_DIR}/../templates/guardrails.md` 를 Read 도구로 읽고 §1~§6 전 규칙을 준수하세요.
-
 
 ---
 
@@ -87,7 +48,7 @@ echo "{\"skill\":\"resume\",\"ts\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"pid\":$$
 - **확인된 사실만 기재**: 세션에서 사용자가 직접 제공했거나 첨부 파일에서 확인한 값만 이력서에 넣습니다. 자격증·재직 기간·어학 점수·수상 경력 등은 **추론으로 생성하지 않습니다**.
 - **미확보 정보는 placeholder**: 값이 없으면 `[이메일 입력 필요]`·`[재직기간 확인 필요]`처럼 명시적으로 남기고, 그럴듯한 값으로 채우지 않습니다. 필요한 항목은 AskUserQuestion으로 **1회만** 질문합니다.
 - **대필·전면 위임 요청 시에도**: 사용자가 "전적으로 맡길게" 유형으로 요청해도, 수치·근거를 확인하는 질문을 먼저 거친 뒤 작성합니다. 과장 표현을 임의로 넣지 않습니다.
-- 세부 규칙(PII 등급·날조 금지)은 `${CLAUDE_SKILL_DIR}/../templates/guardrails.md` §1을 따릅니다.
+- 세부 규칙(PII 등급·날조 금지)은 `${CLAUDE_SKILL_DIR}/references/guardrails.md` §1을 따릅니다.
 
 ---
 
@@ -206,7 +167,7 @@ echo "{\"skill\":\"resume\",\"ts\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"pid\":$$
   2. 출신지역·혼인여부·재산
   3. 직계존비속·형제자매의 학력·직업·재산
 - **공공기관 블라인드(NCS) 지원 시**: 학교명·사진 등 식별정보가 지원서·경험기술서 본문에 노출되지 않는지 필터 체크합니다(노출 시 불이익 가능). 단 일부 연구개발목적기관 등은 블라인드 예외이므로 **기관별 공고 기준을 우선**합니다.
-- 법·제도는 변동될 수 있으므로, 구체적 안내를 하기 전 실행 시 WebSearch로 현행 규정을 확인하세요. PII 등급 분류는 `${CLAUDE_SKILL_DIR}/../templates/guardrails.md` §1을 따릅니다.
+- 법·제도는 변동될 수 있으므로, 구체적 안내를 하기 전 실행 시 WebSearch로 현행 규정을 확인하세요. PII 등급 분류는 `${CLAUDE_SKILL_DIR}/references/guardrails.md` §1을 따릅니다.
 
 ---
 
@@ -227,7 +188,7 @@ ATS는 대체로 **수집 → 파싱 → 키워드 매칭·점수화 → 순위�
 
 **키워드 삽입 규칙**: 최근 NLP 기반 ATS는 keyword stuffing(키워드 몰아넣기)을 무력화합니다. 키워드는 **경험 근거 문장 안에 문맥으로 배치**하고, 한 섹션에 몰아넣지 마세요. 최신 ATS 동향 인용이 필요하면 실행 시 WebSearch로 확인하고 출처·기준일을 병기합니다.
 
-> **매칭률 산출 전제조건**: 공고 본문을 확보하지 못하면 매칭률 수치를 산출하지 마세요. 한계를 사과로 노출하지 말고 "정확한 매칭 분석을 위해 채용공고 본문을 붙여넣어 주세요"라는 **자료 요청**으로 전환합니다(전환 형식은 `${CLAUDE_SKILL_DIR}/../templates/guardrails.md` §2).
+> **매칭률 산출 전제조건**: 공고 본문을 확보하지 못하면 매칭률 수치를 산출하지 마세요. 한계를 사과로 노출하지 말고 "정확한 매칭 분석을 위해 채용공고 본문을 붙여넣어 주세요"라는 **자료 요청**으로 전환합니다(전환 형식은 `${CLAUDE_SKILL_DIR}/references/guardrails.md` §2).
 
 ```
 [ATS 키워드 매칭 분석]
@@ -319,7 +280,7 @@ CI/CD              ❌          경력 #1 성과에 추가
 - **최종 필터 — 면접 1분 설명 가능성**: "이 숫자를 면접에서 1분간 설명할 수 있는가?" 설명할 수 없는 수치는 기재하지 않습니다.
 - 정성 근거(사수 피드백, 계속 쓰인 양식 등)도 허용 근거입니다.
 
-상세 폴백 5기준과 추상어→질문 전환표는 `${CLAUDE_SKILL_DIR}/../templates/experience-methods.md` §3(수치 폴백 5기준 + 대체 4종)·§4(추상어→질문 전환표)를 참조하세요.
+상세 폴백 5기준과 추상어→질문 전환표는 `${CLAUDE_SKILL_DIR}/references/experience-methods.md` §3(수치 폴백 5기준 + 대체 4종)·§4(추상어→질문 전환표)를 참조하세요.
 
 ---
 
@@ -359,11 +320,12 @@ CI/CD              ❌          경력 #1 성과에 추가
 
 ### Phase 8: Before/After Diff 피드백
 
-> **완결 시 .docx 자동 산출 (#118b)**: 이력서 작성/첨삭이 **완료(DONE)** 되면, 사용자가 "파일로 줘"라고 말하지 않아도 최종본을 워크스페이스 CLAUDE.md 의 **File output protocol**(`runs/$JOBCLAW_RUN_ID/output/source.md` 작성 → `[OUTPUT_FILE: ...]` 마커 + `render-docx.sh`)로 **.docx 자동 emit** 하세요. 채팅 가독성이 낮은 긴 결과물은 파일이 기본입니다.
+> **완결 시 .docx 산출 (#118b)**: 이력서 작성/첨삭이 **완료(DONE)** 되면, 사용자가 "파일로 줘"라고 말하지 않아도 최종본 마크다운을 저장하고 `"$_JS_BIN/jobstack-export" <최종본.md>`로 .docx를 산출합니다. 채팅 가독성이 낮은 긴 결과물은 파일이 기본입니다. (봇 환경의 파일 출력 규칙은 실행 컨텍스트가 `bot`일 때 주입되는 bot-protocol을 따릅니다.)
 >
 > **자동 emit 전 placeholder 잔존 스캔 (필수)**: 자동 emit 직전, 산출 md에 대해 아래 스캔을 돌립니다. 미확인 정보 placeholder(`[이메일 입력 필요]`·`[재직기간 확인 필요]`·`[추정]` 등)가 남아 있으면 **.docx 자동 emit을 차단**하고, 완료 상태를 **DONE_WITH_CONCERNS**로 강등한 뒤 남은 항목을 사용자에게 고지합니다(모델 판단만으로 DONE 처리 금지).
 >
 > ```bash
+> . "${JOBSTACK_STATE_DIR:-$HOME/.jobstack}/env.sh"
 > _JS_OUT="$1"  # 산출 md 경로
 > if grep -nE '\[[^]]*(확인 필요|입력 필요|추정)[^]]*\]' "$_JS_OUT"; then
 >   echo "PLACEHOLDER_RESIDUAL=true"  # → 자동 emit 차단 + DONE_WITH_CONCERNS
@@ -372,7 +334,7 @@ CI/CD              ❌          경력 #1 성과에 추가
 > fi
 > ```
 >
-> **독립 CLI 실행 폴백**: `render-docx.sh`가 없는(jobclaw 워크스페이스 밖) 환경에서는 `${CLAUDE_SKILL_DIR}/../bin/jobstack-export`로 md→docx 변환을 시도합니다. jobstack-export는 placeholder 잔존을 먼저 검사하므로, **exit 4(미확인 placeholder)면 마크다운 폴백을 주지 말고** 출력된 항목을 사용자에게 채우도록 요청한 뒤 재시도합니다. pandoc 미설치(exit 2)일 때만 마크다운/HTML로 산출하고 변환 방법을 안내합니다.
+> **jobstack-export 종료 코드 처리**: jobstack-export는 placeholder 잔존을 먼저 검사하므로, **exit 4(미확인 placeholder)면 마크다운 폴백을 주지 말고** 출력된 항목을 사용자에게 채우도록 요청한 뒤 재시도합니다. pandoc 미설치(exit 2)·변환 실패(exit 3)일 때만 마크다운/HTML로 산출하고 변환 방법을 안내합니다.
 
 첨삭 모드에서는 변경사항을 시각적으로 보여줍니다:
 
@@ -404,6 +366,7 @@ After:
 이력서 작성/첨삭 과정에서 수집된 정보를 프로필에 저장합니다:
 
 ```bash
+. "${JOBSTACK_STATE_DIR:-$HOME/.jobstack}/env.sh"
 # 프로필 업데이트 (이력서 작성 시)
 PROFILE="$_JS_STATE/profiles/default.yaml"
 # 수집된 정보를 YAML 형태로 저장/업데이트
@@ -472,7 +435,7 @@ PROFILE="$_JS_STATE/profiles/default.yaml"
 
 ---
 
-## 퍼널 텔레메트리 (docs/telemetry-events.md)
+## 퍼널 텔레메트리 (references/telemetry-events.md)
 
 첨삭 흐름의 각 시점에 규격 이벤트를 `$_JS_STATE/analytics/skill-usage.jsonl`에 append합니다(실패해도 무시). PII(문서 내용·회사명) 금지, 메타만 기록:
 - 첨삭 대상 이력서를 받으면(Phase 2B 진입) → `submitted`
@@ -480,6 +443,7 @@ PROFILE="$_JS_STATE/profiles/default.yaml"
 - 재리뷰 delta 경로(#117)로 재진단하면 → `second_review`
 
 ```bash
+. "${JOBSTACK_STATE_DIR:-$HOME/.jobstack}/env.sh"
 echo '{"skill":"resume","ts":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","pid":'$$',"event":"diagnosed"}' \
   >> "$_JS_STATE/analytics/skill-usage.jsonl" 2>/dev/null || true
 ```

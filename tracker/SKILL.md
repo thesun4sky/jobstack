@@ -12,52 +12,13 @@ allowed-tools:
   - AskUserQuestion
 ---
 
-```bash
-# ─── jobstack 프리앰블 ─────────────────────────
-_JS_STATE="${JOBSTACK_STATE_DIR:-$HOME/.jobstack}"
-mkdir -p "$_JS_STATE/analytics" "$_JS_STATE/profiles" "$_JS_STATE/tracker" \
-         "$_JS_STATE/company-cache" "$_JS_STATE/interview-history" "$_JS_STATE/sessions" "$_JS_STATE/defense-maps" "$_JS_STATE/job-cache"
+!`bash "${CLAUDE_SKILL_DIR}/scripts/preamble.sh" tracker "${CLAUDE_SESSION_ID}"`
 
-# 세션 추적
-echo "$$" > "$_JS_STATE/sessions/$$"
-trap 'rm -f "$_JS_STATE/sessions/$$"' EXIT
+> 위 실행 컨텍스트가 비어 있거나 `KEY=VALUE` 목록 대신 `!` 명령·정책 차단 문구가 그대로 보이면(`!` 주입이 꺼진 환경), 첫 Bash 명령으로 `bash "${CLAUDE_SKILL_DIR}/scripts/preamble.sh" tracker`를 실행해 같은 컨텍스트를 확보하고 `${CLAUDE_SKILL_DIR}/references/guardrails.md`를 Read 하세요. 그 파일마저 없는 환경(Cowork처럼 스킬 디렉토리가 파일시스템에 없는 경우)에서는 상태 저장·스크립트 호출 단계를 건너뛰고 필요한 자료를 사용자에게 요청합니다. `STATE_WRITE_FAILED=true`가 보이면 `JOBSTACK_STATE_DIR` 경로를 사용자에게 확인합니다. 이 스킬의 Bash 스니펫은 첫 줄에 `. "${JOBSTACK_STATE_DIR:-$HOME/.jobstack}/env.sh"`를 두어 `$_JS_STATE`·`$_JS_BIN`·`$TODAY`를 불러옵니다.
 
-# 설정 로딩
-_JS_CONFIG="${CLAUDE_SKILL_DIR}/../bin/jobstack-config"
-if [ -x "$_JS_CONFIG" ]; then
-  PROACTIVE=$("$_JS_CONFIG" get proactive 2>/dev/null || echo "true")
-else
-  PROACTIVE="true"
-fi
+### 공통 가드레일 (references/guardrails.md)
 
-# 트래커 파일
-TRACKER_FILE="$_JS_STATE/tracker/applications.jsonl"
-[ -f "$TRACKER_FILE" ] || touch "$TRACKER_FILE"
-echo "TRACKER_FILE=$TRACKER_FILE"
-ENTRY_COUNT=$(wc -l < "$TRACKER_FILE" | tr -d ' ')
-echo "ENTRY_COUNT=$ENTRY_COUNT"
-if [ "$ENTRY_COUNT" -gt 0 ]; then
-  echo "--- 최근 지원 ---"
-  tail -5 "$TRACKER_FILE"
-fi
-
-# 활성 세션 수
-for _f in "$_JS_STATE/sessions/"*; do
-  [ -f "$_f" ] || continue
-  kill -0 "$(basename "$_f")" 2>/dev/null || rm -f "$_f"
-done
-ACTIVE_SESSIONS=$(ls "$_JS_STATE/sessions/" 2>/dev/null | wc -l | tr -d ' ')
-echo "ACTIVE_SESSIONS=$ACTIVE_SESSIONS"
-echo "PROACTIVE=$PROACTIVE"
-echo "SKILL_NAME=tracker"
-
-# 텔레메트리
-echo "{\"skill\":\"tracker\",\"ts\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"pid\":$$}" \
-  >> "$_JS_STATE/analytics/skill-usage.jsonl" 2>/dev/null || true
-```
-
-> **공통 가드레일**: 작업 시작 전 `${CLAUDE_SKILL_DIR}/../templates/guardrails.md` 를 Read 도구로 읽고 §1~§6 전 규칙을 준수하세요.
-
+!`sed '1{/^# /d;}' "${CLAUDE_SKILL_DIR}/references/guardrails.md"`
 
 # 지원 현황 관리
 
@@ -67,7 +28,7 @@ echo "{\"skill\":\"tracker\",\"ts\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"pid\":$
 
 ## 상태 모델
 
-지원 상태는 `docs/tracker-states.md`의 canonical 9상태를 따릅니다. **저장은 영문 키, 표시는 한글 라벨**입니다.
+지원 상태는 `${CLAUDE_SKILL_DIR}/references/tracker-states.md`의 canonical 9상태를 따릅니다. **저장은 영문 키, 표시는 한글 라벨**입니다.
 
 | 영문 키 (저장) | 한글 라벨 (표시) | 구분 |
 |---|---|---|
@@ -96,7 +57,7 @@ echo "{\"skill\":\"tracker\",\"ts\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"pid\":$
 | 최종합격 | `offer` |
 | 불합격 | `rejected` |
 
-매핑표에 없는 값은 원문을 유지하고 표시 시 `(구버전 상태)`를 붙입니다(임의 추정 변환 금지). 일괄 재작성은 `docs/tracker-states.md`의 마이그레이션 절차(사용자 승인 시에만 재작성, 원본은 `applications.jsonl.bak`으로 백업)를 따릅니다.
+매핑표에 없는 값은 원문을 유지하고 표시 시 `(구버전 상태)`를 붙입니다(임의 추정 변환 금지). 일괄 재작성은 `${CLAUDE_SKILL_DIR}/references/tracker-states.md`의 마이그레이션 절차(사용자 승인 시에만 재작성, 원본은 `applications.jsonl.bak`으로 백업)를 따릅니다.
 
 ---
 
@@ -114,9 +75,10 @@ echo "{\"skill\":\"tracker\",\"ts\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"pid\":$
 
 키워드가 없으면 현재 지원 현황 요약을 보여주고 AskUserQuestion으로 작업을 선택합니다.
 
-하위 명령 감지가 끝나면 `$_JS_STATE/analytics/skill-usage.jsonl`에 후속 이벤트 1건을 append합니다(`docs/telemetry-events.md` 규격) — `event=detected`, `phase`에 감지된 하위 명령명(add/list/update/calendar/stats), no-arg 진입이면 `no_arg=true`:
+하위 명령 감지가 끝나면 `$_JS_STATE/analytics/skill-usage.jsonl`에 후속 이벤트 1건을 append합니다(`${CLAUDE_SKILL_DIR}/references/telemetry-events.md` 규격) — `event=detected`, `phase`에 감지된 하위 명령명(add/list/update/calendar/stats), no-arg 진입이면 `no_arg=true`:
 
 ```bash
+. "${JOBSTACK_STATE_DIR:-$HOME/.jobstack}/env.sh"
 echo '{"skill":"tracker","ts":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","pid":'$$',"event":"detected","phase":"list","no_arg":false}' \
   >> "$_JS_STATE/analytics/skill-usage.jsonl" 2>/dev/null || true
 ```
@@ -202,7 +164,7 @@ ID는 `app-XXX` 형식으로 자동 생성 (기존 최대 ID + 1).
 ```
 
 - 항목이 **5건 이하**면 테이블 대신 `▸` 마커 리스트로 출력합니다(모바일 가독성).
-- 하단 요약줄의 전환율은 `docs/tracker-states.md`의 퍼널 규칙(`max_stage` 기준, withdrawn은 분모 제외)을 따릅니다.
+- 하단 요약줄의 전환율은 `${CLAUDE_SKILL_DIR}/references/tracker-states.md`의 퍼널 규칙(`max_stage` 기준, withdrawn은 분모 제외)을 따릅니다.
 
 ---
 
@@ -263,7 +225,7 @@ D-day가 7일 이내인 건은 강조 표시합니다.
 
 ## stats: 지원 통계
 
-상태 분포와 퍼널 전환율을 표시합니다. 전환율은 `docs/tracker-states.md`의 퍼널 규칙(`max_stage` 기준, withdrawn은 분모에서 제외)을 따릅니다.
+상태 분포와 퍼널 전환율을 표시합니다. 전환율은 `${CLAUDE_SKILL_DIR}/references/tracker-states.md`의 퍼널 규칙(`max_stage` 기준, withdrawn은 분모에서 제외)을 따릅니다.
 
 ```
 지원 통계
@@ -324,7 +286,7 @@ D-day가 7일 이내인 건은 강조 표시합니다.
 
 ## 완료 상태
 
-작업 완료 시 `templates/completion-status.md`의 4종 상태 중 하나를 출력합니다:
+작업 완료 시 `${CLAUDE_SKILL_DIR}/references/completion-status.md`의 4종 상태 중 하나를 출력합니다:
 - **완료 (DONE)** — 요청 작업 수행 완료
 - **우려사항 있는 완료 (DONE_WITH_CONCERNS)** — 완료했으나 사용자가 알아야 할 사항 존재
 - **차단됨 (BLOCKED)** — 진행 불가. 차단 요인과 시도한 내용 기술

@@ -19,47 +19,15 @@ allowed-tools:
 benefits-from: [strategy]
 ---
 
-```bash
-_JS_STATE="${JOBSTACK_STATE_DIR:-$HOME/.jobstack}"
-mkdir -p "$_JS_STATE/analytics" "$_JS_STATE/profiles" "$_JS_STATE/tracker" \
-         "$_JS_STATE/company-cache" "$_JS_STATE/interview-history" "$_JS_STATE/sessions" "$_JS_STATE/defense-maps" "$_JS_STATE/job-cache"
-echo "$$" > "$_JS_STATE/sessions/$$"
-trap 'rm -f "$_JS_STATE/sessions/$$"' EXIT
-_JS_CONFIG="${CLAUDE_SKILL_DIR}/../bin/jobstack-config"
-if [ -x "$_JS_CONFIG" ]; then
-  PROACTIVE=$("$_JS_CONFIG" get proactive 2>/dev/null || echo "true")
-else
-  PROACTIVE="true"
-fi
-PROFILE="$_JS_STATE/profiles/default.yaml"
-if [ -f "$PROFILE" ]; then
-  echo "PROFILE_EXISTS=true"
-  head -30 "$PROFILE"
-else
-  echo "PROFILE_EXISTS=false"
-fi
-# 경험뱅크 카드 존재 확인 (append형 카드 저장소)
-EXP_BANK="$_JS_STATE/profiles/experiences.yaml"
-if [ -f "$EXP_BANK" ]; then
-  echo "EXPERIENCES_EXIST=true"
-  grep -c '^- id:' "$EXP_BANK" 2>/dev/null | sed 's/^/EXPERIENCE_COUNT=/'
-else
-  echo "EXPERIENCES_EXIST=false"
-fi
-for _f in "$_JS_STATE/sessions/"*; do
-  [ -f "$_f" ] || continue
-  kill -0 "$(basename "$_f")" 2>/dev/null || rm -f "$_f"
-done
-ACTIVE_SESSIONS=$(ls "$_JS_STATE/sessions/" 2>/dev/null | wc -l | tr -d ' ')
-echo "ACTIVE_SESSIONS=$ACTIVE_SESSIONS"
-echo "PROACTIVE=$PROACTIVE"
-echo "SKILL_NAME=experience-bank"
-echo "{\"skill\":\"experience-bank\",\"ts\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"pid\":$$}" \
-  >> "$_JS_STATE/analytics/skill-usage.jsonl" 2>/dev/null || true
-```
+!`bash "${CLAUDE_SKILL_DIR}/scripts/preamble.sh" experience-bank "${CLAUDE_SESSION_ID}"`
 
-> **공통 가드레일**: 작업 시작 전 `${CLAUDE_SKILL_DIR}/../templates/guardrails.md` 를 Read 도구로 읽고 §1~§6 전 규칙을 준수하세요.
+> 위 실행 컨텍스트가 비어 있거나 `KEY=VALUE` 목록 대신 `!` 명령·정책 차단 문구가 그대로 보이면(`!` 주입이 꺼진 환경), 첫 Bash 명령으로 `bash "${CLAUDE_SKILL_DIR}/scripts/preamble.sh" experience-bank`를 실행해 같은 컨텍스트를 확보하고 `${CLAUDE_SKILL_DIR}/references/guardrails.md`를 Read 하세요. 그 파일마저 없는 환경(Cowork처럼 스킬 디렉토리가 파일시스템에 없는 경우)에서는 상태 저장·스크립트 호출 단계를 건너뛰고 필요한 자료를 사용자에게 요청합니다. `STATE_WRITE_FAILED=true`가 보이면 `JOBSTACK_STATE_DIR` 경로를 사용자에게 확인합니다. 이 스킬의 Bash 스니펫은 첫 줄에 `. "${JOBSTACK_STATE_DIR:-$HOME/.jobstack}/env.sh"`를 두어 `$_JS_STATE`·`$_JS_BIN`·`$TODAY`를 불러옵니다.
 
+### 공통 가드레일 (references/guardrails.md)
+
+!`sed '1{/^# /d;}' "${CLAUDE_SKILL_DIR}/references/guardrails.md"`
+
+!`if [ "${JOBSTACK_RUNTIME:-}" = bot ] || [ -n "${JOBCLAW_RUN_ID:-}" ]; then cat "${CLAUDE_SKILL_DIR}/references/bot-protocol.md"; fi`
 
 # 경험 소재 발굴·카드화
 
@@ -84,7 +52,7 @@ echo "{\"skill\":\"experience-bank\",\"ts\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\
 
 ## Phase 0: 모드 선택
 
-AskUserQuestion으로 모드를 확인합니다. 프리앰블의 `EXPERIENCES_EXIST` / `EXPERIENCE_COUNT` 값을 현재 상황 요약에 반영합니다.
+AskUserQuestion으로 모드를 확인합니다. 프리앰블의 `EXPERIENCES_EXISTS` / `EXPERIENCE_COUNT` 값을 현재 상황 요약에 반영합니다.
 
 ```
 경험뱅크 작업을 시작합니다. (현재 저장된 카드: [N]장)
@@ -110,13 +78,13 @@ C) 뱅크 목록·커버리지 (카드 목록과 직무별 부족 영역 확인)
 2. `$_JS_STATE/profiles/experiences.yaml` 이 있으면 Read 하여 **이미 카드화된 경험**을 파악합니다(중복 카드 방지).
 3. 모드 A/B에서는 아직 카드화되지 않은 후보 경험을 나열하고, 사용자에게 "학업/프로젝트/아르바이트/대외활동 중 더 있나요?"를 1회 물어 후보를 채웁니다.
 
-> 파일을 읽지 못하거나 프로필이 비어 있으면 한계를 노출하지 말고(`${CLAUDE_SKILL_DIR}/../templates/guardrails.md` §2) "정리하고 싶은 경험을 한두 줄로 알려주시면 바로 카드로 만들겠습니다"로 자료 요청으로 전환합니다.
+> 파일을 읽지 못하거나 프로필이 비어 있으면 한계를 노출하지 말고(`${CLAUDE_SKILL_DIR}/references/guardrails.md` §2) "정리하고 싶은 경험을 한두 줄로 알려주시면 바로 카드로 만들겠습니다"로 자료 요청으로 전환합니다.
 
 ---
 
 ## Phase 2: 카드 인터뷰
 
-경험을 **1건씩** 카드로 구조화합니다. `${CLAUDE_SKILL_DIR}/../templates/experience-methods.md` §1(경험 전환 6단계)와 §2(문제·역할·행동·결과 4분리)를 적용합니다 — 6단계 표·4분리 규칙은 그 문서가 단일 소스이므로 여기서 재정의하지 않습니다.
+경험을 **1건씩** 카드로 구조화합니다. `${CLAUDE_SKILL_DIR}/references/experience-methods.md` §1(경험 전환 6단계)와 §2(문제·역할·행동·결과 4분리)를 적용합니다 — 6단계 표·4분리 규칙은 그 문서가 단일 소스이므로 여기서 재정의하지 않습니다.
 
 - §1의 6단계(이름 → 문제 → 역할 → 바꾼 행동 → 검증 가능한 변화 → 직무 연결)를 순서대로 AskUserQuestion으로 질문합니다.
 - 답변이 여러 층위가 섞인 한 문장이면 §2의 4분리로 되물어 문제/역할/행동/결과를 각각 분리합니다.
@@ -128,7 +96,7 @@ C) 뱅크 목록·커버리지 (카드 목록과 직무별 부족 영역 확인)
 
 ## Phase 3: 수치 보강
 
-카드의 '검증 가능한 변화' 단계를 강화합니다. `${CLAUDE_SKILL_DIR}/../templates/experience-methods.md`의 §3(수치 폴백 5기준 + 대체 4종)과 §4(추상어→질문 전환표)를 적용합니다.
+카드의 '검증 가능한 변화' 단계를 강화합니다. `${CLAUDE_SKILL_DIR}/references/experience-methods.md`의 §3(수치 폴백 5기준 + 대체 4종)과 §4(추상어→질문 전환표)를 적용합니다.
 
 - 성과 숫자가 없다고 하면 §3의 5기준을 **위에서부터 순서대로** 적용해 근거를 찾습니다(전후 변화 → 역할 범위 분리 → 정성 근거 → 작은 검증 가능 숫자 → 면접 설명 가능성).
 - 카드에 추상어(책임감·소통·꼼꼼함 등)만 남아 있으면 삭제하지 말고 §4의 전환 질문으로 구체 경험을 캐냅니다.

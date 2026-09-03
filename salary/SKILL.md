@@ -14,66 +14,15 @@ allowed-tools:
   - WebFetch
 ---
 
-```bash
-# ─── jobstack 프리앰블 ─────────────────────────
-_JS_STATE="${JOBSTACK_STATE_DIR:-$HOME/.jobstack}"
-mkdir -p "$_JS_STATE/analytics" "$_JS_STATE/profiles" "$_JS_STATE/tracker" \
-         "$_JS_STATE/company-cache" "$_JS_STATE/interview-history" "$_JS_STATE/sessions" "$_JS_STATE/defense-maps" "$_JS_STATE/job-cache"
+!`bash "${CLAUDE_SKILL_DIR}/scripts/preamble.sh" salary "${CLAUDE_SESSION_ID}"`
 
-# 세션 추적
-echo "$$" > "$_JS_STATE/sessions/$$"
-trap 'rm -f "$_JS_STATE/sessions/$$"' EXIT
+> 위 실행 컨텍스트가 비어 있거나 `KEY=VALUE` 목록 대신 `!` 명령·정책 차단 문구가 그대로 보이면(`!` 주입이 꺼진 환경), 첫 Bash 명령으로 `bash "${CLAUDE_SKILL_DIR}/scripts/preamble.sh" salary`를 실행해 같은 컨텍스트를 확보하고 `${CLAUDE_SKILL_DIR}/references/guardrails.md`를 Read 하세요. 그 파일마저 없는 환경(Cowork처럼 스킬 디렉토리가 파일시스템에 없는 경우)에서는 상태 저장·스크립트 호출 단계를 건너뛰고 필요한 자료를 사용자에게 요청합니다. `STATE_WRITE_FAILED=true`가 보이면 `JOBSTACK_STATE_DIR` 경로를 사용자에게 확인합니다. 이 스킬의 Bash 스니펫은 첫 줄에 `. "${JOBSTACK_STATE_DIR:-$HOME/.jobstack}/env.sh"`를 두어 `$_JS_STATE`·`$_JS_BIN`·`$TODAY`를 불러옵니다.
 
-# 설정 로딩
-_JS_CONFIG="${CLAUDE_SKILL_DIR}/../bin/jobstack-config"
-if [ -x "$_JS_CONFIG" ]; then
-  PROACTIVE=$("$_JS_CONFIG" get proactive 2>/dev/null || echo "true")
-else
-  PROACTIVE="true"
-fi
+### 공통 가드레일 (references/guardrails.md)
 
-# 프로필 로딩
-PROFILE="$_JS_STATE/profiles/default.yaml"
-if [ -f "$PROFILE" ]; then
-  echo "PROFILE_EXISTS=true"
-  echo "--- 프로필 요약 ---"
-  head -20 "$PROFILE"
-  echo "---"
-else
-  echo "PROFILE_EXISTS=false"
-fi
+!`sed '1{/^# /d;}' "${CLAUDE_SKILL_DIR}/references/guardrails.md"`
 
-# 활성 세션 수
-for _f in "$_JS_STATE/sessions/"*; do
-  [ -f "$_f" ] || continue
-  kill -0 "$(basename "$_f")" 2>/dev/null || rm -f "$_f"
-done
-ACTIVE_SESSIONS=$(ls "$_JS_STATE/sessions/" 2>/dev/null | wc -l | tr -d ' ')
-echo "ACTIVE_SESSIONS=$ACTIVE_SESSIONS"
-echo "PROACTIVE=$PROACTIVE"
-echo "SKILL_NAME=salary"
-echo "CURRENT_YEAR=$(date +%Y)"
-
-# ─── jobstack bin 경로 해석 (is-fetch 폴백에 사용) ─────────────
-# prod 컨테이너는 SKILL.md만 ~/.claude/commands/salary/로 복사하고 bin은
-# /app/skills/jobstack/bin에만 있어 CLAUDE_SKILL_DIR/../bin이 실제 위치와 다르다.
-if [ -n "$CLAUDE_SKILL_DIR" ]; then
-  _JS_BIN="${CLAUDE_SKILL_DIR}/../bin"
-fi
-if [ ! -f "${_JS_BIN:-}/is-fetch.py" ]; then
-  for _try in "/app/skills/jobstack/bin" "$HOME/.claude/skills/jobstack/bin" "/var/jobclaw/skills/jobstack/bin"; do
-    [ -f "$_try/is-fetch.py" ] && { _JS_BIN="$_try"; break; }
-  done
-fi
-echo "JS_BIN=${_JS_BIN:-unresolved}"
-
-# 텔레메트리
-echo "{\"skill\":\"salary\",\"ts\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"pid\":$$}" \
-  >> "$_JS_STATE/analytics/skill-usage.jsonl" 2>/dev/null || true
-```
-
-> **공통 가드레일**: 작업 시작 전 `${CLAUDE_SKILL_DIR}/../templates/guardrails.md` 를 Read 도구로 읽고 §1~§6 전 규칙을 준수하세요.
-
+!`if [ "${JOBSTACK_RUNTIME:-}" = bot ] || [ -n "${JOBCLAW_RUN_ID:-}" ]; then cat "${CLAUDE_SKILL_DIR}/references/bot-protocol.md"; fi`
 
 # /salary — 연봉 분석 및 협상
 
@@ -104,7 +53,7 @@ AskUserQuestion으로 확인:
 
 ### Phase 2: 연봉 데이터 검색
 
-WebSearch로 연봉 정보를 수집합니다. **시장 수치(평균 연봉·초봉·인상률 등)는 SKILL.md에 박아두지 않고, 실행 시점에 WebSearch로 확인하고 출처·기준 시점을 병기합니다** (`${CLAUDE_SKILL_DIR}/../templates/guardrails.md` §3·§5 규칙).
+WebSearch로 연봉 정보를 수집합니다. **시장 수치(평균 연봉·초봉·인상률 등)는 SKILL.md에 박아두지 않고, 실행 시점에 WebSearch로 확인하고 출처·기준 시점을 병기합니다** (`${CLAUDE_SKILL_DIR}/references/guardrails.md` §3·§5 규칙).
 
 **검색 소스:**
 - 사람인 연봉정보 (saramin.co.kr) — 기업별 평균 연봉
@@ -136,8 +85,8 @@ WebSearch로 연봉 정보를 수집합니다. **시장 수치(평균 연봉·�
 **검색 실패 시 폴백 (순서대로):**
 1. **1차 — WebSearch 재시도**: KOSA SW기술자 평균임금·잡플래닛 공표 통계를 다시 조회하되, 반드시 공표 시점을 병기합니다.
 2. **2차 — is-fetch 어댑터**: 잡플래닛·블라인드 등 특정 페이지가 WebFetch 로 차단됐다면 `python3 "$_JS_BIN/is-fetch.py" "<URL>"` 로 재확보합니다(curl_cffi). **URL 은 반드시 큰따옴표로 감쌉니다**(`&`·`?` 로 인한 셸 분할·주입 방지). `$_JS_BIN` 은 preamble에서 실제 bin 위치로 해석됨. **stdout JSON 의 `verdict` 가 `strong_ok` 이고 `html` 이 있을 때만** 그 본문의 수치를 출처·시점과 함께 사용합니다. `too_small`(짧은 차단/오류/부분 페이지일 수 있음)·`challenge`·`error` 이거나 exit 3(미설치)이면 다음 단계로 넘어갑니다 — **`too_small` 은 연봉 근거로 쓰지 않습니다**(시간 민감 정보 오염 방지).
-3. **3차 — 사용자 자료 요청**: 한계를 그대로 노출하지 말고 필요한 자료를 요청합니다 (예: "블라인드/잡플래닛에서 보신 해당 기업 연봉 수치를 붙여주시면 반영하겠습니다"). 사용자가 붙여넣은 수치는 정식 입력으로 인정합니다. (`${CLAUDE_SKILL_DIR}/../templates/guardrails.md` §2)
-4. **모두 실패 시**: 해당 섹션을 스킵하고 `DONE_WITH_CONCERNS`로 처리합니다. **연봉 데이터 등 시간 민감 정보는 훈련 데이터의 기억으로 절대 대체하지 않습니다** (`${CLAUDE_SKILL_DIR}/../templates/completion-status.md`의 BLOCKED 규칙과 동일).
+3. **3차 — 사용자 자료 요청**: 한계를 그대로 노출하지 말고 필요한 자료를 요청합니다 (예: "블라인드/잡플래닛에서 보신 해당 기업 연봉 수치를 붙여주시면 반영하겠습니다"). 사용자가 붙여넣은 수치는 정식 입력으로 인정합니다. (`${CLAUDE_SKILL_DIR}/references/guardrails.md` §2)
+4. **모두 실패 시**: 해당 섹션을 스킵하고 `DONE_WITH_CONCERNS`로 처리합니다. **연봉 데이터 등 시간 민감 정보는 훈련 데이터의 기억으로 절대 대체하지 않습니다** (`${CLAUDE_SKILL_DIR}/references/completion-status.md`의 BLOCKED 규칙과 동일).
 
 ### Phase 3: 벤치마크 테이블
 
@@ -253,7 +202,7 @@ WebSearch로 연봉 정보를 수집합니다. **시장 수치(평균 연봉·�
 
 ## 완료 상태
 
-`${CLAUDE_SKILL_DIR}/../templates/completion-status.md`의 프로토콜을 따릅니다.
+`${CLAUDE_SKILL_DIR}/references/completion-status.md`의 프로토콜을 따릅니다.
 
 - **완료 (DONE)** — 모든 단계 완료, 근거 제시
 - **우려사항 있는 완료 (DONE_WITH_CONCERNS)** — 완료, 알아야 할 사항 명시
@@ -262,7 +211,8 @@ WebSearch로 연봉 정보를 수집합니다. **시장 수치(평균 연봉·�
 
 벤치마크 리포트를 파일로 생성한 경우, 사용자에게 뷰어 사용을 안내합니다:
 ```bash
-$CLAUDE_SKILL_DIR/../bin/jobstack-view <결과파일.md>
+. "${JOBSTACK_STATE_DIR:-$HOME/.jobstack}/env.sh"
+"$_JS_BIN/jobstack-view" <결과파일.md>
 ```
 
 ### 다음 스킬 추천
@@ -270,21 +220,3 @@ $CLAUDE_SKILL_DIR/../bin/jobstack-view <결과파일.md>
 - 연봉 분석 완료 → `/mock_interview` (연봉 협상 롤플레이)
 - 오퍼 비교 완료 → `/company_research` (최종 후보 기업 분석)
 - 재직자 인상 협상 / 오퍼 없는 상태 상담 → `/strategy` (이직 vs 잔류 선택지 비교)
-
-## 시각화 이미지 생성
-
-연봉 벤치마크·범위·협상 시나리오를 제시하는 답변에서는 반드시 응답 맨 끝에 아래 마커를 추가한다:
-
-```
-[IMAGE_PROMPT: <영어 프롬프트>]
-```
-
-**트리거 조건 (필수):**
-- 직무·연차별 연봉 범위/percentile 제시 → **반드시** 추가
-- 오퍼 비교, 기업 tier별 연봉 비교, 협상 목표선 제시 → 추가
-- 단순 단답, 수치 1개 안내, 오류 메시지 → 추가하지 않음
-
-이 마커를 빠뜨리지 말 것 — 위 조건에 해당하면 응답의 가장 마지막 줄에 반드시 포함한다.
-
-**프롬프트 스타일:** 명확하고 informative한 infographic/chart 스타일. 실제 직무·연차·연봉 수치·기업 tier를 반영한다.
-예: `A clean salary benchmark infographic for a backend engineer in Seoul (3 years experience): market range 5,500–7,500만원 with 25th/50th/75th percentile bars, comparison across company tiers (대기업/유니콘/스타트업), and a target negotiation point highlighted. Dark navy background, KRW labels, green accent for target. Korean professional aesthetic.`

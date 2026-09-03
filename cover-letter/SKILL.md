@@ -18,41 +18,15 @@ allowed-tools:
 benefits-from: [strategy, company-research, ncs, experience-bank]
 ---
 
-```bash
-_JS_STATE="${JOBSTACK_STATE_DIR:-$HOME/.jobstack}"
-mkdir -p "$_JS_STATE/analytics" "$_JS_STATE/profiles" "$_JS_STATE/tracker" \
-         "$_JS_STATE/company-cache" "$_JS_STATE/interview-history" "$_JS_STATE/sessions" "$_JS_STATE/defense-maps" "$_JS_STATE/job-cache"
-echo "$$" > "$_JS_STATE/sessions/$$"
-trap 'rm -f "$_JS_STATE/sessions/$$"' EXIT
-_JS_CONFIG="${CLAUDE_SKILL_DIR}/../bin/jobstack-config"
-if [ -x "$_JS_CONFIG" ]; then
-  PROACTIVE=$("$_JS_CONFIG" get proactive 2>/dev/null || echo "true")
-else
-  PROACTIVE="true"
-fi
-PROFILE="$_JS_STATE/profiles/default.yaml"
-if [ -f "$PROFILE" ]; then
-  echo "PROFILE_EXISTS=true"
-  head -30 "$PROFILE"
-else
-  echo "PROFILE_EXISTS=false"
-fi
-# 기업분석 캐시 확인
-ls "$_JS_STATE/company-cache/" 2>/dev/null | head -5
-for _f in "$_JS_STATE/sessions/"*; do
-  [ -f "$_f" ] || continue
-  kill -0 "$(basename "$_f")" 2>/dev/null || rm -f "$_f"
-done
-ACTIVE_SESSIONS=$(ls "$_JS_STATE/sessions/" 2>/dev/null | wc -l | tr -d ' ')
-echo "ACTIVE_SESSIONS=$ACTIVE_SESSIONS"
-echo "PROACTIVE=$PROACTIVE"
-echo "SKILL_NAME=cover-letter"
-echo "{\"skill\":\"cover-letter\",\"ts\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"pid\":$$}" \
-  >> "$_JS_STATE/analytics/skill-usage.jsonl" 2>/dev/null || true
-```
+!`bash "${CLAUDE_SKILL_DIR}/scripts/preamble.sh" cover-letter "${CLAUDE_SESSION_ID}"`
 
-> **공통 가드레일**: 작업 시작 전 `${CLAUDE_SKILL_DIR}/../templates/guardrails.md` 를 Read 도구로 읽고 §1~§6 전 규칙을 준수하세요.
+> 위 실행 컨텍스트가 비어 있거나 `KEY=VALUE` 목록 대신 `!` 명령·정책 차단 문구가 그대로 보이면(`!` 주입이 꺼진 환경), 첫 Bash 명령으로 `bash "${CLAUDE_SKILL_DIR}/scripts/preamble.sh" cover-letter`를 실행해 같은 컨텍스트를 확보하고 `${CLAUDE_SKILL_DIR}/references/guardrails.md`를 Read 하세요. 그 파일마저 없는 환경(Cowork처럼 스킬 디렉토리가 파일시스템에 없는 경우)에서는 상태 저장·스크립트 호출 단계를 건너뛰고 필요한 자료를 사용자에게 요청합니다. `STATE_WRITE_FAILED=true`가 보이면 `JOBSTACK_STATE_DIR` 경로를 사용자에게 확인합니다. 이 스킬의 Bash 스니펫은 첫 줄에 `. "${JOBSTACK_STATE_DIR:-$HOME/.jobstack}/env.sh"`를 두어 `$_JS_STATE`·`$_JS_BIN`·`$TODAY`를 불러옵니다.
 
+### 공통 가드레일 (references/guardrails.md)
+
+!`sed '1{/^# /d;}' "${CLAUDE_SKILL_DIR}/references/guardrails.md"`
+
+!`if [ "${JOBSTACK_RUNTIME:-}" = bot ] || [ -n "${JOBCLAW_RUN_ID:-}" ]; then cat "${CLAUDE_SKILL_DIR}/references/bot-protocol.md"; fi`
 
 # 자기소개서 작성/첨삭
 
@@ -93,7 +67,7 @@ C) 특정 기업 맞춤 자소서 (기업분석 리포트 활용)
 
 **입력 우선순위 — JD 원문 직접 제공 시 (캐시 확인보다 우선):**
 - 사용자가 채용공고 원문(또는 URL)을 세션에 직접 제공하면 **그것을 1순위 소스**로 사용합니다. 원문에서 자격요건·우대사항·기술 키워드를 추출해 체크리스트의 '채용공고' 소스를 채우고, 나머지 6개 소스(CEO 신년사·인재상 등)만 캐시 또는 WebSearch로 보강합니다.
-- URL 제공 시 WebFetch로 본문 확보를 시도하고, 실패하면 한계를 노출하는 대신 "공고 본문을 붙여주시면 그대로 반영하겠습니다"로 자료 요청으로 전환합니다(`${CLAUDE_SKILL_DIR}/../templates/guardrails.md` §2).
+- URL 제공 시 WebFetch로 본문 확보를 시도하고, 실패하면 한계를 노출하는 대신 "공고 본문을 붙여주시면 그대로 반영하겠습니다"로 자료 요청으로 전환합니다(`${CLAUDE_SKILL_DIR}/references/guardrails.md` §2).
 - 붙여넣은 긴 텍스트가 JD 원문인지 자소서 초안인지 모호하면 1회 질문으로 확인합니다.
 
 company-cache에 기업분석 리포트가 있으면 **파일명 날짜를 확인**합니다:
@@ -152,7 +126,7 @@ CEO 신년사     AI 전환                   O      지원동기에 연결
 4. "이 기업에 지원하는 이유가 무엇인가요? 이 기업의 어떤 점이 본인의 경험과 맞닿아 있나요?"
 5. "본인의 약점이나 부족한 점이 있다면? 그리고 그것을 어떻게 극복하고 있나요?"
 
-> **가드레일** (`${CLAUDE_SKILL_DIR}/../templates/guardrails.md` §1 준수): 세션에서 사용자가 제공했거나 파일에서 확인한 사실만 사용합니다. 수치·자격·경력을 창작하지 않으며, 미확인 항목은 빈칸이 아니라 `[수치 확인 필요]` placeholder로 표기하고 **항목당 1회만** 질문합니다. "알아서 다 써 달라"는 전면 위임 요청이더라도 사실 검증 질문을 먼저 거친 뒤 작성합니다.
+> **가드레일** (`${CLAUDE_SKILL_DIR}/references/guardrails.md` §1 준수): 세션에서 사용자가 제공했거나 파일에서 확인한 사실만 사용합니다. 수치·자격·경력을 창작하지 않으며, 미확인 항목은 빈칸이 아니라 `[수치 확인 필요]` placeholder로 표기하고 **항목당 1회만** 질문합니다. "알아서 다 써 달라"는 전면 위임 요청이더라도 사실 검증 질문을 먼저 거친 뒤 작성합니다.
 
 ### 직군별 소재 강조점
 
@@ -197,7 +171,7 @@ CEO 신년사     AI 전환                   O      지원동기에 연결
 - 이: 경험 사례 + 수치 (키워드 체크리스트에서 반영)
 - 요: 이 기업에서 구체적으로 기여할 수 있는 비전
 - ⚠️ **흔한 실수**: 회사 소개 반복. "귀사는 ~한 기업입니다"로 시작하지 말 것.
-- **치환 테스트 2종** (`${CLAUDE_SKILL_DIR}/../templates/humanize-check.md` §1): ①회사명 치환 — 회사명을 경쟁사로 바꿔도 문장이 성립하면 실패. ②타 지원자 치환 — 주어를 다른 지원자로 바꿔도 성립하면 실패. 실패 시 그 회사·본인에게만 해당하는 근거로 리라이팅합니다.
+- **치환 테스트 2종** (`${CLAUDE_SKILL_DIR}/references/humanize-check.md` §1): ①회사명 치환 — 회사명을 경쟁사로 바꿔도 문장이 성립하면 실패. ②타 지원자 치환 — 주어를 다른 지원자로 바꿔도 성립하면 실패. 실패 시 그 회사·본인에게만 해당하는 근거로 리라이팅합니다.
 
 **성장과정/도전경험:**
 - 결: 직무 역량과 연결되는 한 줄 캐릭터 (예: "트렌드를 타고난 UX 커뮤니케이터")
@@ -225,11 +199,11 @@ CEO 신년사     AI 전환                   O      지원동기에 연결
 - "결이요" 구조 적용
 - 키워드 체크리스트 반영
 - **글자수 자동 카운트(#118)**: 기업 지정 글자 수가 있으면 각 항목 완성 후 `wc -m`(또는 `python3 -c`로 공백 포함/제외를 **명시**)으로 실제 글자수를 표기합니다. 사용자에게 "몇 자냐"고 되묻지 마세요. 한도 초과 시 **한도 이내 축약본을 먼저 제시**하고 원본과 나란히 보여줍니다.
-- **완결 시 .docx 자동 산출(#118b)**: 자소서 초안/첨삭이 **완료(DONE)** 되면 사용자가 "파일로 줘"라고 말하지 않아도 최종본을 워크스페이스 CLAUDE.md 의 **File output protocol**(`[OUTPUT_FILE: ...]` + `render-docx.sh`)로 **.docx 자동 emit** 하세요. 단, **.docx 자동 emit은 Phase 9.5 인간화 점검을 통과한 뒤에만** 실행합니다 — 점검 전에는 파일을 산출하지 않습니다.
+- **완결 시 .docx 산출(#118b)**: 자소서 초안/첨삭이 **완료(DONE)** 되면 사용자가 "파일로 줘"라고 말하지 않아도 최종본 마크다운을 저장하고 `"$_JS_BIN/jobstack-export" <최종본.md>`로 .docx를 산출합니다(exit 4 = placeholder 잔존 → 항목 보완 요청 후 재시도, exit 2/3 → 마크다운 폴백). 단, **.docx 산출은 Phase 9.5 인간화 점검을 통과한 뒤에만** 실행합니다 — 점검 전에는 파일을 산출하지 않습니다. 봇 환경의 파일 출력 규칙은 실행 컨텍스트가 `bot`일 때 주입되는 bot-protocol을 따릅니다.
 
 > ⚠️ 이 초안은 반드시 **본인 언어로 리라이팅**해야 합니다. AI가 쓴 문장을 그대로 제출하지 마세요.
 
-> **3문서 역할·중복 제거**: 자소서는 서사 문서입니다. 이력서·경력기술서와 같은 경험을 다룰 때 문장을 그대로 반복하지 말고, 자소서는 '선택 이유와 배움' 층위로 씁니다 — `${CLAUDE_SKILL_DIR}/../templates/three-docs-guide.md` §1(역할 구분)·§3(중복 제거 3원칙) 적용.
+> **3문서 역할·중복 제거**: 자소서는 서사 문서입니다. 이력서·경력기술서와 같은 경험을 다룰 때 문장을 그대로 반복하지 말고, 자소서는 '선택 이유와 배움' 층위로 씁니다 — `${CLAUDE_SKILL_DIR}/references/three-docs-guide.md` §1(역할 구분)·§3(중복 제거 3원칙) 적용.
 
 ### 4B: 기존 자소서 첨삭 시
 
@@ -262,7 +236,7 @@ CEO 신년사     AI 전환                   O      지원동기에 연결
 
 > 진단 항목 ②(감정·감상 과다)의 "많은 것을 배웠습니다" 류 마무리는 Phase 5 ③ **배운 점 규칙**과 상호 참조합니다.
 
-**추상어 → 질문 전환표** (`${CLAUDE_SKILL_DIR}/../templates/experience-methods.md` §4): 진단에서 **추상적 역량어**(기존 진단 ③ 추상적 성과와 별개 항목)를 발견하면 삭제하지 말고 해당 질문을 사용자에게 던져 근거·소재를 발굴합니다.
+**추상어 → 질문 전환표** (`${CLAUDE_SKILL_DIR}/references/experience-methods.md` §4): 진단에서 **추상적 역량어**(기존 진단 ③ 추상적 성과와 별개 항목)를 발견하면 삭제하지 말고 해당 질문을 사용자에게 던져 근거·소재를 발굴합니다.
 
 | 추상어 | 전환 질문 |
 |--------|-----------|
@@ -349,7 +323,7 @@ CEO 신년사     AI 전환                   O      지원동기에 연결
 
 수치가 없는 경험이라면 **범위·빈도·전후비교·담당규모** 중 답할 수 있는 것을 질문해 근거를 확보합니다. 추정은 마지막 수단으로만 쓰며, 추정치는 `[추정]`으로 표기하고 사용자 확인 없이 확정 수치로 쓰지 않습니다(제출 전 검토 안내).
 
-**수치 폴백 5기준** (`${CLAUDE_SKILL_DIR}/../templates/experience-methods.md` §3): 숫자가 없어도 ①전후 변화 → ②역할 범위 분리 → ③정성 근거(사수 피드백·계속 쓰인 양식) → ④작은 검증 가능 숫자(예: "3주 12건 문의 유형 정리") → ⑤면접 설명 가능성 순으로 근거를 찾습니다.
+**수치 폴백 5기준** (`${CLAUDE_SKILL_DIR}/references/experience-methods.md` §3): 숫자가 없어도 ①전후 변화 → ②역할 범위 분리 → ③정성 근거(사수 피드백·계속 쓰인 양식) → ④작은 검증 가능 숫자(예: "3주 12건 문의 유형 정리") → ⑤면접 설명 가능성 순으로 근거를 찾습니다.
 
 ---
 
@@ -388,7 +362,7 @@ CEO 신년사     AI 전환                   O      지원동기에 연결
 - "결이요" 프레임워크와 STAR 기법을 NCS 역량 단위와 연결하고, 학생 톤을 제거합니다 ("배웠습니다" → "수행했습니다", "열심히" → 구체적 수치와 결과)
 - **블라인드 식별정보 필터**: 자소서·경험기술서 본문에 학교명·학점·가족사항·사진·출신지역 등 식별정보가 노출되면 불이익 가능성이 있으므로, 해당 표현을 표시하고 중립 표현으로 치환 제안합니다(예: "OO대학교 캡스톤" → "4인 팀 캡스톤 프로젝트"). 단 일부 연구개발목적기관은 블라인드 예외이므로 지원 기관 공고의 블라인드 적용 여부를 먼저 확인하도록 안내합니다.
 - **채용절차법 제4조의3 기재 금지 항목** 안내: ①신체적 조건(용모·키·체중 등), ②출신지역·혼인여부·재산, ③직계존비속·형제자매의 학력·직업·재산. 기업이 요구하더라도 자소서에 쓸 필요가 없음을 사용자에게 알립니다.
-- **경험기술서 vs 경력기술서** 구분이 필요하면 `${CLAUDE_SKILL_DIR}/../templates/three-docs-guide.md` §2를 적용합니다(금전 대가=경력기술서 두괄식·최근순, 무보수 활동=경험기술서).
+- **경험기술서 vs 경력기술서** 구분이 필요하면 `${CLAUDE_SKILL_DIR}/references/three-docs-guide.md` §2를 적용합니다(금전 대가=경력기술서 두괄식·최근순, 무보수 활동=경험기술서).
 
 ---
 
@@ -425,7 +399,7 @@ CEO 신년사     AI 전환                   O      지원동기에 연결
 ```
 
 - **역할 경계**: 위험 문장의 **수정/삭제 판단**까지 cover-letter가 담당하고, 답변 연습·심화 준비는 `/mock_interview`로 핸드오프합니다.
-- 미끼·위험 문장·예상 질문 산출 구조는 `${CLAUDE_SKILL_DIR}/../docs/defense-map-schema.md`의 YAML 계약을 따라 `$_JS_STATE/defense-maps/<회사명>_<직무>_<YYYYMMDD>.yaml`로 저장해 mock-interview가 소비할 수 있게 합니다(entry별 `sentence`·`bait_type`·`questions`(2개 이상)·`defense_status`).
+- 미끼·위험 문장·예상 질문 산출 구조는 `${CLAUDE_SKILL_DIR}/references/defense-map-schema.md`의 YAML 계약을 따라 `$_JS_STATE/defense-maps/<회사명>_<직무>_<YYYYMMDD>.yaml`로 저장해 mock-interview가 소비할 수 있게 합니다(entry별 `sentence`·`bait_type`·`questions`(2개 이상)·`defense_status`).
 
 ### 면접 예상 질문 생성
 자소서 기반 + 채용공고 기반으로 예상 질문 세트를 생성합니다:
@@ -452,7 +426,7 @@ Phase 1에서 만든 키워드 체크리스트의 최종 반영률을 출력합�
 
 ## Phase 9.5: 인간화 점검
 
-모든 문장 수정(Phase 6~8)이 끝난 뒤, 제출 전 마지막으로 AI풍 문장을 걸러냅니다. `${CLAUDE_SKILL_DIR}/../templates/humanize-check.md`를 적용합니다.
+모든 문장 수정(Phase 6~8)이 끝난 뒤, 제출 전 마지막으로 AI풍 문장을 걸러냅니다. `${CLAUDE_SKILL_DIR}/references/humanize-check.md`를 적용합니다.
 
 - **문장 단위 표시**: 일반론 문장(어느 회사에나 성립), 경험 근거 없는 주장, 균질한 문장 길이를 문장 단위로 표시하고, 사용자 고유 경험·수치로 치환하도록 유도합니다(§1 치환 테스트·§2 AI풍 신호).
 - **AI 만능 표현**: 별도로 정의하지 않고 아래 **보이스** 섹션의 금지 목록을 기준으로 점검합니다.
@@ -499,7 +473,7 @@ Phase 1에서 만든 키워드 체크리스트의 최종 반영률을 출력합�
 
 > 제출 전 안내(고정): GPT킬러·카피킬러 등 탐지 도구로 셀프체크한 뒤 제출하기를 권장합니다.
 
-## 퍼널 텔레메트리 (docs/telemetry-events.md)
+## 퍼널 텔레메트리 (references/telemetry-events.md)
 
 첨삭 흐름의 각 시점에 규격 이벤트를 `$_JS_STATE/analytics/skill-usage.jsonl`에 append합니다(실패해도 무시). PII(문서 내용·회사명) 금지, 메타만 기록:
 - 첨삭 대상 자소서를 받으면(Phase 4B 진입) → `submitted`
@@ -507,6 +481,7 @@ Phase 1에서 만든 키워드 체크리스트의 최종 반영률을 출력합�
 - 재리뷰 delta 경로로 재진단하면 → `second_review`
 
 ```bash
+. "${JOBSTACK_STATE_DIR:-$HOME/.jobstack}/env.sh"
 echo '{"skill":"cover-letter","ts":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","pid":'$$',"event":"diagnosed"}' \
   >> "$_JS_STATE/analytics/skill-usage.jsonl" 2>/dev/null || true
 ```
@@ -522,7 +497,8 @@ echo '{"skill":"cover-letter","ts":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","pid":'$$'
 ### 결과물 뷰어
 결과 파일이 Markdown으로 저장되면 다음 명령으로 브라우저에서 열 수 있습니다:
 ```bash
-$CLAUDE_SKILL_DIR/../bin/jobstack-view <결과파일.md>
+. "${JOBSTACK_STATE_DIR:-$HOME/.jobstack}/env.sh"
+"$_JS_BIN/jobstack-view" <결과파일.md>
 ```
 스타일링된 HTML로 변환되며, "PDF 저장" 버튼으로 PDF 출력도 가능합니다. 결과물 저장 시 반드시 안내하세요.
 

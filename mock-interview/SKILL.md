@@ -14,52 +14,15 @@ allowed-tools:
 benefits-from: [strategy, company-research, cover-letter, experience-bank]
 ---
 
-```bash
-# ─── jobstack 프리앰블 ─────────────────────────
-_JS_STATE="${JOBSTACK_STATE_DIR:-$HOME/.jobstack}"
-mkdir -p "$_JS_STATE/analytics" "$_JS_STATE/profiles" "$_JS_STATE/tracker" \
-         "$_JS_STATE/company-cache" "$_JS_STATE/interview-history" "$_JS_STATE/sessions" "$_JS_STATE/defense-maps" "$_JS_STATE/job-cache"
+!`bash "${CLAUDE_SKILL_DIR}/scripts/preamble.sh" mock-interview "${CLAUDE_SESSION_ID}"`
 
-# 세션 추적
-echo "$$" > "$_JS_STATE/sessions/$$"
-trap 'rm -f "$_JS_STATE/sessions/$$"' EXIT
+> 위 실행 컨텍스트가 비어 있거나 `KEY=VALUE` 목록 대신 `!` 명령·정책 차단 문구가 그대로 보이면(`!` 주입이 꺼진 환경), 첫 Bash 명령으로 `bash "${CLAUDE_SKILL_DIR}/scripts/preamble.sh" mock-interview`를 실행해 같은 컨텍스트를 확보하고 `${CLAUDE_SKILL_DIR}/references/guardrails.md`를 Read 하세요. 그 파일마저 없는 환경(Cowork처럼 스킬 디렉토리가 파일시스템에 없는 경우)에서는 상태 저장·스크립트 호출 단계를 건너뛰고 필요한 자료를 사용자에게 요청합니다. `STATE_WRITE_FAILED=true`가 보이면 `JOBSTACK_STATE_DIR` 경로를 사용자에게 확인합니다. 이 스킬의 Bash 스니펫은 첫 줄에 `. "${JOBSTACK_STATE_DIR:-$HOME/.jobstack}/env.sh"`를 두어 `$_JS_STATE`·`$_JS_BIN`·`$TODAY`를 불러옵니다.
 
-# 설정 로딩
-_JS_CONFIG="${CLAUDE_SKILL_DIR}/../bin/jobstack-config"
-if [ -x "$_JS_CONFIG" ]; then
-  PROACTIVE=$("$_JS_CONFIG" get proactive 2>/dev/null || echo "true")
-else
-  PROACTIVE="true"
-fi
+### 공통 가드레일 (references/guardrails.md)
 
-# 프로필 로딩
-PROFILE="$_JS_STATE/profiles/default.yaml"
-if [ -f "$PROFILE" ]; then
-  echo "PROFILE_EXISTS=true"
-  echo "--- 프로필 요약 ---"
-  head -20 "$PROFILE"
-  echo "---"
-else
-  echo "PROFILE_EXISTS=false"
-fi
+!`sed '1{/^# /d;}' "${CLAUDE_SKILL_DIR}/references/guardrails.md"`
 
-# 활성 세션 수
-for _f in "$_JS_STATE/sessions/"*; do
-  [ -f "$_f" ] || continue
-  kill -0 "$(basename "$_f")" 2>/dev/null || rm -f "$_f"
-done
-ACTIVE_SESSIONS=$(ls "$_JS_STATE/sessions/" 2>/dev/null | wc -l | tr -d ' ')
-echo "ACTIVE_SESSIONS=$ACTIVE_SESSIONS"
-echo "PROACTIVE=$PROACTIVE"
-echo "SKILL_NAME=mock-interview"
-
-# 텔레메트리
-echo "{\"skill\":\"mock-interview\",\"ts\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"pid\":$$}" \
-  >> "$_JS_STATE/analytics/skill-usage.jsonl" 2>/dev/null || true
-```
-
-> **공통 가드레일**: 작업 시작 전 `${CLAUDE_SKILL_DIR}/../templates/guardrails.md` 를 Read 도구로 읽고 §1~§6 전 규칙을 준수하세요.
-
+!`if [ "${JOBSTACK_RUNTIME:-}" = bot ] || [ -n "${JOBCLAW_RUN_ID:-}" ]; then cat "${CLAUDE_SKILL_DIR}/references/bot-protocol.md"; fi`
 
 ---
 
@@ -132,6 +95,7 @@ echo "{\"skill\":\"mock-interview\",\"ts\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"
 - no-arg 시작은 정상 진입 경로입니다. 감지 직후 skill-usage.jsonl에 `detected` 이벤트를 `no_arg:true`로 기록합니다:
 
 ```bash
+. "${JOBSTACK_STATE_DIR:-$HOME/.jobstack}/env.sh"
 echo '{"skill":"mock-interview","ts":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","pid":'$$',"event":"detected","phase":"no-arg-start","no_arg":true,"mode":"인성"}' \
   >> "$_JS_STATE/analytics/skill-usage.jsonl" 2>/dev/null || true
 ```
@@ -206,7 +170,7 @@ AskUserQuestion으로 면접 강도를 선택합니다:
    - 강점/약점 기반 질문 비율 조절
 
 4. **defense-map** (있으면 미끼 질문 1순위 소스): `$_JS_STATE/defense-maps/`
-   - review/cover-letter가 산출한 미끼 문장↔예상 꼬리질문 인벤토리(YAML). 데이터 계약은 `docs/defense-map-schema.md` 참조
+   - review/cover-letter가 산출한 미끼 문장↔예상 꼬리질문 인벤토리(YAML). 데이터 계약은 `${CLAUDE_SKILL_DIR}/references/defense-map-schema.md` 참조
    - 회사명 느슨 매칭(공백 제거 + 부분일치) 후 **최신 파일 1개**를 읽어 미끼 질문(40%)의 **1순위 소스**로 사용하고, 자소서 직접 추출은 폴백으로 둡니다
    - `defense_status`가 `weak`·`unprepared`인 항목을 먼저 출제하고, 주입 분량은 1500자 이내로 제한합니다
    - **파싱 실패·형식 불일치 시 오류를 노출하지 않고 조용히 자소서 추출 폴백으로 진행**합니다 (파일 부재도 계약 위반이 아님)
@@ -456,7 +420,8 @@ Write로 두 파일을 모두 저장합니다.
 **결과물 뷰어 안내 (필수)**: 저장 후 사용자에게 결과물을 브라우저로 열람·PDF 저장할 수 있음을 반드시 안내합니다:
 
 ```bash
-$CLAUDE_SKILL_DIR/../bin/jobstack-view <리포트.md>
+. "${JOBSTACK_STATE_DIR:-$HOME/.jobstack}/env.sh"
+"$_JS_BIN/jobstack-view" <리포트.md>
 ```
 스타일링된 HTML로 변환되어 브라우저에서 열리며, "PDF 저장" 버튼으로 PDF 출력도 가능합니다.
 

@@ -36,7 +36,7 @@ echo ""
 echo "## 0. 린트 게이트"
 echo ""
 
-for lint in test-preambles.sh test-command-style.sh test-no-home-paths.sh lint-conventions.sh run-golden.sh test-fetch-diag.mjs test-wanted-verify.mjs test-is-fetch-adapter.mjs test-is-fetch-ssrf.mjs; do
+for lint in test-preambles.sh test-skill-refs.sh test-command-style.sh test-no-home-paths.sh lint-conventions.sh run-golden.sh test-fetch-diag.mjs test-wanted-verify.mjs test-is-fetch-adapter.mjs test-is-fetch-ssrf.mjs; do
   if [ ! -x "$SCRIPT_DIR/$lint" ]; then
     log_test "FAIL" "린트: $lint" "스크립트 없음 또는 실행 권한 없음"
     continue
@@ -56,21 +56,28 @@ echo ""
 # 1.1 install.sh
 echo "### install.sh"
 "$PROJECT_DIR/install.sh" > /dev/null 2>&1
-if [ -L "$HOME/.claude/commands/auto" ]; then
-  log_test "PASS" "심링크 생성 (auto)"
+if [ -L "$HOME/.claude/skills/auto" ]; then
+  log_test "PASS" "심링크 생성 (~/.claude/skills/auto)"
 else
-  log_test "FAIL" "심링크 생성 (auto)" "심링크 없음"
+  log_test "FAIL" "심링크 생성 (~/.claude/skills/auto)" "심링크 없음"
 fi
 
-SKILL_COUNT=$(ls -d "$HOME/.claude/commands"/{auto,strategy,resume,cover-letter,company-research,mock-interview,review,tracker,retro,portfolio,job-search,ncs,salary,experience-bank,career-history,scout-profile} 2>/dev/null | wc -l | tr -d ' ')
+SKILL_COUNT=$(ls -d "$HOME/.claude/skills"/{auto,strategy,resume,cover-letter,company-research,mock-interview,review,tracker,retro,portfolio,job-search,ncs,salary,experience-bank,career-history,scout-profile} 2>/dev/null | wc -l | tr -d ' ')
 if [ "$SKILL_COUNT" -eq 16 ]; then
   log_test "PASS" "전체 16개 스킬 설치"
 else
   log_test "FAIL" "전체 16개 스킬 설치" "설치된 수: $SKILL_COUNT"
 fi
 
+# 레거시 commands/ 심링크가 남아 있으면 안 된다 (v0.4.0 이전 설치 정리)
+if ls "$HOME/.claude/commands"/{auto,cover_letter} >/dev/null 2>&1; then
+  log_test "FAIL" "레거시 ~/.claude/commands 심링크 정리" "아직 존재"
+else
+  log_test "PASS" "레거시 ~/.claude/commands 심링크 정리"
+fi
+
 # 언더스코어 alias — README/스킬 본문이 안내하는 언더스코어 명령이 실제로 설치됐는지
-ALIAS_COUNT=$(ls -d "$HOME/.claude/commands"/{cover_letter,company_research,mock_interview,job_search,experience_bank,career_history,scout_profile} 2>/dev/null | wc -l | tr -d ' ')
+ALIAS_COUNT=$(ls -d "$HOME/.claude/skills"/{cover_letter,company_research,mock_interview,job_search,experience_bank,career_history,scout_profile} 2>/dev/null | wc -l | tr -d ' ')
 if [ "$ALIAS_COUNT" -eq 7 ]; then
   log_test "PASS" "언더스코어 alias 7개 설치 (/cover_letter 등)"
 else
@@ -143,11 +150,12 @@ for skill_dir in "$PROJECT_DIR"/{auto,strategy,resume,cover-letter,company-resea
     log_test "FAIL" "YAML 프론트매터: $skill_name" "--- 없음"
   fi
 
-  # bash 블록 존재 확인
-  if grep -q '```bash' "$SKILL_FILE"; then
-    log_test "PASS" "프리앰블 bash: $skill_name"
+  # 동적 주입 프리앰블 라인 + 생성 파일 확인 (v0.4.0)
+  if grep -qF '!`bash "${CLAUDE_SKILL_DIR}/scripts/preamble.sh" '"$skill_name"' "${CLAUDE_SESSION_ID}"`' "$SKILL_FILE" \
+     && [ -x "$skill_dir/scripts/preamble.sh" ] && [ -f "$skill_dir/references/guardrails.md" ]; then
+    log_test "PASS" "프리앰블 주입·생성 파일: $skill_name"
   else
-    log_test "FAIL" "프리앰블 bash: $skill_name" "bash 블록 없음"
+    log_test "FAIL" "프리앰블 주입·생성 파일: $skill_name" "주입 라인·scripts/preamble.sh·references/guardrails.md 중 누락"
   fi
 done
 
@@ -166,12 +174,28 @@ if [ -f "$TEST_DATA/이력서_홍길동.html" ]; then
   else
     log_test "FAIL" "뷰어: HTML 크기" "너무 작음: ${SIZE}B"
   fi
-  # marked.js CDN 참조 확인
-  if grep -q "cdn.jsdelivr.net/npm/marked" "$TEST_DATA/이력서_홍길동.html"; then
-    log_test "PASS" "뷰어: marked.js CDN 참조"
+  # marked 렌더러 포함 확인 — 인라인(vendor) 또는 버전 고정 CDN
+  if grep -q "marked@18" "$TEST_DATA/이력서_홍길동.html" || grep -q "marked.umd.js\|globalThis.marked\|\.marked=" "$TEST_DATA/이력서_홍길동.html"; then
+    log_test "PASS" "뷰어: marked 렌더러 포함(인라인 또는 핀 CDN)"
   else
-    log_test "FAIL" "뷰어: marked.js CDN 참조" "없음"
+    log_test "FAIL" "뷰어: marked 렌더러 포함" "없음"
   fi
+  # 미고정 CDN 참조가 남아 있으면 안 된다
+  if grep -q "npm/marked/lib" "$TEST_DATA/이력서_홍길동.html"; then
+    log_test "FAIL" "뷰어: marked 버전 미고정 CDN 참조 제거" "npm/marked/lib 발견"
+  else
+    log_test "PASS" "뷰어: marked 버전 미고정 CDN 참조 제거"
+  fi
+  # </script> 가 든 마크다운이 페이지를 깨지 않는지 (textarea 이스케이프)
+  printf '# 이스케이프\n\n본문에 </script> 와 </textarea> 와 <b>태그</b> 가 있습니다.\n' > "$TEST_DATA/escape-test.md"
+  "$PROJECT_DIR/bin/jobstack-view" "$TEST_DATA/escape-test.md" --no-open >/dev/null 2>&1
+  if grep -q '&lt;/script&gt; 와 &lt;/textarea&gt;' "$TEST_DATA/escape-test.html" 2>/dev/null \
+     && ! grep -q '본문에 </script>' "$TEST_DATA/escape-test.html"; then
+    log_test "PASS" "뷰어: </script> 이스케이프"
+  else
+    log_test "FAIL" "뷰어: </script> 이스케이프" "원문이 그대로 삽입됨"
+  fi
+  rm -f "$TEST_DATA/escape-test.md" "$TEST_DATA/escape-test.html"
   # 한국어 폰트 확인
   if grep -q "Noto Sans KR" "$TEST_DATA/이력서_홍길동.html"; then
     log_test "PASS" "뷰어: 한국어 폰트 (Noto Sans KR)"

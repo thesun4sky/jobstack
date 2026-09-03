@@ -3,6 +3,10 @@
 # Usage: cd jobstack && ./install.sh
 #   or:  ./install.sh --prefix               (adds jobstack- prefix to skill names)
 #   or:  ./install.sh --with-insane-search   (also builds bin/.is-venv for is-fetch.py)
+#
+# v0.4.0: 스킬은 Claude Code 표준 위치 ~/.claude/skills/ 에 심링크한다(이전 ~/.claude/commands/ 는
+# 파일 단위 레거시 경로). 이 저장소가 만든 옛 commands/ 심링크는 정리한다.
+# 플러그인 설치(`/plugin marketplace add thesun4sky/jobstack`)는 v0.5.0 부터 지원한다.
 set -euo pipefail
 
 PREFIX=""
@@ -14,8 +18,10 @@ for arg in "$@"; do
   esac
 done
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-SKILLS_DIR="$HOME/.claude/commands"
+SCRIPT_DIR="$(cd -P "$(dirname "$0")" && pwd)"
+SKILLS_DIR="$HOME/.claude/skills"
+LEGACY_DIR="$HOME/.claude/commands"
+AGENTS_DIR="$HOME/.claude/agents"
 STATE_DIR="${JOBSTACK_STATE_DIR:-$HOME/.jobstack}"
 
 echo "╔══════════════════════════════════════╗"
@@ -25,25 +31,42 @@ echo "╚═══════════════════════�
 echo ""
 
 # 1. 상태 디렉토리 생성
-echo "[1/3] 상태 디렉토리 생성..."
+echo "[1/4] 상태 디렉토리 생성..."
 mkdir -p "$STATE_DIR"/{profiles,tracker,company-cache,interview-history,analytics,sessions,defense-maps,job-cache}
 echo "  → $STATE_DIR"
 
 # 2. 스킬 설치 (심링크)
-echo "[2/3] 스킬 설치..."
+echo "[2/4] 스킬 설치 ($SKILLS_DIR)..."
 mkdir -p "$SKILLS_DIR"
 
 SKILL_DIRS=(auto strategy company-research resume cover-letter portfolio mock-interview job-search ncs salary tracker review retro experience-bank career-history scout-profile)
 
+skill_source() { # 저장소 루트 배치와 skills/ 배치 둘 다 지원
+  if [ -d "$SCRIPT_DIR/skills/$1" ]; then echo "$SCRIPT_DIR/skills/$1"; else echo "$SCRIPT_DIR/$1"; fi
+}
+
+link_skill() { # $1=link name $2=source dir
+  local target="$SKILLS_DIR/$1"
+  [ -L "$target" ] && rm "$target"
+  [ -d "$target" ] && rm -rf "$target"
+  ln -s "$2" "$target"
+}
+
+remove_legacy() { # $1=link name — 이 저장소를 가리키는 옛 commands/ 심링크만 제거
+  local legacy="$LEGACY_DIR/$1"
+  if [ -L "$legacy" ]; then
+    case "$(readlink "$legacy")" in
+      "$SCRIPT_DIR"/*) rm "$legacy"; echo "  ✓ 레거시 심링크 정리: $legacy" ;;
+    esac
+  fi
+}
+
 for skill in "${SKILL_DIRS[@]}"; do
-  skill_path="$SCRIPT_DIR/$skill"
+  skill_path="$(skill_source "$skill")"
   if [ -d "$skill_path" ] && [ -f "$skill_path/SKILL.md" ]; then
     link_name="${PREFIX}${skill}"
-    target="$SKILLS_DIR/$link_name"
-    # 기존 심링크/디렉토리 제거
-    [ -L "$target" ] && rm "$target"
-    [ -d "$target" ] && rm -rf "$target"
-    ln -s "$skill_path" "$target"
+    link_skill "$link_name" "$skill_path"
+    remove_legacy "$link_name"
     echo "  → /$link_name"
 
     # 언더스코어 alias — 하이픈 명령은 봇(Telegram)에서 탭이 안 되고,
@@ -51,18 +74,29 @@ for skill in "${SKILL_DIRS[@]}"; do
     # CLI(Claude Code)에서도 /cover_letter 형태가 동작하도록 alias 심링크를 함께 만든다.
     if [[ "$skill" == *-* ]]; then
       alias_name="${PREFIX}${skill//-/_}"
-      alias_target="$SKILLS_DIR/$alias_name"
-      [ -L "$alias_target" ] && rm "$alias_target"
-      [ -d "$alias_target" ] && rm -rf "$alias_target"
-      ln -s "$skill_path" "$alias_target"
+      link_skill "$alias_name" "$skill_path"
+      remove_legacy "$alias_name"
       echo "  → /$alias_name (alias)"
     fi
   fi
 done
 
-# 3. bin 스크립트 권한
-echo "[3/3] 스크립트 권한 설정..."
-chmod +x "$SCRIPT_DIR/bin/"*
+# 3. 서브에이전트 정의 (agents/*.md 가 있을 때만 — v0.5.0 researcher 등)
+echo "[3/4] 서브에이전트·스크립트 설정..."
+if [ -d "$SCRIPT_DIR/agents" ] && ls "$SCRIPT_DIR"/agents/*.md >/dev/null 2>&1; then
+  mkdir -p "$AGENTS_DIR"
+  for agent in "$SCRIPT_DIR"/agents/*.md; do
+    name="$(basename "$agent")"
+    [ -L "$AGENTS_DIR/$name" ] && rm "$AGENTS_DIR/$name"
+    ln -s "$agent" "$AGENTS_DIR/$name"
+    echo "  → agent: ${name%.md}"
+  done
+fi
+chmod +x "$SCRIPT_DIR/bin/"* 2>/dev/null || true
+for d in "$SCRIPT_DIR"/*/scripts "$SCRIPT_DIR"/skills/*/scripts; do
+  [ -d "$d" ] && chmod +x "$d"/*.sh 2>/dev/null || true
+done
+echo "  → bin/, scripts/ 실행 권한"
 
 # 4. insane-search 어댑터 venv (opt-in) — bin/is-fetch.py 가 쓰는 curl_cffi 를
 #    격리 venv 에 설치한다. 시스템 pip 직접 설치는 PEP 668(externally-managed)로
@@ -99,8 +133,10 @@ if [ "$WITH_INSANE_SEARCH" = "1" ]; then
   echo "  → 인터프리터: $IS_PYTHON ($("$IS_PYTHON" --version 2>&1))"
   "$IS_PYTHON" -m venv "$VENV_DIR"
   "$VENV_DIR/bin/pip" install --no-cache-dir --upgrade pip >/dev/null
-  "$VENV_DIR/bin/pip" install --no-cache-dir "curl_cffi>=0.15,<0.16"
+  "$VENV_DIR/bin/pip" install --no-cache-dir "curl_cffi>=0.16,<0.17"
   echo "  → $VENV_DIR (curl_cffi)"
+else
+  echo "[4/4] insane-search 어댑터: 건너뜀 (--with-insane-search 로 설치)"
 fi
 
 echo ""
@@ -112,11 +148,13 @@ echo ""
 echo "주요 스킬:"
 echo "  /auto              — 파일 자동 감지 + 단계별 가이드"
 echo "  /strategy          — 취업전략 수립"
-echo "  /company-research  — 기업분석"
+echo "  /company_research  — 기업분석"
 echo "  /resume            — 이력서 작성/첨삭"
-echo "  /cover-letter      — 자기소개서 작성/첨삭"
-echo "  /mock-interview    — 모의면접"
+echo "  /cover_letter      — 자기소개서 작성/첨삭"
+echo "  /mock_interview    — 모의면접"
 echo "  /review            — 통합 서류 리뷰"
-echo "  /tracker           — 지원 현황 관리"
+echo "  /tracker           — 지원 현황 관리 (CLI)"
 echo ""
+echo "선택 의존성: job_search 는 Node 22+ (Playwright 자동 설치), 문서 내보내기는 pandoc,"
+echo "차단 사이트 수집은 --with-insane-search (Python 3.10+)."
 echo "전체 목록: /auto 실행 후 안내를 따라주세요."

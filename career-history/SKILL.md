@@ -19,59 +19,15 @@ allowed-tools:
 benefits-from: [strategy, company-research, experience-bank, resume]
 ---
 
-```bash
-# ─── jobstack 프리앰블 ─────────────────────────
-_JS_STATE="${JOBSTACK_STATE_DIR:-$HOME/.jobstack}"
-mkdir -p "$_JS_STATE/analytics" "$_JS_STATE/profiles" "$_JS_STATE/tracker" \
-         "$_JS_STATE/company-cache" "$_JS_STATE/interview-history" "$_JS_STATE/sessions" "$_JS_STATE/defense-maps" "$_JS_STATE/job-cache"
+!`bash "${CLAUDE_SKILL_DIR}/scripts/preamble.sh" career-history "${CLAUDE_SESSION_ID}"`
 
-# 세션 추적
-echo "$$" > "$_JS_STATE/sessions/$$"
-trap 'rm -f "$_JS_STATE/sessions/$$"' EXIT
+> 위 실행 컨텍스트가 비어 있거나 `KEY=VALUE` 목록 대신 `!` 명령·정책 차단 문구가 그대로 보이면(`!` 주입이 꺼진 환경), 첫 Bash 명령으로 `bash "${CLAUDE_SKILL_DIR}/scripts/preamble.sh" career-history`를 실행해 같은 컨텍스트를 확보하고 `${CLAUDE_SKILL_DIR}/references/guardrails.md`를 Read 하세요. 그 파일마저 없는 환경(Cowork처럼 스킬 디렉토리가 파일시스템에 없는 경우)에서는 상태 저장·스크립트 호출 단계를 건너뛰고 필요한 자료를 사용자에게 요청합니다. `STATE_WRITE_FAILED=true`가 보이면 `JOBSTACK_STATE_DIR` 경로를 사용자에게 확인합니다. 이 스킬의 Bash 스니펫은 첫 줄에 `. "${JOBSTACK_STATE_DIR:-$HOME/.jobstack}/env.sh"`를 두어 `$_JS_STATE`·`$_JS_BIN`·`$TODAY`를 불러옵니다.
 
-# 설정 로딩
-_JS_CONFIG="${CLAUDE_SKILL_DIR}/../bin/jobstack-config"
-if [ -x "$_JS_CONFIG" ]; then
-  PROACTIVE=$("$_JS_CONFIG" get proactive 2>/dev/null || echo "true")
-else
-  PROACTIVE="true"
-fi
+### 공통 가드레일 (references/guardrails.md)
 
-# 프로필 로딩
-PROFILE="$_JS_STATE/profiles/default.yaml"
-if [ -f "$PROFILE" ]; then
-  echo "PROFILE_EXISTS=true"
-  echo "--- 프로필 요약 ---"
-  head -20 "$PROFILE"
-  echo "---"
-else
-  echo "PROFILE_EXISTS=false"
-fi
+!`sed '1{/^# /d;}' "${CLAUDE_SKILL_DIR}/references/guardrails.md"`
 
-# 경험뱅크 카드 존재 확인 (experience-bank가 저장한 append형 카드)
-if [ -f "$_JS_STATE/profiles/experiences.yaml" ]; then
-  echo "EXPERIENCES_EXISTS=true"
-else
-  echo "EXPERIENCES_EXISTS=false"
-fi
-
-# 활성 세션 수 (죽은 세션 파일 정리 후 집계)
-for _f in "$_JS_STATE/sessions/"*; do
-  [ -f "$_f" ] || continue
-  kill -0 "$(basename "$_f")" 2>/dev/null || rm -f "$_f"
-done
-ACTIVE_SESSIONS=$(ls "$_JS_STATE/sessions/" 2>/dev/null | wc -l | tr -d ' ')
-echo "ACTIVE_SESSIONS=$ACTIVE_SESSIONS"
-echo "PROACTIVE=$PROACTIVE"
-echo "SKILL_NAME=career-history"
-
-# 텔레메트리 (entry 이벤트 — docs/telemetry-events.md 참조)
-echo "{\"skill\":\"career-history\",\"ts\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"pid\":$$}" \
-  >> "$_JS_STATE/analytics/skill-usage.jsonl" 2>/dev/null || true
-```
-
-> **공통 가드레일**: 작업 시작 전 `${CLAUDE_SKILL_DIR}/../templates/guardrails.md` 를 Read 도구로 읽고 §1~§6 전 규칙을 준수하세요.
-
+!`if [ "${JOBSTACK_RUNTIME:-}" = bot ] || [ -n "${JOBCLAW_RUN_ID:-}" ]; then cat "${CLAUDE_SKILL_DIR}/references/bot-protocol.md"; fi`
 
 # 경력기술서 작성/첨삭
 
@@ -116,7 +72,7 @@ C) 3문서 역할 진단 ("이력서와 경력기술서 뭐가 다른가")
 2. **직무·연차 파악**: 프로필(`$_JS_STATE/profiles/default.yaml`)에 직무·경력이 있으면 로드하고, 없으면 1회 질문합니다.
 3. **소재 소스 로드**: 프리앰블 출력의 `EXPERIENCES_EXISTS`가 `true`면 `$_JS_STATE/profiles/experiences.yaml`을 Read해 저장된 경험 카드를 확보합니다(Phase 2에서 우선 제시). `default.yaml`의 `experience[]`도 인벤토리 후보로 확보합니다.
 
-> 경력기술서 vs 경험기술서 구분이 필요하면 `${CLAUDE_SKILL_DIR}/../templates/three-docs-guide.md` §2를 적용합니다(금전 대가=경력기술서, 무보수 활동=경험기술서).
+> 경력기술서 vs 경험기술서 구분이 필요하면 `${CLAUDE_SKILL_DIR}/references/three-docs-guide.md` §2를 적용합니다(금전 대가=경력기술서, 무보수 활동=경험기술서).
 
 ---
 
@@ -136,7 +92,7 @@ C) 3문서 역할 진단 ("이력서와 경력기술서 뭐가 다른가")
 | 팀 규모 | 몇 명 팀에서 |
 | 본인 기여 | **팀 성과와 분리한 내 몫** |
 
-- **팀 성과와 본인 기여 분리**는 `${CLAUDE_SKILL_DIR}/../templates/experience-methods.md` §2(문제·역할·행동·결과 4분리)를 적용합니다. "팀이 ~했다"를 발견하면 "그중 당신이 직접 한 것은?"으로 되물어 본인 몫을 특정합니다.
+- **팀 성과와 본인 기여 분리**는 `${CLAUDE_SKILL_DIR}/references/experience-methods.md` §2(문제·역할·행동·결과 4분리)를 적용합니다. "팀이 ~했다"를 발견하면 "그중 당신이 직접 한 것은?"으로 되물어 본인 몫을 특정합니다.
 - 경험을 카드 1장으로 구조화할 때는 같은 문서 §1(경험 전환 6단계)의 이름→문제→역할→행동→변화→직무연결 순서를 따릅니다.
 
 > **가드레일** (guardrails.md §1): 세션에서 확인된 사실만 씁니다. 재직 기간·직함·팀 규모를 추정해 채우지 않으며, 미확인 항목은 `[재직기간 확인 필요]` 같은 placeholder로 두고 **항목당 1회만** 질문합니다.
@@ -149,7 +105,7 @@ C) 3문서 역할 진단 ("이력서와 경력기술서 뭐가 다른가")
 
 ### 3-1. 기능 서술 → 성과 서술
 
-`${CLAUDE_SKILL_DIR}/../templates/experience-methods.md` §6(어조 전환 3공식)을 문장별로 적용합니다. "무엇을 만들었다"에서 멈추지 말고 "그래서 무엇이 달라졌는가"까지 씁니다.
+`${CLAUDE_SKILL_DIR}/references/experience-methods.md` §6(어조 전환 3공식)을 문장별로 적용합니다. "무엇을 만들었다"에서 멈추지 말고 "그래서 무엇이 달라졌는가"까지 씁니다.
 
 | Before (기능 서술) | After (성과 서술) |
 |---|---|
@@ -158,7 +114,7 @@ C) 3문서 역할 진단 ("이력서와 경력기술서 뭐가 다른가")
 
 ### 3-2. before→after 수치화
 
-- 성과에는 수치를 붙이되, 수치가 없으면 `${CLAUDE_SKILL_DIR}/../templates/experience-methods.md` §3(수치 폴백 5기준 + 대체 4종)을 위에서부터 적용합니다: 전후 변화 → 역할 범위 → 정성 근거 → 작은 검증 가능 숫자 → 면접 설명 가능성.
+- 성과에는 수치를 붙이되, 수치가 없으면 `${CLAUDE_SKILL_DIR}/references/experience-methods.md` §3(수치 폴백 5기준 + 대체 4종)을 위에서부터 적용합니다: 전후 변화 → 역할 범위 → 정성 근거 → 작은 검증 가능 숫자 → 면접 설명 가능성.
 - **날조 금지**: 없는 수치를 지어내지 않습니다. 사용자가 답하지 못하면 `[수치 확인 필요]` placeholder로 남기고, 함께 추정한 값은 `[추정]`으로 표기합니다.
 - **모든 수치는 면접에서 1분 안에 설명 가능해야 합니다.**
 
@@ -172,7 +128,7 @@ C) 3문서 역할 진단 ("이력서와 경력기술서 뭐가 다른가")
 
 이력서·경력기술서·자소서가 서로 어떤 역할을 나눠 갖는지 점검하고 중복을 제거합니다.
 
-`${CLAUDE_SKILL_DIR}/../templates/three-docs-guide.md`를 적용합니다:
+`${CLAUDE_SKILL_DIR}/references/three-docs-guide.md`를 적용합니다:
 - **§1 역할 구분표**로 각 문서가 답하는 질문을 구분합니다(이력서=요약, 경력기술서=프로젝트 상세, 자소서=서사).
 - **§3 중복 제거 3원칙**으로, 이력서에서 한 줄 요약한 항목 중 가장 임팩트 있는 1~2개만 경력기술서에서 상세화합니다. 세 문서에 같은 문장이 반복되면 층위를 나눠 다시 씁니다.
 - **§4 정합성 체크**로 회사명·재직 기간·직함·수치가 이력서와 어긋나지 않는지 확인합니다. 교차 문서 사실 대조의 최종 점검은 `/review`로 안내합니다.
@@ -209,7 +165,7 @@ C) 3문서 역할 진단 ("이력서와 경력기술서 뭐가 다른가")
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
-- **미끼 인벤토리 저장(선택)**: 미끼 포인트를 `${CLAUDE_SKILL_DIR}/../docs/defense-map-schema.md`의 YAML 계약 형식으로 `$_JS_STATE/defense-maps/<회사명>_<직무>_<YYYYMMDD>.yaml`에 저장하면 `/mock_interview`가 질문 소스로 소비할 수 있습니다. entry별 `sentence`·`bait_type`·`questions`(2개 이상)를 채우고, `answer_hint`는 사용자가 확인한 경우에만 기록합니다(추정 금지).
+- **미끼 인벤토리 저장(선택)**: 미끼 포인트를 `${CLAUDE_SKILL_DIR}/references/defense-map-schema.md`의 YAML 계약 형식으로 `$_JS_STATE/defense-maps/<회사명>_<직무>_<YYYYMMDD>.yaml`에 저장하면 `/mock_interview`가 질문 소스로 소비할 수 있습니다. entry별 `sentence`·`bait_type`·`questions`(2개 이상)를 채우고, `answer_hint`는 사용자가 확인한 경우에만 기록합니다(추정 금지).
 - 답변 연습·심화 준비는 `/mock_interview`로 핸드오프합니다.
 
 ---
@@ -218,8 +174,9 @@ C) 3문서 역할 진단 ("이력서와 경력기술서 뭐가 다른가")
 
 완성한 경력기술서를 현재 디렉토리에 Markdown 파일로 저장하고 결과물 경로를 안내합니다.
 
-- 파일 뷰어(HTML/PDF): `$CLAUDE_SKILL_DIR/../bin/jobstack-view <결과파일.md>` — 스타일링된 HTML로 열리고 "PDF 저장" 버튼으로 PDF 출력이 가능합니다.
-- docx 산출: `command -v pandoc`으로 변환 도구가 있으면 `$CLAUDE_SKILL_DIR/../bin/jobstack-export <결과파일.md>`로 ATS 안전 docx로 변환하고, 없으면 Markdown/HTML로 산출한 뒤 변환 방법을 간단히 안내합니다(exit 2 등 실패 시 복붙 폴백 메시지).
+- 파일 뷰어(HTML/PDF): `"$_JS_BIN/jobstack-view" <결과파일.md>` — 스타일링된 HTML로 열리고 "PDF 저장" 버튼으로 PDF 출력이 가능합니다.
+- docx 산출: `command -v pandoc`으로 변환 도구가 있으면 `"$_JS_BIN/jobstack-export" <결과파일.md>`로 ATS 안전 docx로 변환하고, 없으면 Markdown/HTML로 산출한 뒤 변환 방법을 간단히 안내합니다(exit 2 등 실패 시 복붙 폴백 메시지).
+- 봇 환경의 파일 출력 규칙은 실행 컨텍스트가 `bot`일 때 주입되는 bot-protocol을 따릅니다 — 위 뷰어·docx 안내는 CLI 전용입니다.
 
 > 신규 상태 파일은 만들지 않습니다. `profiles/default.yaml`과 `experiences.yaml`은 읽기 전용으로만 소비합니다.
 
@@ -283,8 +240,9 @@ C) 3문서 역할 진단 ("이력서와 경력기술서 뭐가 다른가")
 
 결과 파일이 Markdown으로 저장되면 다음 명령으로 브라우저에서 열 수 있습니다:
 ```bash
-$CLAUDE_SKILL_DIR/../bin/jobstack-view <결과파일.md>
+. "${JOBSTACK_STATE_DIR:-$HOME/.jobstack}/env.sh"
+"$_JS_BIN/jobstack-view" <결과파일.md>
 ```
-스타일링된 HTML로 변환되며 "PDF 저장" 버튼으로 PDF 출력도 가능합니다. docx가 필요하면 `$CLAUDE_SKILL_DIR/../bin/jobstack-export`로 변환합니다. 결과물 저장 시 반드시 안내하세요.
+스타일링된 HTML로 변환되며 "PDF 저장" 버튼으로 PDF 출력도 가능합니다. docx가 필요하면 `"$_JS_BIN/jobstack-export"`로 변환합니다. 결과물 저장 시 반드시 안내하세요(봇 환경에서는 주입된 bot-protocol의 파일 출력 규칙을 따릅니다).
 
 다음 추천: `/review` (3문서 정합·제출 전 통합 점검) 또는 `/mock_interview` (미끼 포인트 기반 면접 답변 준비)

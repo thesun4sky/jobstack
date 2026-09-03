@@ -73,7 +73,7 @@ if (!platform || !keyword) {
   process.exit(1);
 }
 
-const PLATFORMS = ['jumpit', 'programmers', 'jobkorea', 'saramin', 'wanted'];
+const PLATFORMS = ['jumpit', 'jobkorea', 'saramin', 'wanted'];
 if (!PLATFORMS.includes(platform)) {
   process.stderr.write(`Unknown platform: ${platform}. Supported: ${PLATFORMS.join(', ')}\n`);
   process.exit(1);
@@ -150,29 +150,6 @@ try {
           .slice(0, 8).join(', ');
         return { platform: 'jumpit', company, title, deadline, dRemaining: dLine, link: a.href, skills };
       }).filter(j => j.title && j.company);
-    }, limit);
-
-  } else if (platform === 'programmers') {
-    const url = `https://career.programmers.co.kr/job_positions?query=${encodeURIComponent(keyword)}`;
-    const _resp = await page.goto(url, { waitUntil: 'commit', timeout: 15000 });
-    lastStatus = _resp?.status() || 0;
-    await page.waitForTimeout(5000);
-
-    jobs = await page.evaluate((lim) => {
-      const items = document.querySelectorAll('[class*="List"] li, article, [class*="job-item"]');
-      return Array.from(items).slice(0, lim).map(item => {
-        const titleEl = item.querySelector('h2, h3, [class*="title"]');
-        const companyEl = item.querySelector('[class*="company"]');
-        const deadlineEl = item.querySelector('[class*="due"], [class*="deadline"], time');
-        const link = item.querySelector('a')?.href || '';
-        return {
-          platform: 'programmers',
-          company: companyEl?.innerText?.trim() || '',
-          title: titleEl?.innerText?.trim() || '',
-          deadline: deadlineEl?.innerText?.trim() || '마감일 미확인',
-          link,
-        };
-      }).filter(j => j.title);
     }, limit);
 
   } else if (platform === 'saramin') {

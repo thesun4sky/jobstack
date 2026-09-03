@@ -1,0 +1,45 @@
+name: ci
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 컨벤션·표기·경로 린트
+        run: |
+          bash test/lint-conventions.sh
+          bash test/test-command-style.sh
+          bash test/test-no-home-paths.sh
+          bash test/test-skill-refs.sh
+
+      - name: 프리앰블 격리 실행
+        run: bash test/test-preambles.sh
+
+      - name: 골든 테스트 (결정적 케이스)
+        run: bash test/run-golden.sh
+
+      - name: Node 단위 테스트 (수집 계층)
+        run: |
+          node test/test-fetch-diag.mjs
+          node test/test-wanted-verify.mjs
+          node test/test-is-fetch-adapter.mjs
+          node test/test-is-fetch-ssrf.mjs
+
+      - name: 통합 테스트 (격리된 HOME)
+        run: |
+          export HOME="$(mktemp -d)"
+          export JOBSTACK_STATE_DIR="$HOME/.jobstack"
+          export JOBSTACK_NPM_AUTO_INSTALL=0
+          bash test/run-integration-test.sh

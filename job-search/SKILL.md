@@ -15,83 +15,15 @@ allowed-tools:
 benefits-from: [strategy]
 ---
 
-```bash
-# ─── jobstack 프리앰블 ─────────────────────────
-_JS_STATE="${JOBSTACK_STATE_DIR:-$HOME/.jobstack}"
-mkdir -p "$_JS_STATE/analytics" "$_JS_STATE/profiles" "$_JS_STATE/tracker" \
-         "$_JS_STATE/company-cache" "$_JS_STATE/interview-history" "$_JS_STATE/sessions" "$_JS_STATE/defense-maps" "$_JS_STATE/job-cache"
+!`bash "${CLAUDE_SKILL_DIR}/scripts/preamble.sh" job-search "${CLAUDE_SESSION_ID}"`
 
-# 세션 추적
-echo "$$" > "$_JS_STATE/sessions/$$"
-trap 'rm -f "$_JS_STATE/sessions/$$"' EXIT
+> 위 실행 컨텍스트가 비어 있거나 `KEY=VALUE` 목록 대신 `!` 명령·정책 차단 문구가 그대로 보이면(`!` 주입이 꺼진 환경), 첫 Bash 명령으로 `bash "${CLAUDE_SKILL_DIR}/scripts/preamble.sh" job-search`를 실행해 같은 컨텍스트를 확보하고 `${CLAUDE_SKILL_DIR}/references/guardrails.md`를 Read 하세요. 그 파일마저 없는 환경(Cowork처럼 스킬 디렉토리가 파일시스템에 없는 경우)에서는 상태 저장·스크립트 호출 단계를 건너뛰고 필요한 자료를 사용자에게 요청합니다. `STATE_WRITE_FAILED=true`가 보이면 `JOBSTACK_STATE_DIR` 경로를 사용자에게 확인합니다. 이 스킬의 Bash 스니펫은 첫 줄에 `. "${JOBSTACK_STATE_DIR:-$HOME/.jobstack}/env.sh"`를 두어 `$_JS_STATE`·`$_JS_BIN`·`$TODAY`를 불러옵니다.
 
-# 설정 로딩
-_JS_CONFIG="${CLAUDE_SKILL_DIR}/../bin/jobstack-config"
-if [ -x "$_JS_CONFIG" ]; then
-  PROACTIVE=$("$_JS_CONFIG" get proactive 2>/dev/null || echo "true")
-else
-  PROACTIVE="true"
-fi
+### 공통 가드레일 (references/guardrails.md)
 
-# 프로필 로딩
-PROFILE="$_JS_STATE/profiles/default.yaml"
-if [ -f "$PROFILE" ]; then
-  echo "PROFILE_EXISTS=true"
-  echo "--- 프로필 요약 ---"
-  head -20 "$PROFILE"
-  echo "---"
-else
-  echo "PROFILE_EXISTS=false"
-fi
+!`sed '1{/^# /d;}' "${CLAUDE_SKILL_DIR}/references/guardrails.md"`
 
-# ─── Playwright 브라우저 스크래퍼 초기화 ─────────────
-# CLAUDE_SKILL_DIR 기반 경로를 우선 시도하되, fetch-jobs.mjs 존재 여부를 검증.
-# 컨테이너에서는 SKILL.md가 ~/.claude/commands/job-search/에 복사되어
-# CLAUDE_SKILL_DIR/../bin 이 실제 bin 위치(/app/skills/jobstack/bin)와 다름.
-# → 경로가 틀렸으면 알려진 절대경로로 fallback.
-if [ -n "$CLAUDE_SKILL_DIR" ]; then
-  _JS_BIN="${CLAUDE_SKILL_DIR}/../bin"
-fi
-if [ ! -f "${_JS_BIN:-}/fetch-jobs.mjs" ]; then
-  for _try in "/app/skills/jobstack/bin" "$HOME/.claude/skills/jobstack/bin" "/var/jobclaw/skills/jobstack/bin"; do
-    [ -f "$_try/fetch-jobs.mjs" ] && { _JS_BIN="$_try"; break; }
-  done
-fi
-_JS_BROWSER_SCRIPT="${_JS_BIN:-}/fetch-jobs.mjs"
-BROWSER_SCRAPER_AVAILABLE=false
-if [ -f "$_JS_BROWSER_SCRIPT" ]; then
-  if [ ! -d "${_JS_BIN}/node_modules/playwright" ]; then
-    (cd "$_JS_BIN" && npm install --silent 2>/dev/null || true)
-  fi
-  if [ -d "${_JS_BIN}/node_modules/playwright" ]; then
-    BROWSER_SCRAPER_AVAILABLE=true
-    echo "BROWSER_SCRAPER=ready (path: $_JS_BIN)"
-  fi
-fi
-echo "BROWSER_SCRAPER_AVAILABLE=$BROWSER_SCRAPER_AVAILABLE"
-
-# 크롤러 0건 수집 진단 로그 — fetch-jobs.mjs가 차단(challenge)/결과없음(empty_result)을
-# 이 파일에 append 한다. stdout JSON(공고 결과)에는 영향 없으므로 호출 시 2>/dev/null 유지 가능.
-mkdir -p "$_JS_STATE/analytics" 2>/dev/null || true
-export JOBSTACK_FETCH_DIAG_LOG="$_JS_STATE/analytics/fetch-diag.log"
-
-# 활성 세션 수
-for _f in "$_JS_STATE/sessions/"*; do
-  [ -f "$_f" ] || continue
-  kill -0 "$(basename "$_f")" 2>/dev/null || rm -f "$_f"
-done
-ACTIVE_SESSIONS=$(ls "$_JS_STATE/sessions/" 2>/dev/null | wc -l | tr -d ' ')
-echo "ACTIVE_SESSIONS=$ACTIVE_SESSIONS"
-echo "PROACTIVE=$PROACTIVE"
-echo "SKILL_NAME=job-search"
-
-# 텔레메트리
-echo "{\"skill\":\"job-search\",\"ts\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"pid\":$$}" \
-  >> "$_JS_STATE/analytics/skill-usage.jsonl" 2>/dev/null || true
-```
-
-> **공통 가드레일**: 작업 시작 전 `${CLAUDE_SKILL_DIR}/../templates/guardrails.md` 를 Read 도구로 읽고 §1~§6 전 규칙을 준수하세요.
-
+!`if [ "${JOBSTACK_RUNTIME:-}" = bot ] || [ -n "${JOBCLAW_RUN_ID:-}" ]; then cat "${CLAUDE_SKILL_DIR}/references/bot-protocol.md"; fi`
 
 # /job_search — 채용정보 탐색
 
@@ -218,7 +150,6 @@ echo "{\"skill\":\"job-search\",\"ts\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"pid\
 | 잡코리아 | ✅ Playwright (Tailwind 개편 대응) | ✅ MM/DD 마감일 | 대기업/공기업 공채 |
 | 사람인 | ✅ Playwright (스텔스 모드) | ✅ 날짜 파싱 | 봇 감지 우회 적용 |
 | 점핏 | ✅ Playwright | ✅ D-N 잔여일 | IT 직군 특화 |
-| 프로그래머스 | ❌ 접속 차단 | - | 제외 |
 
 #### 수집 파이프라인 — job-cache (TTL 2일)
 
@@ -237,6 +168,7 @@ echo "{\"skill\":\"job-search\",\"ts\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"pid\
 **1차 경로는 스크립트 실행입니다.** 수집된 전 건을 `api/v4/jobs/{id}`로 전수 검증(fail-closed)하고 deadline을 실값(`YYYY-MM-DD 마감` / `상시채용`)으로 채워 반환하므로, 별도 마감 확인이 필요 없습니다:
 
 ```bash
+. "${JOBSTACK_STATE_DIR:-$HOME/.jobstack}/env.sh"
 node "$_JS_BROWSER_SCRIPT" wanted "{키워드}" 20 [entry|experienced]
 ```
 
@@ -292,6 +224,7 @@ ID가 목록에 없으면 훈련 데이터에서 기억한 것이므로 **즉시
 > 어느 사이트가 왜 막히는지는 이 파일에 보존됩니다. 실시간으로 원인을 보려면 `2>/dev/null`을 떼세요.
 
 ```bash
+. "${JOBSTACK_STATE_DIR:-$HOME/.jobstack}/env.sh"
 # career 인수: entry(신입) | experienced(경력) | 생략(전체)
 # location 인수: seoul|gyeonggi|busan|incheon|daejeon|daegu|gwangju|remote | 생략(전체)
 node "$_JS_BIN/fetch-jobs.mjs" jobkorea "{KEYWORD}" 20 {CAREER} {LOCATION} 2>/dev/null
@@ -319,6 +252,7 @@ https://www.jobkorea.co.kr/Search/?stext={URL인코딩된 키워드}&posted=7&or
 > `BROWSER_SCRAPER_AVAILABLE=true`일 때 실행:
 
 ```bash
+. "${JOBSTACK_STATE_DIR:-$HOME/.jobstack}/env.sh"
 # career 인수: entry(신입) | experienced(경력) | 생략(전체)
 # location 인수: seoul|gyeonggi|busan|... | 생략(전체)
 node "$_JS_BIN/fetch-jobs.mjs" saramin "{KEYWORD}" 20 {CAREER} {LOCATION} 2>/dev/null
@@ -338,6 +272,7 @@ node "$_JS_BIN/fetch-jobs.mjs" saramin "{KEYWORD}" 20 {CAREER} {LOCATION} 2>/dev
 `BROWSER_SCRAPER_AVAILABLE=true` 일 때만 실행합니다:
 
 ```bash
+. "${JOBSTACK_STATE_DIR:-$HOME/.jobstack}/env.sh"
 # career 인수: entry|experienced|생략(전체)
 # location 인수: seoul|gyeonggi|... | 생략(전체)
 node "$_JS_BIN/fetch-jobs.mjs" jumpit "{KEYWORD}" 20 {CAREER} {LOCATION} 2>/dev/null
@@ -377,7 +312,7 @@ site:jobkorea.co.kr "{직무}" 채용
 
 #### fallback UX (수집 실패 시)
 
-도구 한계를 사용자에게 노출하지 않습니다. 상세 규칙은 `${CLAUDE_SKILL_DIR}/../templates/guardrails.md` §2를 참조하세요.
+도구 한계를 사용자에게 노출하지 않습니다. 상세 규칙은 `${CLAUDE_SKILL_DIR}/references/guardrails.md` §2를 참조하세요.
 
 - **URL WebFetch 실패 또는 이미지 공고 인식 실패**: 실패 원인을 나열하지 말고 "공고 본문을 복사해 붙여주시면 바로 분석합니다" 한 문장으로 요청합니다. (사람인 단축 URL은 위 #118d 순서 — 리다이렉트 재시도 → 실패 시에만 복붙 요청 — 을 먼저 따릅니다.)
 - **4플랫폼 전부 수집 실패**: 해당 섹션을 생략하고 "사람인·잡코리아·원티드에서 직접 확인" 링크를 안내한 뒤 **DONE_WITH_CONCERNS**로 처리합니다.
@@ -385,9 +320,10 @@ site:jobkorea.co.kr "{직무}" 채용
 
 #### 검색 완료 텔레메트리
 
-Phase 2 검색이 끝나면 `detected` 이벤트 1줄을 `$_JS_STATE/analytics/skill-usage.jsonl`에 append합니다. `docs/telemetry-events.md` 규격의 메타 필드만 씁니다 — 검색값(직무·경력·지역)·수집건수·캐시 여부 같은 사용자 값이나 미정의 필드는 기록하지 않습니다(PII 금지·규격 이원화 방지). 검색 완료는 `mode:"search"`로만 구분합니다. (프리앰블 append 관례와 동일 — 실패해도 스킬 동작에 영향이 없어야 합니다.)
+Phase 2 검색이 끝나면 `detected` 이벤트 1줄을 `$_JS_STATE/analytics/skill-usage.jsonl`에 append합니다. `${CLAUDE_SKILL_DIR}/references/telemetry-events.md` 규격의 메타 필드만 씁니다 — 검색값(직무·경력·지역)·수집건수·캐시 여부 같은 사용자 값이나 미정의 필드는 기록하지 않습니다(PII 금지·규격 이원화 방지). 검색 완료는 `mode:"search"`로만 구분합니다. (프리앰블 append 관례와 동일 — 실패해도 스킬 동작에 영향이 없어야 합니다.)
 
 ```bash
+. "${JOBSTACK_STATE_DIR:-$HOME/.jobstack}/env.sh"
 echo '{"skill":"job-search","ts":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","pid":'$$',"event":"detected","phase":"phase-2","mode":"search"}' \
   >> "$_JS_STATE/analytics/skill-usage.jsonl" 2>/dev/null || true
 ```
@@ -458,7 +394,6 @@ echo '{"skill":"job-search","ts":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","pid":'$$',"
 > **URL 포맷 필수**: 모든 채용공고 링크는 반드시 `https://` 를 포함한 전체 URL로 출력하세요.
 > 잘못된 예: `→ jobkorea.co.kr/Recruit/GI_Read/12345`
 > 올바른 예: `→ https://jobkorea.co.kr/Recruit/GI_Read/12345`
-> Telegram은 `https://`가 없으면 링크로 인식하지 않습니다.
 
 ```
 ## 채용 캘린더
@@ -483,10 +418,7 @@ echo '{"skill":"job-search","ts":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","pid":'$$',"
   → https://www.wanted.co.kr/wd/xxxxx
 ```
 
-캘린더·공고 검색 결과는 **관심 공고 북마크**이지 지원 현황이 아니므로, `$_JS_STATE/tracker/applications.jsonl`(실제 지원 항목 전용 계약)에 넣지 않습니다. 대신 `$_JS_STATE/job-cache/`에 공고별 YAML로 저장합니다 — 회사명·직무·마감일·URL·추출 키워드·자소서 문항을 필드로 기록하고, 상태 필드는 `bookmark`로 둡니다(canonical 지원 상태 `preparing`을 쓰지 않습니다 — `docs/tracker-states.md`가 관심 공고를 tracker 파이프라인에서 제외하고 job-search 축으로 분리하도록 명시). **사용자가 실제로 지원을 결심/제출한 경우에만** tracker에 편입하도록 안내합니다: 봇 환경은 네이티브 `/track`·`/myapps`, CLI는 tracker 스킬로 추가.
-
-> **CHOICES 블록 위치**: 캘린더 출력 후 **맨 마지막**에 [CHOICES] 블록을 한 번만 포함하세요.
-> 중간에 끼워 넣거나 생략하면 봇이 인라인 버튼을 생성하지 못합니다.
+캘린더·공고 검색 결과는 **관심 공고 북마크**이지 지원 현황이 아니므로, `$_JS_STATE/tracker/applications.jsonl`(실제 지원 항목 전용 계약)에 넣지 않습니다. 대신 `$_JS_STATE/job-cache/`에 공고별 YAML로 저장합니다 — 회사명·직무·마감일·URL·추출 키워드·자소서 문항을 필드로 기록하고, 상태 필드는 `bookmark`로 둡니다(canonical 지원 상태 `preparing`을 쓰지 않습니다 — `${CLAUDE_SKILL_DIR}/references/tracker-states.md`가 관심 공고를 tracker 파이프라인에서 제외하고 job-search 축으로 분리하도록 명시). **사용자가 실제로 지원을 결심/제출한 경우에만** tracker에 편입하도록 안내합니다: 봇 환경은 네이티브 `/track`·`/myapps`, CLI는 tracker 스킬로 추가.
 
 ## AskUserQuestion 규칙
 
@@ -509,21 +441,3 @@ echo '{"skill":"job-search","ts":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","pid":'$$',"
 - 관심 공고 확정 → `/company_research` (해당 기업 분석)
 - 관심 공고 확정 → `/resume` (해당 공고 맞춤 이력서)
 - 관심 공고 확정 → `/cover_letter` — 이 공고의 키워드·자소서 문항은 `$_JS_STATE/job-cache/`에 북마크로 저장되어 있어 `/cover_letter` 실행 시 활용 가능
-
-## 시각화 이미지 생성
-
-채용공고를 **3개 이상** 나열하는 답변에서는 반드시 응답 맨 끝에 아래 마커를 추가한다:
-
-```
-[IMAGE_PROMPT: <영어 프롬프트>]
-```
-
-**트리거 조건 (필수):**
-- 공고 3개 이상 나열 → **반드시** 추가
-- 스택 비교, 매칭도 비교, 취업 시장 요약 → 추가
-- 1~2개 공고 안내, 짧은 답변, 오류 메시지 → 추가하지 않음
-
-이 마커를 빠뜨리지 말 것 — 위 조건에 해당하면 응답의 가장 마지막 줄에 반드시 포함한다.
-
-**프롬프트 스타일:** 명확하고 informative한 infographic/diagram 스타일. 실제 회사명·직무·매칭 점수·기술스택을 반영한다.
-예: `A clean professional infographic comparing 3 Korean software engineer job listings: AlgoCare (Series A, Seoul, Backend+LLM, match 85%), Samjjomsamm (FinTech SaaS, Seoul, Java/Kafka, match 92%), KakaoBank (판교, Spring AI, match 72%). Show tech stack icons, match score badges, company tiers. Dark navy background, white text, green/yellow accent for scores. Korean startup aesthetic.`

@@ -16,50 +16,15 @@ allowed-tools:
   - WebSearch
 ---
 
-```bash
-# ─── jobstack 프리앰블 ─────────────────────────
-_JS_STATE="${JOBSTACK_STATE_DIR:-$HOME/.jobstack}"
-mkdir -p "$_JS_STATE/analytics" "$_JS_STATE/profiles" "$_JS_STATE/tracker" \
-         "$_JS_STATE/company-cache" "$_JS_STATE/interview-history" "$_JS_STATE/sessions" "$_JS_STATE/defense-maps" "$_JS_STATE/job-cache"
+!`bash "${CLAUDE_SKILL_DIR}/scripts/preamble.sh" auto "${CLAUDE_SESSION_ID}"`
 
-# 세션 추적
-echo "$$" > "$_JS_STATE/sessions/$$"
-trap 'rm -f "$_JS_STATE/sessions/$$"' EXIT
+> 위 실행 컨텍스트가 비어 있거나 `KEY=VALUE` 목록 대신 `!` 명령·정책 차단 문구가 그대로 보이면(`!` 주입이 꺼진 환경), 첫 Bash 명령으로 `bash "${CLAUDE_SKILL_DIR}/scripts/preamble.sh" auto`를 실행해 같은 컨텍스트를 확보하고 `${CLAUDE_SKILL_DIR}/references/guardrails.md`를 Read 하세요. 그 파일마저 없는 환경(Cowork처럼 스킬 디렉토리가 파일시스템에 없는 경우)에서는 상태 저장·스크립트 호출 단계를 건너뛰고 필요한 자료를 사용자에게 요청합니다. `STATE_WRITE_FAILED=true`가 보이면 `JOBSTACK_STATE_DIR` 경로를 사용자에게 확인합니다. 이 스킬의 Bash 스니펫은 첫 줄에 `. "${JOBSTACK_STATE_DIR:-$HOME/.jobstack}/env.sh"`를 두어 `$_JS_STATE`·`$_JS_BIN`·`$TODAY`를 불러옵니다.
 
-# 설정 로딩
-_JS_CONFIG="${CLAUDE_SKILL_DIR}/../bin/jobstack-config"
-if [ -x "$_JS_CONFIG" ]; then
-  PROACTIVE=$("$_JS_CONFIG" get proactive 2>/dev/null || echo "true")
-else
-  PROACTIVE="true"
-fi
+### 공통 가드레일 (references/guardrails.md)
 
-# 프로필 로딩
-PROFILE="$_JS_STATE/profiles/default.yaml"
-if [ -f "$PROFILE" ]; then
-  echo "PROFILE_EXISTS=true"
-  head -20 "$PROFILE"
-else
-  echo "PROFILE_EXISTS=false"
-fi
+!`sed '1{/^# /d;}' "${CLAUDE_SKILL_DIR}/references/guardrails.md"`
 
-# 활성 세션 수
-for _f in "$_JS_STATE/sessions/"*; do
-  [ -f "$_f" ] || continue
-  kill -0 "$(basename "$_f")" 2>/dev/null || rm -f "$_f"
-done
-ACTIVE_SESSIONS=$(ls "$_JS_STATE/sessions/" 2>/dev/null | wc -l | tr -d ' ')
-echo "ACTIVE_SESSIONS=$ACTIVE_SESSIONS"
-echo "PROACTIVE=$PROACTIVE"
-echo "SKILL_NAME=auto"
-
-# 텔레메트리
-echo "{\"skill\":\"auto\",\"ts\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"pid\":$$}" \
-  >> "$_JS_STATE/analytics/skill-usage.jsonl" 2>/dev/null || true
-```
-
-> **공통 가드레일**: 작업 시작 전 `${CLAUDE_SKILL_DIR}/../templates/guardrails.md` 를 Read 도구로 읽고 §1~§6 전 규칙을 준수하세요.
-
+!`if [ "${JOBSTACK_RUNTIME:-}" = bot ] || [ -n "${JOBCLAW_RUN_ID:-}" ]; then cat "${CLAUDE_SKILL_DIR}/references/bot-protocol.md"; fi`
 
 # jobstack auto — 자동 감지 + 단계별 가이드
 
@@ -106,9 +71,10 @@ echo "{\"skill\":\"auto\",\"ts\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"pid\":$$}"
 
 ### 감지 완료 이벤트 기록
 
-파일·텍스트 감지 및 케이스 판정이 끝나면 Bash로 후속 이벤트를 append합니다(규격은 `${CLAUDE_SKILL_DIR}/../docs/telemetry-events.md`). 실패해도 스킬 동작에 영향이 없어야 합니다:
+파일·텍스트 감지 및 케이스 판정이 끝나면 Bash로 후속 이벤트를 append합니다(규격은 `${CLAUDE_SKILL_DIR}/references/telemetry-events.md`). 실패해도 스킬 동작에 영향이 없어야 합니다:
 
 ```bash
+. "${JOBSTACK_STATE_DIR:-$HOME/.jobstack}/env.sh"
 echo '{"skill":"auto","ts":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","pid":'$$',"event":"detected","phase":"case-N","no_arg":false}' \
   >> "$_JS_STATE/analytics/skill-usage.jsonl" 2>/dev/null || true
 ```
@@ -138,7 +104,7 @@ echo '{"skill":"auto","ts":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","pid":'$$',"event"
   - 기술/자격증
   - 어학성적
 
-  **추출 가드레일** (공통 규칙은 `${CLAUDE_SKILL_DIR}/../templates/guardrails.md` §1 참조):
+  **추출 가드레일** (공통 규칙은 `${CLAUDE_SKILL_DIR}/references/guardrails.md` §1 참조):
   1. **명시된 사실만 기록** — 이력서에 적혀 있지 않은 어학 급수·재직사·자격증 등을 그럴듯하게 추정해 채우지 않습니다.
   2. **누락 필드는 placeholder로 저장** — 빈 값이나 추정값이 아니라 `[이메일 입력 필요]` 형태로 저장합니다. (이메일 없는 이력서 → `email: "[이메일 입력 필요]"`)
   3. **누락 항목은 AskUserQuestion 1회만** 질문합니다. 답을 못 받으면 placeholder를 유지하고 반복 요구하지 않습니다.
@@ -187,7 +153,7 @@ echo '{"skill":"auto","ts":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","pid":'$$',"event"
 - 통합 리뷰: analytics에 review 스킬 기록 존재
 - 모의면접: interview-history에 기록 존재
 
-**지원 현황 통합** (상태 어휘는 `${CLAUDE_SKILL_DIR}/../docs/tracker-states.md`의 canonical 9상태를 그대로 사용):
+**지원 현황 통합** (상태 어휘는 `${CLAUDE_SKILL_DIR}/references/tracker-states.md`의 canonical 9상태를 그대로 사용):
 - `$_JS_STATE/tracker/applications.jsonl`을 읽어 진행 중인 지원 건수를 집계하고, 대시보드 하단에 `지원 현황: N건 진행 중` 줄을 출력합니다.
 - 상태는 **저장=영문 키 / 표시=한글 라벨** 원칙을 따릅니다(준비중/지원완료/서류합격/1차면접/2차면접/최종면접/최종합격/불합격/지원취소). `status`가 한글인 구버전 라인은 읽기 시점에 매핑표로 정규화합니다.
 - **7일 정체 넛지**: `updated_at` 기준 7일 이상 상태 변화가 없는 진행 상태(preparing~final) 건에 "○○ 지원 7일째 변화 없음 — 후속 확인?"을 출력합니다. 종결 상태(offer/rejected/withdrawn)는 제외합니다.
@@ -208,13 +174,30 @@ Phase 4의 파일 기반 케이스 분기에 앞서, 사용자 요청이 다음 
 
 이 패턴은 보수적으로 유지합니다. false negative(전략 요청인데 못 잡음)는 auto 기본 흐름으로 진행되므로 무해하지만, false positive(일반 요청을 전략으로 오판)는 사용자 흐름을 끊으므로 더 나쁩니다. 애매하면 위임하지 않고 기본 케이스 분기로 진행합니다.
 
+## 그 외 요청 라우팅
+
+파일 감지와 무관하게 요청이 아래 패턴이면 해당 스킬의 워크플로우를 이 세션에서 이어서 실행하거나, 사용자에게 명령을 안내합니다(명령 표기는 언더스코어).
+
+| 요청 패턴 | 스킬 |
+|---|---|
+| "경험 정리", "자소서 소재 발굴", "내 경험 뭐 쓰지" | `/experience_bank` |
+| "경력기술서", "이력서랑 경력기술서 뭐가 달라" | `/career_history` |
+| "링크드인·원티드·리멤버 프로필", "스카우트 제안이 안 와요" | `/scout_profile` |
+| "면접 회고", "왜 떨어졌을까", "패턴 분석" | `/retro` |
+| "연봉", "처우 비교", "협상" | `/salary` |
+| "채용공고 찾아줘", "지금 뜨는 공고" | `/job_search` |
+| "포트폴리오 봐줘", "GitHub 프로필" | `/portfolio` |
+| 공기업·공공기관 NCS 자소서 | `/cover_letter` (공기업 NCS 보강 소절) |
+| "NCS", "직업기초능력", "능력단위", "자가진단", "직무기술서 매핑" | CLI: ncs 스킬(Skill 도구로 호출), 봇: `/cover_letter` 공기업 NCS 보강 소절 |
+| 지원 현황 관리 | 봇: `/track`·`/myapps`, CLI: tracker 스킬 |
+
 ---
 
 ## Phase 4: 다음 단계 제안
 
 감지 결과에 따라 AskUserQuestion으로 다음 단계를 제안합니다.
 
-> **파일 출력 선택지 (모든 Case 공통)**: 각 Case의 선택지에 "최종 파일 출력(.docx)"을 포함합니다. `${CLAUDE_SKILL_DIR}/../bin/jobstack-export`가 있으면 pandoc으로 md→docx 변환하고, pandoc 미설치(exit 2)·변환 실패(exit 3) 시 markdown 본문을 복붙용으로 제공하는 폴백으로 진행합니다. **단, exit 4(미확인 placeholder 잔존)는 폴백 대상이 아닙니다** — markdown을 제출용으로 주지 말고, 출력된 미확인 항목을 사용자에게 채우도록 요청한 뒤 다시 변환합니다. (봇 환경에서는 기존 File output protocol을 따릅니다.)
+> **파일 출력 선택지 (모든 Case 공통)**: 각 Case의 선택지에 "최종 파일 출력(.docx)"을 포함합니다. `"$_JS_BIN/jobstack-export"`가 있으면 pandoc으로 md→docx 변환하고, pandoc 미설치(exit 2)·변환 실패(exit 3) 시 markdown 본문을 복붙용으로 제공하는 폴백으로 진행합니다. **단, exit 4(미확인 placeholder 잔존)는 폴백 대상이 아닙니다** — markdown을 제출용으로 주지 말고, 출력된 미확인 항목을 사용자에게 채우도록 요청한 뒤 다시 변환합니다. (봇 환경에서는 기존 File output protocol을 따릅니다.)
 
 ### Case 1: 이력서만 있음
 ```
@@ -322,7 +305,7 @@ E) 모의면접 진행
 - **완성 조건**: 1회 첨삭으로 끝이 아닙니다. **진단 → 수정 → 재리뷰 → 파일화(.docx 출력)** 루프까지 도달해야 완성입니다. 첫 진단 후 사용자에게 수정본 재리뷰와 파일 출력을 이어서 제안합니다.
 - 완료 시 다시 대시보드를 업데이트하고 다음 단계 제안
 
-**완료 이벤트 기록**: auto는 진입점이므로 라우팅 결과를 `detected` 이벤트로만 기록하고(위 Phase 1 참조), 퍼널 이벤트(`submitted`/`diagnosed`/`second_review`/`exported`)는 **각 하위 스킬이 자기 시점에** 기록합니다. auto가 `second_review`를 직접 올리면 대응하는 `diagnosed` 없이 분자만 늘어 퍼널이 왜곡되므로, auto에서는 append하지 않습니다(규격 `${CLAUDE_SKILL_DIR}/../docs/telemetry-events.md`).
+**완료 이벤트 기록**: auto는 진입점이므로 라우팅 결과를 `detected` 이벤트로만 기록하고(위 Phase 1 참조), 퍼널 이벤트(`submitted`/`diagnosed`/`second_review`/`exported`)는 **각 하위 스킬이 자기 시점에** 기록합니다. auto가 `second_review`를 직접 올리면 대응하는 `diagnosed` 없이 분자만 늘어 퍼널이 왜곡되므로, auto에서는 append하지 않습니다(규격 `${CLAUDE_SKILL_DIR}/references/telemetry-events.md`).
 
 ---
 
