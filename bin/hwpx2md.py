@@ -8,7 +8,8 @@
 
 사용법:
   hwpx2md.py <입력.hwpx|입력.hwp> [--out <출력.md>] [--converter auto|kordoc|rhwp|none]
-종료 코드: 0 성공 · 1 입력 오류 · 2 파싱 실패 · 3 .hwp 변환기 없음
+종료 코드: 0 성공 · 1 입력 오류 · 2 파싱 실패(문서 크기 상한 초과 포함) · 3 .hwp 변환기 없음
+  인자 오류(필수 인자 누락·잘못된 --converter 값 등)는 argparse 기본값대로 exit 2 를 낸다.
 """
 from __future__ import annotations
 
@@ -24,6 +25,44 @@ import zipfile
 HWP5_SIGNATURE = b'HWP Document File'
 OLE_MAGIC = b'\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1'
 
+MAX_ENTRY_BYTES = 20 * 1024 * 1024    # zip 항목 1개당 상한(20MB)
+MAX_ARCHIVE_BYTES = 50 * 1024 * 1024  # 아카이브 전체 합계 상한(50MB) — 압축폭탄 방지
+_READ_CHUNK = 1024 * 1024
+
+
+class DocumentTooLarge(Exception):
+    """zip 항목/아카이브 크기 상한 초과. main() 이 '[오류] 문서가 너무 큽니다' exit 2 로 처리."""
+
+
+def _check_archive_size(zf: zipfile.ZipFile) -> None:
+    """선언된 file_size(중앙 디렉터리 메타데이터)로 먼저 걸러낸다 — 실제로 압축을 풀기
+    전에 극단적인 압축률의 zip bomb 을 차단한다."""
+    total = 0
+    for info in zf.infolist():
+        if info.file_size > MAX_ENTRY_BYTES:
+            raise DocumentTooLarge(info.filename)
+        total += info.file_size
+        if total > MAX_ARCHIVE_BYTES:
+            raise DocumentTooLarge(info.filename)
+
+
+def _read_limited(zf: zipfile.ZipFile, name: str) -> bytes:
+    """zf.open() 으로 스트리밍 읽기 — 헤더의 file_size 가 위조돼 있어도(선언값과 실제
+    압축 해제 바이트가 다른 경우) 누적 바이트가 상한을 넘는 순간 중단한다
+    (_check_archive_size 와의 이중 방어)."""
+    chunks = []
+    total = 0
+    with zf.open(name) as fh:
+        while True:
+            chunk = fh.read(_READ_CHUNK)
+            if not chunk:
+                break
+            total += len(chunk)
+            if total > MAX_ENTRY_BYTES:
+                raise DocumentTooLarge(name)
+            chunks.append(chunk)
+    return b''.join(chunks)
+
 
 def local(tag: str) -> str:
     return tag.rsplit('}', 1)[-1] if isinstance(tag, str) else ''
@@ -36,7 +75,7 @@ def section_files(zf: zipfile.ZipFile) -> list[str]:
     hpf = next((n for n in names if n.lower().endswith('content.hpf')), None)
     if hpf:
         try:
-            root = ET.fromstring(zf.read(hpf))
+            root = ET.fromstring(_read_limited(zf, hpf))
             items = {}
             for el in root.iter():
                 if local(el.tag) == 'item' and el.get('id') and el.get('href'):
@@ -89,7 +128,7 @@ def cell_text(tc: ET.Element) -> str:
 
 def render_table(tbl: ET.Element) -> list[str]:
     rows = []
-    for tr in tbl.iter():
+    for tr in tbl:  # 직계 자식만 — tbl.iter() 는 중첩 표의 tr 까지 끌어와 바깥 표 행이 부풀려진다
         if local(tr.tag) != 'tr':
             continue
         cells = [cell_text(tc) for tc in tr if local(tc.tag) == 'tc']
@@ -141,10 +180,11 @@ def _ancestors(root: ET.Element, target: ET.Element) -> list[ET.Element]:
 def convert_hwpx(path: str) -> tuple[str, dict]:
     stats = {'sections': 0, 'tables': 0, 'pictures': 0}
     with zipfile.ZipFile(path) as zf:
+        _check_archive_size(zf)
         out: list[str] = []
         for name in section_files(zf):
             stats['sections'] += 1
-            out.extend(render_section(zf.read(name), stats))
+            out.extend(render_section(_read_limited(zf, name), stats))
     text = '\n'.join(out).strip() + '\n'
     return text, stats
 
@@ -197,7 +237,12 @@ def main(argv=None) -> int:
                   '저장해 다시 올려주시거나, `npm i -g kordoc` 후 재시도하세요.', file=sys.stderr)
             return 3
         raise
-    except (zipfile.BadZipFile, ET.ParseError, KeyError) as e:
+    except DocumentTooLarge:
+        print('[오류] 문서가 너무 큽니다', file=sys.stderr)
+        return 2
+    except (zipfile.BadZipFile, ET.ParseError, KeyError, RecursionError) as e:
+        # RecursionError: 비정상적으로 깊게 중첩된 XML(run_text 의 walk() 가 재귀) —
+        # 트레이스백 대신 파싱 실패로 정규화한다.
         print(f'[오류] 파싱 실패: {e}', file=sys.stderr)
         return 2
 

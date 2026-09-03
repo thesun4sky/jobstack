@@ -7,6 +7,7 @@
 #   ③ name + description 합산 ≤ ${SKILL_HEAD_BUDGET:-1100} 자
 #   ④ (--frontmatter 플래그) argument-hint/when_to_use 최상위 필수,
 #      preamble-tier/version/benefits-from 최상위 금지 (metadata 아래는 허용)
+#   ⑤ (--frontmatter 플래그) allowed-tools 항목이 알려진 도구명인지 (Agent/Task 등 — 오타는 사전 승인이 조용히 무시됨)
 
 set -u
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -146,6 +147,32 @@ for skill_file in skill_files:
                 has_top_level_version = True
             if line.startswith('benefits-from:'):
                 has_top_level_benefits = True
+
+        # ⑤ allowed-tools 도구명 검사 — 오타·존재하지 않는 도구명은 사전 승인이 조용히 무시된다
+        KNOWN_TOOLS = {'Read', 'Write', 'Edit', 'MultiEdit', 'Bash', 'Glob', 'Grep', 'WebSearch', 'WebFetch',
+                       'AskUserQuestion', 'Agent', 'Task', 'Skill', 'NotebookEdit', 'TodoWrite'}
+        tools = []
+        in_tools = False
+        for line in frontmatter_lines:
+            if line.startswith('allowed-tools:'):
+                in_tools = True
+                inline = line.split(':', 1)[1].strip()
+                if inline.startswith('['):
+                    tools += [t.strip().strip('\'"') for t in inline.strip('[]').split(',') if t.strip()]
+                continue
+            if in_tools:
+                if line and not line[0].isspace():
+                    in_tools = False
+                    continue
+                item = line.strip()
+                if item.startswith('- '):
+                    tools.append(item[2:].strip().strip('\'"'))
+        unknown = [t for t in tools
+                   if not (t in KNOWN_TOOLS or t.startswith('mcp__') or t.split('(')[0] in KNOWN_TOOLS)]
+        if unknown:
+            print(f"[FAIL] {skill_name}: allowed-tools 에 알 수 없는 도구명 {unknown} (허용: {sorted(KNOWN_TOOLS)} · Bash(...) · mcp__*)")
+            fail_count += 1
+            continue
 
         if not has_argument_hint:
             print(f"[FAIL] {skill_name}: argument-hint 이 프론트매터에 없습니다")

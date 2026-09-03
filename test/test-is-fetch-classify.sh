@@ -150,6 +150,10 @@ check("Retry-After None → None", ra(None) is None)
 check("Retry-After 빈 문자열 → None", ra("") is None)
 check("Retry-After 음수 → None", ra("-1") is None)
 check("Retry-After 소수 → None(정수 초만 인정)", ra("3.5") is None)
+check(
+    "Retry-After 유니코드 숫자(위첨자 '5²') → None(isdigit() 오탐 방지, int() 크래시 없음)",
+    ra("5²") is None,
+)
 
 # ── 6. _parse_args — 순수 함수 옵션 파싱 ────────────────────────────────
 DEFAULT_PROFILES = list(m.IMPERSONATE_PROFILES)

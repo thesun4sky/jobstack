@@ -91,6 +91,12 @@ echo '{"id":"app-009","company":"X","position":"Y","status":"면접대기","appl
 has "알 수 없는 상태 list 표기" "(구버전 상태)" "$("$T" list 2>&1)"
 "$T" validate >/dev/null 2>&1 && bad "알 수 없는 상태 validate 실패해야 함" || ok "알 수 없는 상태 validate 실패"
 
+# 손상된 JSONL — load() 의 JSON 파싱 실패는 CorruptFile 로 구분돼 어느 서브커맨드에서든
+# exit 2 여야 한다(이전엔 validate 만 2 였고 list 등 나머지는 일반 입력 오류 취급돼 1 이었음).
+echo '{"id":"app-010","company":"깨진행"' >> "$F"   # 닫는 중괄호 없음 — JSONDecodeError 유발
+OUT=$("$T" list 2>&1); RC=$?
+[ $RC -eq 2 ] && has "손상 JSONL: list exit 2" "JSON 파싱 실패" "$OUT" || bad "손상 JSONL: list exit 2" "rc=$RC $OUT"
+
 rm -rf "$WORK"
 echo "PASS: $PASS / FAIL: $FAIL"
 [ "$FAIL" -eq 0 ] && { echo "[PASS] jobstack-tracker"; exit 0; } || { echo "[FAIL] jobstack-tracker"; exit 1; }

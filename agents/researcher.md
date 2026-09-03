@@ -32,6 +32,7 @@ maxTurns: 12
   "numbers": [{"name": "매출", "value": "…", "unit": "…", "url": "https://…", "date": "…"}],
   "deadline": "YYYY-MM-DD | 상시채용 | null",
   "deadline_verified": false,
+  "partial": false,
   "blocked": false,
   "tried_urls": ["https://…"]
 }

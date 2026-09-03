@@ -78,7 +78,7 @@ metadata:
 
 ### Phase 2A: 새로 작성 — 정보 수집
 
-프로필(`$_JS_STATE/profiles/default.yaml`)이 있으면 자동 로딩하고, 없으면 다음을 순서대로 질문합니다:
+프로필(`$_JS_STATE/profiles/default.yaml`)이 있으면 자동 로딩하고, 경험 카드가 있으면(`EXPERIENCES_EXISTS=true`) `"$_JS_BIN/jobstack-exp.mjs" list`·`show <id>` (env.sh 소싱 후)로 problem/role/action/change/numbers를 경력·프로젝트 항목 초안의 근거로 인용합니다. 없으면 다음을 순서대로 질문합니다:
 
 1. **기본 정보**: 이름, 연락처(이메일/전화), 생년월일
 2. **학력**: 학교명, 전공, 졸업(예정)년도, 학점(선택)

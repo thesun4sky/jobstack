@@ -36,6 +36,23 @@
 - auto 대시보드의 지원 현황·정체 넛지가 `jobstack-tracker stats|nudge` 출력을 쓰도록 통일.
 - CI·통합 테스트에 cron·learn·package-skill 테스트 추가. README·CLAUDE.md·CONTRIBUTING 현행화.
 
+### Fixed — 다각도 리뷰 반영 (실행 기록 `docs/plans/v1.0-execution-log.md`)
+- 스크립트: `package-skill.sh`·`run-evals.sh` 옵션 값 누락 시 무한 루프와 mktemp 실패 미확인(루트 쓰기)
+  차단, `run-evals.sh` bash 3.2 호환(`mapfile` 제거)·`claude -p` 타임아웃(`EVAL_TIMEOUT_S`)·채점 모델
+  오버라이드(`--judge-model`), `jobstack-cron` crontab `%`·plist 이스케이프·python3 사전 확인·
+  `JOBSTACK_CRON_OS_NAME` 테스트 훅, `jobstack-learn` dup 판정 flock.
+- v0.5.0 스크립트: `hwpx2md.py` zip 엔트리 크기 상한·중첩 표·RecursionError 처리, `is-fetch.py`
+  Retry-After 파싱 크래시, 사람인 파서 cheerio 지연 로드·script/style 제거, `jobstack-tracker` 손상
+  파일 exit 2 통일, `jobstack-exp.mjs update` ai_usage 부분 지정 거부, `jobstack-fetch-diag` 리댁션
+  fail-closed, `md2docx.mjs` 원자적 쓰기.
+- 스킬 배선: resume 지원 유형 확인·경험 카드 소비, mock-interview 경험 카드 로드, company-research
+  종합 적합도(정수) → tracker `--fit-score`, researcher `partial` 처리, cover-letter 구조화 전형 완료
+  게이트 역참조·defense-map 필드 명세, job-search `--platform` 단일 수집, auto 예시 PII 확인 가드·
+  Glob 대체 경로, allowed-tools 에 `Task` 병기(+ `test-skill-size --frontmatter` 도구명 검사).
+- 문서 정정: Routines 과금(구독 사용량 소모)·최소 간격 기준일, Cowork 전제 `[2차]` 표기·`/resume`
+  충돌 확인 항목, telemetry-events 초안 잔재 제거, NOTES.md 막다른 참조 제거, tracker 탈락 후
+  체크리스트 수치 제거, policy-checklist 의 cron 분기 알림 문구 완화, 0.5.0 바이트 감소율 정정.
+
 ## [0.5.0] - 2026-09-03
 
 검토 보고서 P1 항목(U-07~U-13, U-17, U-21) — 실행 기반 현대화와 시장 정합. 실행 기록은
@@ -77,8 +94,8 @@
 ### Changed
 - **진행적 공개 (U-08)** — 거대 스킬 6개를 SKILL.md(흐름·게이트) + `references/`(모드별·플랫폼별·
   트랙별 자료, 스킬 소유)로 분할: auto 338→275, cover-letter 505→294, resume 487→296,
-  mock-interview 461→292, job-search 443→264, company-research 419→260(바이트 기준 초기 로드 26~38%
-  감소 — 검토 보고서 목표 50%에는 못 미침: 게이트·판단 규칙을 SKILL.md에 남기는 쪽을 택했다). 16개 스킬 전부 300줄 이하,
+  mock-interview 461→292, job-search 443→264, company-research 419→260(바이트 기준 초기 로드 8~39%
+  감소, 평균 약 29% — auto 8%는 hwpx 변환·라우팅 행 추가분 포함. 검토 보고서 목표 50%에는 못 미침: 게이트·판단 규칙을 SKILL.md에 남기는 쪽을 택했다). 16개 스킬 전부 300줄 이하,
   프론트매터에 `argument-hint`·`when_to_use` 추가, jobstack 메타는 `metadata:` 아래로. 원본 줄
   보존은 결정적 검증기로 확인(유실 0). `test/test-skill-size.sh`, `bin/gen-skill-docs.sh`가 스킬
   소유 참조·하위 디렉토리를 지원.

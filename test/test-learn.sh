@@ -126,6 +126,19 @@ try:
     check("add note 60자 초과: exit 2", code == 2, err)
     check("add note 60자 초과: 파일 미생성(거부 시 append 안 함)", not os.path.exists(log_err), "")
 
+    # ── add: --skill 형식 오류(대문자 시작 등 SKILL_RE 밖) → exit 2 ────────
+    code, out, err = run(["add", "--skill", "BadSkill1", "--kind", "other",
+                           "--key", "a.b", "--file", log_err])
+    check("add --skill 형식 오류(BadSkill1): exit 2", code == 2, err)
+    check("add --skill 형식 오류: 안내 메시지에 --skill 언급", "--skill" in err, err)
+
+    # ── add: --session 129자(SESSION_MAX=128 초과) → exit 2 ───────────────
+    long_session = "s" * 129
+    code, out, err = run(["add", "--skill", "job-search", "--kind", "other",
+                           "--key", "a.b", "--session", long_session, "--file", log_err])
+    check("add --session 129자: exit 2", code == 2, err)
+    check("add --session 129자: 안내 메시지에 --session 언급", "--session" in err, err)
+
     # ── add: PII 휴리스틱 거부 → exit 1, 파일 미기록 ────────────────────
     pii_cases = [
         ("이메일", "담당자 test.user@example.com 확인 요청"),
@@ -338,6 +351,30 @@ try:
         code == 0 and "resolve.case" in out,
         out + err,
     )
+
+    # 두 환경변수(JOBSTACK_LEARN_LOG·JOBSTACK_STATE_DIR) 모두 미설정 시 마지막 폴백인
+    # ~/.jobstack/analytics/learnings.jsonl 로 실제 기록되는지 — HOME 을 격리해서 검증한다
+    # (run() 은 기본적으로 두 환경변수를 항상 지우므로 env={"HOME": ...}만 주면 순수 폴백 경로다).
+    fallback_home = tempfile.mkdtemp(prefix="jobstack-learn-fallback-home-")
+    try:
+        code, out, err = run(
+            ["add", "--skill", "job-search", "--kind", "other", "--key", "fallback.case"],
+            env={"HOME": fallback_home},
+        )
+        check("두 환경변수 미설정 폴백: add exit 0", code == 0, err)
+        fallback_path = os.path.join(fallback_home, ".jobstack", "analytics", "learnings.jsonl")
+        check(
+            "두 환경변수 미설정 폴백: ~/.jobstack/analytics/learnings.jsonl 에 기록됨",
+            os.path.exists(fallback_path), fallback_path,
+        )
+        if os.path.exists(fallback_path):
+            fb_lines = read_lines(fallback_path)
+            check("두 환경변수 미설정 폴백: 파일에 1줄 기록", len(fb_lines) == 1, fb_lines)
+            if fb_lines:
+                fb_rec = json.loads(fb_lines[0])
+                check("두 환경변수 미설정 폴백: key 값 일치", fb_rec.get("key") == "fallback.case", fb_rec)
+    finally:
+        shutil.rmtree(fallback_home, ignore_errors=True)
 
 finally:
     shutil.rmtree(TMP, ignore_errors=True)

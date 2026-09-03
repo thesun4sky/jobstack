@@ -138,13 +138,19 @@ def classify(html, status):
 
 def _parse_retry_after_seconds(value):
     """Retry-After 헤더 값에서 정수 초를 파싱한다. HTTP-date 형식·빈 값·음수·소수는 None
-    (재시도 대상이 아님 — 요구사항이 '정수 초' 형식만 재시도하도록 한정한다)."""
+    (재시도 대상이 아님 — 요구사항이 '정수 초' 형식만 재시도하도록 한정한다).
+    str.isdigit() 은 위첨자('5²')처럼 int() 가 못 받는 유니코드 숫자 문자도 True 를 반환해
+    아래 int() 변환이 예외를 던질 수 있었다 — ASCII 십진수만 허용하는 정규식으로 제한하고,
+    변환도 try/except 로 감싼다(리뷰 반영)."""
     if value is None:
         return None
     value = value.strip()
-    if not value.isdigit():
+    if not re.fullmatch(r'[0-9]+', value):
         return None
-    return int(value)
+    try:
+        return int(value)
+    except ValueError:
+        return None
 
 
 def _classify_block_class(html, status, retry_after_header, selector_hits, has_selectors):

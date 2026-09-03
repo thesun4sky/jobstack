@@ -334,6 +334,19 @@ function cmdUpdate(positionals, flags) {
     if (typeof aiTool === 'string') aiMap.set('tool', aiTool);
     if (typeof aiTask === 'string') aiMap.set('task', aiTask);
     if (typeof aiEffect === 'string') aiMap.set('effect', aiEffect);
+    // add 와 동일한 제약 — 갱신 후 tool/task/effect 중 하나라도 비면 스키마 위반이므로 막는다.
+    // 카드에 이미 완전한 ai_usage 가 있었다면 나머지 필드가 그대로 남아 갱신 후에도 세 값이
+    // 모두 채워져 있으므로, 그 경우의 "일부 필드만 갱신"은 허용된다(리뷰 반영).
+    const finalTool = aiMap.get('tool');
+    const finalTask = aiMap.get('task');
+    const finalEffect = aiMap.get('effect');
+    const complete = typeof finalTool === 'string' && finalTool
+      && typeof finalTask === 'string' && finalTask
+      && typeof finalEffect === 'string' && finalEffect;
+    if (!complete) {
+      die('--ai-usage-tool / --ai-usage-task / --ai-usage-effect 갱신 후 세 값이 모두 채워져 있어야 합니다'
+        + ' (기존에 완전한 ai_usage 가 있는 카드라면 일부 필드만 갱신 가능)');
+    }
     touched = true;
   }
 

@@ -80,6 +80,16 @@
       </div>
     </div>
 
+    <!-- 7) script 태그 내부 JSON-LD 날짜 오염 — .date/.job_date 요소가 없는 카드에 script
+         텍스트의 "YYYY.MM.DD" 패턴이 섞여도 deadline 으로 오검출되면 안 됨(스크립트 제거 검증) -->
+    <div class="item_recruit">
+      <div class="area_job">
+        <h2 class="job_tit"><a href="/zf_user/jobs/relay/view?rec_idx=51000007" title="플랫폼 엔지니어 채용(가상)">플랫폼 엔지니어 채용(가상)</a></h2>
+        <div class="corp_name"><a href="/zf_user/company-info/view?csn=9000000007">메타데이터(주)</a></div>
+        <script type="application/ld+json">{"@context":"https://schema.org/","@type":"JobPosting","datePosted":"2026.01.01","validThrough":"2099.12.31"}</script>
+      </div>
+    </div>
+
   </div>
 </div>
 </body>

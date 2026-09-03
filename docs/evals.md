@@ -107,7 +107,7 @@ test/run-evals.sh --trigger --dry-run   # 나열만
 
 `claude` CLI를 찾지 못하거나 `--dry-run`이면 케이스·실행 예정 명령만 출력하고 항상 exit 0 한다(CI가
 `claude` 미설치 상태로 이 스크립트를 우발적으로 부르더라도 실패하지 않는다 — 단, 이는 "돌지 않음"이지
-"통과"가 아니므로 **PR 게이트로 쓸 때는 `claude` 가용성을 별도로 확인**해야 한다. §"CI 미포함 이유"
+"통과"가 아니므로 **PR 게이트로 쓸 때는 `claude` 가용성을 별도로 확인**해야 한다. §"왜 CI 에 넣지 않나"
 참조).
 
 각 케이스는 `mktemp` 격리 HOME에서 `install.sh`로 스킬을 심링크 설치한 뒤, 그 HOME 아래 별도
@@ -116,7 +116,10 @@ test/run-evals.sh --trigger --dry-run   # 나열만
 않는다 — 읽기는 `$REPO`에서, 상태는 격리 `JOBSTACK_STATE_DIR`에서). `--permission-mode auto`은
 과제 스펙의 예시 명령에는 없지만, 이 플래그 없이는 Bash·Write 권한 승인을 기다리며 무인 실행이
 멈춘다(검토 보고서 §2-2가 "무인 호스트용"으로 명시한 2.1.259 플래그) — 헤드리스 실행이 목적이므로
-추가했다.
+추가했다. 이 `claude -p` 호출(본 실행·`grader: llm` 채점·`--trigger` 판정 3곳 모두)은 `command -v
+timeout`이 있으면 `timeout ${EVAL_TIMEOUT_S:-900}`로 감싸 무인 실행이 무한정 멈추지 않게 하고(없는
+환경에서는 그대로 실행), 시간 초과(종료 코드 124)는 리포트 근거 요약에 `timeout`으로 남아 FAIL
+처리된다 — 러너 스크립트 자체는 macOS bash 3.2 호환을 위해 `mapfile`·연관배열을 쓰지 않는다.
 
 스트림에서 `tool_use`(Bash 명령·Read 경로)와 텍스트를 모아 `expectations`를 판정하고,
 `test/eval-report.md`(표)와 `test/eval-report.json`(전체 판정 근거)에 쓴다. `--trigger`는 별도로
@@ -232,3 +235,7 @@ HOME을 지우지 않고 로그 경로를 리포트에 남긴다(통과한 케�
 ## 왜 CI 에 넣지 않나
 
 API 키·비용이 필요하고(GitHub Actions 는 모든 브랜치 push 에서 돌아 포크 PR 에 시크릿이 노출될 수 있다), LLM 채점은 비결정적이다. gate 계층만 시크릿이 있는 예약 워크플로우로 돌리는 것이 다음 단계다.
+
+## 채점 모델 (2026-09-03)
+
+`grader: llm` 채점은 기본 `haiku`(Claude Haiku 4.5)를 쓴다. 이 모델의 은퇴 하한이 2026-10-15(검토 보고서 §2-2)이므로 그 전에 `--judge-model <model>`(또는 `EVAL_JUDGE_MODEL`)로 후속 소형 모델을 지정해 재확인한다.

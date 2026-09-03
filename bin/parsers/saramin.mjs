@@ -13,19 +13,25 @@
  *
  * now 파라미터로 "오늘"을 주입할 수 있어 "~ MM/DD" 마감일의 연도 롤오버(올해/내년)를
  * 결정적으로 테스트할 수 있다.
+ *
+ * cheerio 는 parseSaraminSearch() 호출 시점에 lazy 로드한다(리뷰 반영) — 이 모듈을
+ * import 하는 즉시 require('cheerio') 하면, fetch-jobs.mjs 가 이 모듈을 정적 import 하는
+ * 구조상 cheerio 미설치 환경에서 saramin 이 아닌 다른 플랫폼(jumpit 등) 호출까지
+ * 모듈 로드 단계에서 죽는다. cheerio 는 실제로 parseSaraminSearch() 가 호출될 때만 필요하다.
  */
-import { createRequire } from 'node:module';
 
-const require = createRequire(import.meta.url);
+let _cheerioLoadPromise = null;
 
-let cheerioLoad;
-try {
-  ({ load: cheerioLoad } = require('cheerio'));
-} catch (err) {
-  // 명확한 오류 — 이 모듈을 import 하는 즉시(함수 호출 전) 던진다.
-  throw new Error(
-    `cheerio 모듈을 찾을 수 없습니다. bin/ 에서 npm install 을 실행하세요. (원본 오류: ${err.message})`,
-  );
+function _loadCheerio() {
+  if (!_cheerioLoadPromise) {
+    _cheerioLoadPromise = import('cheerio').catch((err) => {
+      _cheerioLoadPromise = null; // 실패는 캐시하지 않음 — 이후 재시도(예: 뒤늦은 설치) 가능
+      throw new Error(
+        `cheerio 모듈을 찾을 수 없습니다. bin/ 에서 npm install 을 실행하세요. (원본 오류: ${err.message})`,
+      );
+    });
+  }
+  return _cheerioLoadPromise;
 }
 
 /** cheerio .text() 결과의 개행·연속 공백을 한 칸으로 정리(innerText 대체). */
@@ -40,10 +46,11 @@ function normalizeWhitespace(text) {
  * @param {number} [limit=20] 반환할 최대 건수 — 원본 파서처럼 title/company 필터
  *   "이전"에 slice 한다(깨진 카드가 앞쪽에 있으면 결과가 limit 보다 적을 수 있음, 원본과 동일).
  * @param {Date} [now=new Date()] "오늘" 기준일 — "~ MM/DD" 마감일의 연도 롤오버 판정에 사용.
- * @returns {{platform:'saramin', company:string, title:string, deadline:string,
- *   dRemaining:string, link:string, skills:string}[]}
+ * @returns {Promise<{platform:'saramin', company:string, title:string, deadline:string,
+ *   dRemaining:string, link:string, skills:string}[]>}
  */
-export function parseSaraminSearch(html, limit = 20, now = new Date()) {
+export async function parseSaraminSearch(html, limit = 20, now = new Date()) {
+  const { load: cheerioLoad } = await _loadCheerio();
   const $ = cheerioLoad(html || '');
   const items = $('.item_recruit').toArray().slice(0, limit);
 
@@ -52,8 +59,12 @@ export function parseSaraminSearch(html, limit = 20, now = new Date()) {
       const $item = $(el);
       const titleEl = $item.find('.job_tit a').first();
       const companyEl = $item.find('.corp_name a').first();
-      const fullText = normalizeWhitespace($item.text());
-      const dateText = normalizeWhitespace($item.find('.date, .job_date').first().text());
+      // script/style 내부 텍스트(예: JSON-LD 날짜)가 본문에 섞여 마감일 정규식을 오탐하지
+      // 않도록, 텍스트 추출 전에 클론에서 제거한다(원본 $item 은 title/company 추출에 그대로 씀).
+      const $clean = $item.clone();
+      $clean.find('script,style').remove();
+      const fullText = normalizeWhitespace($clean.text());
+      const dateText = normalizeWhitespace($clean.find('.date, .job_date').first().text());
 
       let deadline = '마감일 미확인';
       // "~ 06/06(토)" 형식

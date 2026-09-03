@@ -58,6 +58,66 @@ OUT=$(python3 "$REPO/bin/hwpx2md.py" "$WORK/legacy.hwp" --converter none 2>&1); 
 echo "plain" > "$WORK/x.bin"
 python3 "$REPO/bin/hwpx2md.py" "$WORK/x.bin" >/dev/null 2>&1; [ $? -eq 1 ] && ok "비 HWP 파일 exit 1" || bad "비 HWP exit 1"
 
+# zip bomb — 항목 하나가 50MB 'A' 를 압축한 것(선언 file_size 50MB > 20MB 항목 상한) → exit 2.
+# 압축률이 극단적이라 실제 zip 파일 크기는 수십KB 에 불과하다.
+python3 - "$WORK/bomb.hwpx" <<'PY'
+import sys, zipfile
+with zipfile.ZipFile(sys.argv[1], 'w', zipfile.ZIP_DEFLATED) as z:
+    z.writestr('mimetype', 'application/hwp+zip')
+    z.writestr('Contents/section0.xml', 'A' * (50 * 1024 * 1024))
+PY
+OUT=$(python3 "$REPO/bin/hwpx2md.py" "$WORK/bomb.hwpx" 2>&1); RC=$?
+[ $RC -eq 2 ] && grep -q '너무 큽니다' <<<"$OUT" && ok "zip bomb(50MB 항목) → exit 2" || bad "zip bomb exit 2" "rc=$RC $OUT"
+
+# 중첩 표 — render_table() 이 tbl.iter() 로 중첩 표의 tr 까지 끌어오면 바깥 표 행 수가
+# 부풀려진다(회귀 포인트). 직계 자식 tr 만 순회해야 바깥 표는 헤더+데이터 1행(3줄)로 유지되고,
+# 중첩 표 내용은 기존 동작대로 바깥 셀 텍스트에 합쳐져야 한다.
+python3 - "$WORK/nested.hwpx" <<'PY'
+import sys, zipfile
+NS = 'xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph" xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section"'
+section = f'''<?xml version="1.0" encoding="UTF-8"?>
+<hs:sec {NS}>
+  <hp:p id="1"><hp:run><hp:tbl rowCnt="2" colCnt="2">
+    <hp:tr><hp:tc><hp:subList><hp:p><hp:run><hp:t>구분</hp:t></hp:run></hp:p></hp:subList></hp:tc>
+           <hp:tc><hp:subList><hp:p><hp:run><hp:t>내용</hp:t></hp:run></hp:p></hp:subList></hp:tc></hp:tr>
+    <hp:tr><hp:tc><hp:subList><hp:p><hp:run><hp:t>기술스택</hp:t></hp:run></hp:p></hp:subList></hp:tc>
+           <hp:tc><hp:subList><hp:p><hp:run><hp:tbl rowCnt="3" colCnt="1">
+             <hp:tr><hp:tc><hp:subList><hp:p><hp:run><hp:t>Java</hp:t></hp:run></hp:p></hp:subList></hp:tc></hp:tr>
+             <hp:tr><hp:tc><hp:subList><hp:p><hp:run><hp:t>Python</hp:t></hp:run></hp:p></hp:subList></hp:tc></hp:tr>
+             <hp:tr><hp:tc><hp:subList><hp:p><hp:run><hp:t>Go</hp:t></hp:run></hp:p></hp:subList></hp:tc></hp:tr>
+           </hp:tbl></hp:run></hp:p></hp:subList></hp:tc></hp:tr>
+  </hp:tbl></hp:run></hp:p>
+</hs:sec>'''
+with zipfile.ZipFile(sys.argv[1], 'w') as z:
+    z.writestr('mimetype', 'application/hwp+zip')
+    z.writestr('Contents/section0.xml', section)
+PY
+OUT=$(python3 "$REPO/bin/hwpx2md.py" "$WORK/nested.hwpx" 2>&1); RC=$?
+[ $RC -eq 0 ] && ok "중첩 표 변환 exit 0" || bad "중첩 표 변환 exit 0" "rc=$RC $OUT"
+TBL_LINES=$(grep -c '^|' <<<"$OUT")
+[ "$TBL_LINES" -eq 3 ] && ok "중첩 표: 바깥 표 행 수 유지(헤더+데이터 1행=3줄, 중첩 tr 안 섞임)" || bad "중첩 표 행 수" "실제 ${TBL_LINES}줄: $OUT"
+grep -q '^| 기술스택 | Java Python Go |' <<<"$OUT" && ok "중첩 표: 중첩 표 내용은 셀 텍스트로 합쳐짐(기존 동작 유지)" || bad "중첩 표 셀 병합" "$OUT"
+
+# 2000단 중첩 XML — run_text() 의 재귀 walk() 가 RecursionError 를 내도 트레이스백 없이
+# "[오류] 파싱 실패" exit 2 로 정규화되는지 확인(비정상적으로 깊은 문서에 대한 방어).
+python3 - "$WORK/deepnest.hwpx" <<'PY'
+import sys, zipfile
+NS = 'xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph" xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section"'
+DEPTH = 2000
+section = (
+    '<?xml version="1.0" encoding="UTF-8"?>\n<hs:sec ' + NS + '>'
+    '<hp:p>' + ('<hp:deep>' * DEPTH) + '<hp:run><hp:t>x</hp:t></hp:run>' + ('</hp:deep>' * DEPTH) + '</hp:p>'
+    '</hs:sec>'
+)
+with zipfile.ZipFile(sys.argv[1], 'w') as z:
+    z.writestr('mimetype', 'application/hwp+zip')
+    z.writestr('Contents/section0.xml', section)
+PY
+OUT=$(python3 "$REPO/bin/hwpx2md.py" "$WORK/deepnest.hwpx" 2>&1); RC=$?
+[ $RC -eq 2 ] && ok "2000단 중첩 XML → exit 2" || bad "2000단 중첩 XML exit 2" "rc=$RC $OUT"
+grep -qi 'traceback' <<<"$OUT" && bad "2000단 중첩 XML: 트레이스백 없음" "$OUT" || ok "2000단 중첩 XML: 트레이스백 없음"
+grep -q '파싱 실패' <<<"$OUT" && ok "2000단 중첩 XML: 오류 메시지" || bad "2000단 중첩 XML 오류 메시지" "$OUT"
+
 rm -rf "$WORK"
 echo "PASS: $PASS / FAIL: $FAIL"
 [ "$FAIL" -eq 0 ] && { echo "[PASS] hwpx2md"; exit 0; } || { echo "[FAIL] hwpx2md"; exit 1; }

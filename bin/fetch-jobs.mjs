@@ -198,7 +198,7 @@ async function scrapeSaramin(url, lim) {
     // 대신 그 HTML 파일을 읽는다. 테스트 전용.
     const html = readFileSync(htmlFixturePath, 'utf8');
     process.stderr.write('[fetch-jobs:diag] saramin fetch_via=fixture\n');
-    return { jobs: parseSaraminSearch(html, lim), html, status: 200 };
+    return { jobs: await parseSaraminSearch(html, lim), html, status: 200 };
   }
 
   // item_recruit(사람인 검색 카드 클래스)를 셀렉터로 넘겨, 로그인/soft-block 페이지처럼
@@ -206,7 +206,7 @@ async function scrapeSaramin(url, lim) {
   const adapted = fetchViaIsFetch(url, { selectors: ['item_recruit'] });
   if (adapted) {
     process.stderr.write(`[fetch-jobs:diag] saramin fetch_via=is-fetch verdict=${adapted.verdict}\n`);
-    return { jobs: parseSaraminSearch(adapted.html, lim), html: adapted.html, status: adapted.status };
+    return { jobs: await parseSaraminSearch(adapted.html, lim), html: adapted.html, status: adapted.status };
   }
 
   // is-fetch 미가용/실패 — 브라우저 컨텍스트 없이 전역 fetch() 로 HTML 확보(Chromium 미기동).
@@ -221,7 +221,7 @@ async function scrapeSaramin(url, lim) {
     process.stderr.write(`[fetch-jobs:diag] saramin fetch_via=fetch status=${resp.status}\n`);
     // ok 여부와 무관하게 html/status 를 돌려준다 — 0건 진단(logFailure)이 에러 페이지를 분류할 수 있게.
     if (!resp.ok) return { jobs: [], html, status: resp.status };
-    return { jobs: parseSaraminSearch(html, lim), html, status: resp.status };
+    return { jobs: await parseSaraminSearch(html, lim), html, status: resp.status };
   } finally {
     clearTimeout(timer);
   }

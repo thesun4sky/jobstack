@@ -148,6 +148,16 @@ try:
     check("tail: url= 토큰이 호스트만 남도록 리댁션됨", "url=www.wanted.co.kr" in out, out)
     check("tail: 리댁션 후 원래 경로·쿼리는 사라짐", "/search?q=abc" not in out, out)
 
+    # url= 토큰이 애초에 호스트를 못 뽑아내는(파싱 실패) 값이면 raw 를 그대로 새지 않고
+    # [unparseable] 로 대체해야 한다 — raw 폴백은 리댁션의 목적(민감정보 차단)을 무력화한다.
+    unparseable_fixture = os.path.join(TMP, "unparseable-url.log")
+    with open(unparseable_fixture, "w", encoding="utf-8") as f:
+        f.write(f'{iso(now)} [fetch-jobs:diag] platform=saramin cause=error url=[::1 status=500\n')
+    code, out, err = run(["tail", unparseable_fixture])
+    check("tail: url= 파싱 실패 exit 0", code == 0, err)
+    check("tail: url= 파싱 실패 시 [unparseable] 로 대체", "url=[unparseable]" in out, out)
+    check("tail: 파싱 실패한 원본 토큰은 그대로 노출되지 않음(raw 유출 없음)", "url=[::1" not in out, out)
+
     # ── 없는 파일 ───────────────────────────────────────────────────────
     missing = os.path.join(TMP, "no-such-file.log")
     code, out, err = run(["summary", missing])

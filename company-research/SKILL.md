@@ -11,6 +11,7 @@ allowed-tools:
   - WebSearch
   - WebFetch
   - Agent
+  - Task
 argument-hint: "<회사명> [직무]"
 when_to_use: |
   채용공고 URL·JD 원문이 있거나 기업명과 직무를 알고 있고, 지원 여부 판단이나 자소서·면접 준비를 위해
@@ -132,7 +133,7 @@ metadata:
 
 > 소스별 수집 절차(검색 대상 7항목·검색어 패턴 예시·WebFetch 사용법)와 WebSearch/WebFetch 차단 시 폴백 절차: `${CLAUDE_SKILL_DIR}/references/sources.md` — Phase 1 수집을 시작하기 직전에 Read 한다.
 
-> **병렬 리서치**: Agent 도구를 쓸 수 있으면 소스 7항목을 `researcher` 서브에이전트(저장소 `agents/researcher.md`)에 소스 하나씩 맡겨 병렬로 조사하고, 돌아온 JSON(`items[].url`·`date`, `numbers`, `deadline_verified`, `blocked`)을 이 스킬이 합성합니다. `found: false`·`blocked: true`인 소스는 훈련 데이터로 채우지 말고 "(출처 미확보)"로 남기고, 원티드 공고는 `deadline_verified: false`로 오므로 위 verify 규칙을 그대로 적용합니다. Agent 도구가 없는 환경(봇 러너 등)에서는 references/sources.md의 순차 절차로 진행합니다.
+> **병렬 리서치**: Agent 도구를 쓸 수 있으면 소스 7항목을 `researcher` 서브에이전트(저장소 `agents/researcher.md`)에 소스 하나씩 맡겨 병렬로 조사하고, 돌아온 JSON(`items[].url`·`date`, `numbers`, `deadline_verified`, `blocked`)을 이 스킬이 합성합니다. `found: false`·`blocked: true`인 소스는 훈련 데이터로 채우지 말고 "(출처 미확보)"로 남기며 `partial: true`(예산 초과로 일부만 확인)는 "(일부 확인)"으로 표시하고, 원티드 공고는 `deadline_verified: false`로 오므로 위 verify 규칙을 그대로 적용합니다. Agent 도구가 없는 환경(봇 러너 등)에서는 references/sources.md의 순차 절차로 진행합니다.
 
 > **Chrome 경로(선택)**: Claude in Chrome 확장이 있으면 잡플래닛·블라인드의 로그인 필요 리뷰 상세를 `${CLAUDE_SKILL_DIR}/references/chrome-path.md` 규칙(읽기만, 익명 집계, 출처 "브라우저 열람")으로 읽습니다. 확장이 없으면 검색 스니펫·사용자 제공 텍스트로 진행합니다.
 

@@ -16,7 +16,8 @@ tracker 스킬이 JSONL 을 손으로 고쳐 쓰던 작업(상태 전이·max_st
   jobstack-tracker validate
 
 환경: JOBSTACK_STATE_DIR (기본 ~/.jobstack) → tracker/applications.jsonl
-종료 코드: 0 정상 · 1 입력 오류 · 2 파일 오류/검증 실패
+종료 코드: 0 정상 · 1 입력 오류 · 2 파일 오류/검증 실패(손상된 JSONL 포함, 모든 서브커맨드 공통)
+  인자 오류(필수 옵션 누락 등)는 argparse 기본값대로 exit 2 를 낸다.
 """
 from __future__ import annotations
 
@@ -116,6 +117,12 @@ class Record:
         return json.dumps(self.data, ensure_ascii=False, separators=(',', ':'))
 
 
+class CorruptFile(Exception):
+    """상태 파일(JSONL) 자체가 손상된 경우 — 일반 입력 오류(exit 1)와 구분해 main() 이
+    어느 서브커맨드에서든 항상 exit 2 로 매핑한다(리뷰 반영: 이전엔 validate 만 2 였고
+    list/add/update/stats/calendar/nudge 는 일반 SystemExit 경로를 타 1 로 새 나갔다)."""
+
+
 def load() -> list[Record]:
     if not os.path.exists(TRACKER_FILE):
         return []
@@ -128,7 +135,7 @@ def load() -> list[Record]:
             try:
                 data = json.loads(s)
             except json.JSONDecodeError as e:
-                raise SystemExit(f'[오류] {TRACKER_FILE}:{ln} JSON 파싱 실패 — {e}')
+                raise CorruptFile(f'[오류] {TRACKER_FILE}:{ln} JSON 파싱 실패 — {e}')
             records.append(Record(s, data))
     return records
 
@@ -508,7 +515,7 @@ def cmd_validate(a) -> int:
     errors = []
     try:
         records = load()
-    except SystemExit as e:
+    except CorruptFile as e:
         print(e)
         return 2
     ids = set()
@@ -580,6 +587,9 @@ def main(argv=None) -> int:
     a = p.parse_args(argv)
     try:
         return a.fn(a)
+    except CorruptFile as e:
+        print(e, file=sys.stderr)
+        return 2
     except SystemExit as e:
         if isinstance(e.code, str):
             print(e.code, file=sys.stderr)

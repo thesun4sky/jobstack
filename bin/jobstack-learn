@@ -10,7 +10,7 @@ jobstack-learn — 운영 학습 로그 기록·집계 도구 (검토 보고서 
 **문서 내용·회사명·개인정보는 절대 기록하지 않는다** — docs/telemetry-events.md 의 PII 3등급
 정책(서비스 사용자 데이터는 익명·집계만)과 동일 원칙을 이 로그에도 적용한다. 이 스크립트는
 이벤트 어휘(kind 6종)가 문서에 정식 등록된 뒤에만 스킬 본문에서 호출해야 한다 — 초안은
-docs/telemetry-events-learnings.md 참조(정식 등록 전 상태).
+docs/telemetry-events.md "운영 학습 로그" 절 참조(정식 등록됨).
 
 로그 한 줄의 형식(고정, JSON — 필드 순서는 예시일 뿐 강제하지 않음):
   {"ts":"2026-09-01T10:15:00Z","skill":"job-search","kind":"selector_broken",
@@ -20,7 +20,11 @@ note·session 은 선택 필드(없으면 생략). 같은 (skill, kind, key) 가
 "dup":true 를 붙인다. count 는 저장하지 않는다 — top/validate 가 줄 수를 세어 그대로 합산하므로
 dup 여부와 무관하게 자동으로 맞는 건수가 나온다.
 
-kind 어휘 6종(닫힌 집합 — docs/telemetry-events-learnings.md 참조. 새 값이 필요하면 그 문서에
+dup 판정(읽기)과 기록(쓰기) 구간은 파일 잠금(`fcntl.flock`, 있는 플랫폼에서만)으로 감싸 동시
+add 실행 시의 경합을 줄인다 — fcntl 이 없는 플랫폼이나 잠금을 지원하지 않는 파일시스템(NFS 등)
+에서는 잠금 없이 그대로 진행하므로 극히 드문 경합이 남을 수 있다(한계, 완전한 상호 배제는 아님).
+
+kind 어휘 6종(닫힌 집합 — docs/telemetry-events.md "운영 학습 로그" 절 참조. 새 값이 필요하면 그 문서에
 먼저 정식 등록한 뒤에 쓴다):
   selector_broken · source_blocked · data_requested · tool_missing · format_mismatch · other
 
@@ -58,6 +62,11 @@ import os
 import re
 import sys
 from datetime import datetime, timedelta, timezone
+
+try:
+    import fcntl  # POSIX 전용 — 없는 플랫폼(Windows 등)에서는 잠금 없이 진행한다.
+except ImportError:
+    fcntl = None
 
 KST = timezone(timedelta(hours=9))
 UTC = timezone.utc
@@ -247,26 +256,34 @@ def cmd_add(args):
         return 2
 
     now = datetime.now(UTC)
-    dup = False
-    existing, _bad = _read_records(path)
-    for rec in existing:
-        if rec.get('skill') == skill and rec.get('kind') == kind and rec.get('key') == key:
-            ts = _parse_ts(rec.get('ts'))
-            if ts is not None and (now - ts) < DUP_WINDOW:
-                dup = True
-                break
-
     record = {'ts': _now_ts(), 'skill': skill, 'kind': kind, 'key': key}
     if note:
         record['note'] = note
     if session:
         record['session'] = session
-    if dup:
-        record['dup'] = True
 
+    # dup 판정(읽기) → 기록(추가) 구간을 파일 잠금으로 감싼다 — 동시에 여러 add 가 실행돼도
+    # 같은 (skill, kind, key) 를 동시에 "중복 아님"으로 오판할 확률을 줄이는 정도의 방어다
+    # (fcntl 이 없으면 잠금 없이 그대로 진행 — 위 docstring 한계 참조).
     try:
         with open(path, 'a', encoding='utf-8') as f:
-            f.write(json.dumps(record, ensure_ascii=False) + '\n')
+            if fcntl is not None:
+                fcntl.flock(f, fcntl.LOCK_EX)
+            try:
+                dup = False
+                existing, _bad = _read_records(path)
+                for rec in existing:
+                    if rec.get('skill') == skill and rec.get('kind') == kind and rec.get('key') == key:
+                        ts = _parse_ts(rec.get('ts'))
+                        if ts is not None and (now - ts) < DUP_WINDOW:
+                            dup = True
+                            break
+                if dup:
+                    record['dup'] = True
+                f.write(json.dumps(record, ensure_ascii=False) + '\n')
+            finally:
+                if fcntl is not None:
+                    fcntl.flock(f, fcntl.LOCK_UN)
     except OSError as err:
         sys.stderr.write(f'jobstack-learn: 기록 실패: {err}\n')
         return 2

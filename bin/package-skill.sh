@@ -18,7 +18,9 @@ TARGET="${1:-}"
 shift
 while [ $# -gt 0 ]; do
   case "$1" in
-    --out) OUT="${2:-}"; shift 2 ;;
+    --out)
+      [ $# -ge 2 ] || { echo "옵션 --out 에 값이 필요합니다." >&2; exit 1; }
+      OUT="$2"; shift 2 ;;
     *) echo "알 수 없는 옵션: $1" >&2; exit 1 ;;
   esac
 done
@@ -53,7 +55,11 @@ RC=0
 for skill in $(skill_list); do
   SRC="$ROOT/$skill"
   if [ ! -f "$SRC/SKILL.md" ]; then echo "[FAIL] $skill: SKILL.md 없음" >&2; RC=1; continue; fi
-  WORK="$(mktemp -d "${TMPDIR:-/tmp}/jobstack-pkg.XXXXXX")"
+  WORK="$(mktemp -d "${TMPDIR:-/tmp}/jobstack-pkg.XXXXXX")" || {
+    echo "[FAIL] $skill: 임시 작업 디렉토리를 만들 수 없습니다." >&2
+    RC=3
+    continue
+  }
   mkdir -p "$WORK/$skill"
   cp "$SRC/SKILL.md" "$WORK/$skill/"
   [ -d "$SRC/references" ] && cp -R "$SRC/references" "$WORK/$skill/"

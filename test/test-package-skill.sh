@@ -45,5 +45,19 @@ mkdir -p "$WORK/unpacked" && (cd "$WORK/unpacked" && python3 -c "import zipfile;
 FB=$(cd "$WORK/unpacked" && HOME="$WORK/home" JOBSTACK_STATE_DIR="$WORK/state" bash auto/scripts/preamble.sh auto 2>/dev/null)
 echo "$FB" | grep -q '^PREAMBLE_FALLBACK=true$' && ok "패키지 단독 실행 → 폴백 컨텍스트" || ng "폴백 컨텍스트 없음"
 
+# 6. --out 값 누락(마지막 인자) → exit 1 (무한 루프 방지: timeout 으로 감싸 판정)
+if command -v timeout >/dev/null 2>&1; then
+  timeout 5 bash "$BIN" auto --out >/dev/null 2>&1; RC=$?
+else
+  bash "$BIN" auto --out >/dev/null 2>&1; RC=$?
+fi
+if [ "$RC" -eq 1 ]; then
+  ok "--out 값 누락 → exit 1"
+elif [ "$RC" -eq 124 ]; then
+  ng "--out 값 누락: timeout(무한 루프로 추정)"
+else
+  ng "--out 값 누락 exit $RC"
+fi
+
 echo "PASS: $PASS / FAIL: $FAIL"
 [ "$FAIL" -eq 0 ]

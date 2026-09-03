@@ -23,6 +23,7 @@ resume Phase 4(ATS 매칭률)·cover-letter Phase 9(반영률)·company-research
   - 매칭률 = 포함 키워드 수 / 전체 키워드 수 (구분별로도 산출). 등급: A ≥ 80%, B 60~79%, C < 60%
     (resume Phase 4·job-search Phase 4 등급 기준과 동일).
 종료 코드: 0 정상 · 1 입력 오류
+  필수 인자(--keywords/--doc) 누락 등 인자 자체의 오류는 argparse 기본값대로 exit 2 를 낸다.
 """
 from __future__ import annotations
 

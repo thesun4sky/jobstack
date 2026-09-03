@@ -4,7 +4,7 @@
 # evals/<skill>/evals.json 의 케이스를 격리 HOME(mktemp)에 install.sh 로 심링크 설치한 뒤
 # `claude -p --output-format stream-json --verbose --model <model> --max-turns N "<prompt>"`
 # 로 실제 실행하고, 스트림에서 tool_use(Bash 명령·Read 경로)와 최종 텍스트를 추출해
-# expectations(must_contain/must_not_contain/must_call/must_read)를 결정적으로 판정한다.
+# expectations(must_contain/must_not_contain/must_call/must_read/must_output)를 결정적으로 판정한다.
 # grader:"llm" 케이스는 `claude -p --model haiku` 로 채점 프롬프트를 한 번 더 호출해
 # 판정에 병합한다. should_trigger 배열은 --trigger 모드로 별도 실행한다(비용 발생 — 아래 안내 참조).
 #
@@ -34,6 +34,7 @@ TRIGGER_REPORT_JSON="$SCRIPT_DIR/eval-trigger-report.json"
 TIER=""
 SKILL_FILTER=""
 MODEL="sonnet"
+JUDGE_MODEL="${EVAL_JUDGE_MODEL:-haiku}"  # grader: llm 채점 모델 — Haiku 4.5 은퇴(2026-10-15) 전 재확인
 DRY_RUN=0
 TRIGGER_MODE=0
 
@@ -64,8 +65,15 @@ while [ $# -gt 0 ]; do
       TIER="${2:-}"
       case "$TIER" in gate|periodic|e2e) ;; *) echo "[오류] --tier 는 gate|periodic|e2e 중 하나여야 합니다: '$TIER'" >&2; exit 1 ;; esac
       shift 2 ;;
-    --skill) SKILL_FILTER="${2:-}"; shift 2 ;;
-    --model) MODEL="${2:-}"; shift 2 ;;
+    --judge-model)
+      [ $# -ge 2 ] || { echo "옵션 --judge-model 에 값이 필요합니다." >&2; exit 1; }
+      JUDGE_MODEL="$2"; shift 2 ;;
+    --skill)
+      [ $# -ge 2 ] || { echo "[오류] --skill 에 값이 필요합니다." >&2; exit 1; }
+      SKILL_FILTER="$2"; shift 2 ;;
+    --model)
+      [ $# -ge 2 ] || { echo "[오류] --model 에 값이 필요합니다." >&2; exit 1; }
+      MODEL="$2"; shift 2 ;;
     --dry-run) DRY_RUN=1; shift ;;
     --trigger) TRIGGER_MODE=1; shift ;;
     -h|--help) usage; exit 0 ;;
@@ -82,6 +90,19 @@ if [ "$DRY_RUN" -eq 1 ] || [ "$HAVE_CLAUDE" -eq 0 ]; then
   if [ "$HAVE_CLAUDE" -eq 0 ] && [ "$DRY_RUN" -eq 0 ]; then
     echo "[안내] claude CLI 를 찾지 못해 dry-run 으로 전환합니다 (케이스·명령 나열만 수행, exit 0)."
   fi
+fi
+
+# ── claude -p 호출 타임아웃 — command -v timeout 이 없으면 그대로(무제한) 실행한다 ──────
+# TIMEOUT_PREFIX 는 항상 최소 1개 원소(env)를 갖도록 한다 — bash 3.2 는 `set -u` 상태에서
+# 빈 배열을 "${arr[@]}"로 펼치면 unbound variable 오류를 낼 수 있어(4.4 이전 버전의 알려진
+# 동작), 빈 배열 자체를 만들지 않는 쪽이 버전 의존 없이 안전하다. env 는 인자 없이 붙이면
+# 그냥 다음 명령을 그대로 실행하므로 claude 호출 동작에는 영향이 없다.
+EVAL_TIMEOUT_S="${EVAL_TIMEOUT_S:-900}"
+TIMEOUT_PREFIX=(env)
+TIMEOUT_PREVIEW=""
+if command -v timeout >/dev/null 2>&1; then
+  TIMEOUT_PREFIX=(timeout "$EVAL_TIMEOUT_S")
+  TIMEOUT_PREVIEW="timeout ${EVAL_TIMEOUT_S}s "
 fi
 
 # ── jf: case JSON 파일에서 점표기 키를 읽는다. 리스트는 한 줄에 하나, 스칼라는 한 줄 ──
@@ -137,7 +158,7 @@ case_file, stream_log, work_dir, claude_exit = sys.argv[1], sys.argv[2], sys.arg
 case = json.load(open(case_file, encoding='utf-8'))
 exp = case.get('expectations', {}) or {}
 
-bash_cmds, read_paths, texts, skill_calls = [], [], [], []
+bash_cmds, read_paths, texts, skill_calls, tool_texts = [], [], [], [], []
 n_events = 0
 result_event = None
 
@@ -169,12 +190,25 @@ if os.path.exists(stream_log):
                             read_paths.append(str(p))
                         elif name == 'Skill':
                             skill_calls.append(str(inp.get('skill') or inp.get('name') or ''))
+            elif etype == 'user':
+                # 도구 결과(Bash 출력 등) — must_output 판정용. 사용자 화면에도 보이는 텍스트다.
+                msg = ev.get('message') or {}
+                content = msg.get('content')
+                if isinstance(content, list):
+                    for block in content:
+                        if isinstance(block, dict) and block.get('type') == 'tool_result':
+                            c = block.get('content')
+                            if isinstance(c, str):
+                                tool_texts.append(c)
+                            elif isinstance(c, list):
+                                tool_texts.append('\n'.join(str(x.get('text', '')) for x in c if isinstance(x, dict)))
             elif etype == 'result':
                 result_event = ev
 
 assistant_text = '\n'.join(texts)
 bash_blob = '\n'.join(bash_cmds)
 read_blob = '\n'.join(read_paths)
+tool_blob = '\n'.join(tool_texts)
 
 # must_contain 은 "최종 산출 텍스트 + 작업 디렉토리 생성 파일"에 대해 판정한다.
 file_texts = []
@@ -202,9 +236,13 @@ for token in exp.get('must_call') or []:
     add_check('must_call', token, bool(words) and all(w in bash_blob for w in words))
 for token in exp.get('must_read') or []:
     add_check('must_read', token, token in read_blob)
+# must_output: 도구 결과(스크립트 stdout)에 있어야 하는 토큰 — 모델이 출력을 요약해도 스크립트가 실제로 낸 값을 판정한다.
+for token in exp.get('must_output') or []:
+    add_check('must_output', token, token in tool_blob)
 
 no_events = (n_events == 0)
-deterministic_pass = (not no_events) and all(c['pass'] for c in checks)
+timed_out = (claude_exit == 124)  # timeout(1) 이 죽였을 때의 종료 코드 — 부분 이벤트가 남아도 FAIL 처리
+deterministic_pass = (not no_events) and (not timed_out) and all(c['pass'] for c in checks)
 
 out = {
     'skill': case.get('skill'), 'id': case.get('id'), 'tier': case.get('tier'),
@@ -212,7 +250,7 @@ out = {
     'bash_command_count': len(bash_cmds), 'read_count': len(read_paths),
     'skill_calls': skill_calls, 'checks': checks,
     'deterministic_pass': deterministic_pass, 'pass': deterministic_pass,
-    'no_events_parsed': no_events,
+    'no_events_parsed': no_events, 'timed_out': timed_out,
 }
 if result_event is not None:
     out['result_summary'] = {
@@ -353,15 +391,21 @@ run_case() { # $1=case_file
     echo "  prompt: ${preview}..."
     local f; while IFS= read -r f; do [ -n "$f" ] && echo "  file: $f"; done < <(jf "$case_file" files)
     local s; while IFS= read -r s; do [ -n "$s" ] && echo "  setup: $s"; done < <(jf "$case_file" setup)
-    echo "  실행 예정: claude -p --output-format stream-json --verbose --model $MODEL --permission-mode auto --max-turns $max_turns \"<prompt>\""
-    [ "$grader" = "llm" ] && echo "  채점 예정: claude -p --output-format stream-json --verbose --model haiku --max-turns 1 \"<채점 프롬프트>\""
+    echo "  실행 예정: ${TIMEOUT_PREVIEW}claude -p --output-format stream-json --verbose --model $MODEL --permission-mode auto --max-turns $max_turns \"<prompt>\""
+    [ "$grader" = "llm" ] && echo "  채점 예정: ${TIMEOUT_PREVIEW}claude -p --output-format stream-json --verbose --model $JUDGE_MODEL --max-turns 1 \"<채점 프롬프트>\""
     TOTAL_LISTED=$((TOTAL_LISTED + 1))
     return 0
   fi
 
   TOTAL_RUN=$((TOTAL_RUN + 1))
   local iso_home work_dir stream_log
-  iso_home="$(mktemp -d "${TMPDIR:-/tmp}/jobstack-eval-home.XXXXXX")"
+  iso_home="$(mktemp -d "${TMPDIR:-/tmp}/jobstack-eval-home.XXXXXX")" || {
+    echo "  [FAIL] 격리 HOME 생성 실패"
+    printf '{"skill":"%s","id":"%s","tier":"%s","grader":"%s","pass":false,"deterministic_pass":false,"checks":[],"no_events_parsed":true,"note":"격리 HOME 생성 실패"}\n' \
+      "$skill_name" "$id" "$tier" "$grader" >> "$RESULTS_JSONL"
+    FAIL_COUNT=$((FAIL_COUNT + 1))
+    return 1
+  }
 
   if ! ( cd "$REPO" && HOME="$iso_home" JOBSTACK_STATE_DIR="$iso_home/.jobstack" bash install.sh ) \
         >"$iso_home/install.log" 2>&1; then
@@ -390,7 +434,7 @@ run_case() { # $1=case_file
 
   stream_log="$iso_home/stream.jsonl"
   ( cd "$work_dir" && HOME="$iso_home" JOBSTACK_STATE_DIR="$iso_home/.jobstack" \
-    claude -p --output-format stream-json --verbose --model "$MODEL" \
+    "${TIMEOUT_PREFIX[@]}" claude -p --output-format stream-json --verbose --model "$MODEL" \
       --permission-mode auto --max-turns "$max_turns" "$prompt" \
   ) >"$stream_log" 2>"$iso_home/stderr.log" </dev/null
   local claude_exit=$?
@@ -403,7 +447,7 @@ run_case() { # $1=case_file
     grading_prompt="$(build_grading_prompt "$case_file" "$stream_log")"
     llm_stream="$iso_home/llm-grade.jsonl"
     ( cd "$work_dir" && HOME="$iso_home" \
-      claude -p --output-format stream-json --verbose --model haiku --permission-mode auto --max-turns 1 "$grading_prompt" \
+      "${TIMEOUT_PREFIX[@]}" claude -p --output-format stream-json --verbose --model "$JUDGE_MODEL" --permission-mode auto --max-turns 1 "$grading_prompt" \
     ) >"$llm_stream" 2>>"$iso_home/stderr.log" </dev/null
     merge_llm_verdict "$verdict_file" "$llm_stream" > "$iso_home/verdict-final.json"
     mv "$iso_home/verdict-final.json" "$verdict_file"
@@ -450,6 +494,8 @@ lines = [
 for r in rows:
     verdict = 'PASS' if r.get('pass') else 'FAIL'
     ev = []
+    if r.get('timed_out') or r.get('claude_exit') == 124:
+        ev.append('timeout')
     if r.get('no_events_parsed'):
         ev.append('실행 로그 없음')
     if r.get('note') and not r.get('checks'):
@@ -480,15 +526,23 @@ run_trigger_query() { # $1=skill $2=query $3=expect(true/false)
   fi
 
   local iso_home stream_log
-  iso_home="$(mktemp -d "${TMPDIR:-/tmp}/jobstack-trigger-home.XXXXXX")"
+  iso_home="$(mktemp -d "${TMPDIR:-/tmp}/jobstack-trigger-home.XXXXXX")" || {
+    echo "  [FAIL] 격리 HOME 생성 실패"
+    printf '{"skill":"%s","query":%s,"expect":%s,"triggered":null,"pass":false}\n' \
+      "$skill_name" "$(python3 -c 'import json,sys; print(json.dumps(sys.argv[1]))' "$query")" \
+      "$([ "$expect" = true ] && echo true || echo false)" >> "$TRIGGER_RESULTS_JSONL"
+    TRIGGER_FAIL=$((TRIGGER_FAIL + 1))
+    return 1
+  }
   ( cd "$REPO" && HOME="$iso_home" JOBSTACK_STATE_DIR="$iso_home/.jobstack" bash install.sh ) \
     >"$iso_home/install.log" 2>&1
 
   stream_log="$iso_home/stream.jsonl"
   ( cd "$iso_home" && HOME="$iso_home" JOBSTACK_STATE_DIR="$iso_home/.jobstack" \
-    claude -p --output-format stream-json --verbose --model "$MODEL" \
+    "${TIMEOUT_PREFIX[@]}" claude -p --output-format stream-json --verbose --model "$MODEL" \
       --permission-mode auto --max-turns 1 "$query" \
   ) >"$stream_log" 2>"$iso_home/stderr.log" </dev/null
+  local claude_exit=$?
 
   local triggered
   triggered="$(python3 - "$stream_log" <<'PY'
@@ -516,23 +570,28 @@ PY
 )"
 
   local row
-  row="$(python3 - "$skill_name" "$query" "$expect" "$triggered" <<'PY'
+  row="$(python3 - "$skill_name" "$query" "$expect" "$triggered" "$claude_exit" <<'PY'
 import json, sys
-skill, query, expect, triggered = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+skill, query, expect, triggered, claude_exit = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], int(sys.argv[5])
 expect_b = (expect == 'true')
-actual_b = (triggered == skill)
-print(json.dumps({'skill': skill, 'query': query, 'expect': expect_b,
-                   'triggered': (triggered or None), 'pass': actual_b == expect_b}, ensure_ascii=False))
+timed_out = (claude_exit == 124)
+actual_b = (triggered == skill) and not timed_out
+row = {'skill': skill, 'query': query, 'expect': expect_b,
+       'triggered': (triggered or None), 'pass': (actual_b == expect_b) and not timed_out}
+if timed_out:
+    row['timed_out'] = True
+print(json.dumps(row, ensure_ascii=False))
 PY
 )"
   echo "$row" >> "$TRIGGER_RESULTS_JSONL"
 
-  local pass
+  local pass timed_out_tag=""
   pass="$(printf '%s' "$row" | python3 -c 'import json,sys; print("true" if json.load(sys.stdin)["pass"] else "false")')"
+  printf '%s' "$row" | python3 -c 'import json,sys; sys.exit(0 if json.load(sys.stdin).get("timed_out") else 1)' && timed_out_tag=" (timeout)"
   if [ "$pass" = "true" ]; then
     echo "  [PASS] expect=$expect actual=${triggered:-<없음>}  \"$query\""
   else
-    echo "  [FAIL] expect=$expect actual=${triggered:-<없음>}  \"$query\""
+    echo "  [FAIL]${timed_out_tag} expect=$expect actual=${triggered:-<없음>}  \"$query\""
     TRIGGER_FAIL=$((TRIGGER_FAIL + 1))
   fi
   rm -rf "$iso_home"
@@ -636,7 +695,9 @@ main() {
     [ "$LISTING_ONLY" -eq 0 ] && exit 1
   fi
 
-  mapfile -t EVAL_FILES < <(find "$EVALS_DIR" -mindepth 2 -maxdepth 2 -name evals.json 2>/dev/null | sort)
+  EVAL_FILES=()
+  while IFS= read -r ef_line; do EVAL_FILES+=("$ef_line"); done \
+    < <(find "$EVALS_DIR" -mindepth 2 -maxdepth 2 -name evals.json 2>/dev/null | sort)
   if [ "${#EVAL_FILES[@]}" -eq 0 ]; then
     echo "[오류] $EVALS_DIR 아래에서 evals.json 을 찾지 못했습니다." >&2
     exit 1

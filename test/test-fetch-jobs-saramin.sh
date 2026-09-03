@@ -34,7 +34,8 @@ STATE_DIR=$(mktemp -d)
 API_FIXTURE=$(mktemp)
 OUT=$(mktemp)
 ERR=$(mktemp)
-cleanup() { rm -rf "$STATE_DIR" "$API_FIXTURE" "$OUT" "$ERR"; }
+ISOLATED=$(mktemp -d)
+cleanup() { rm -rf "$STATE_DIR" "$API_FIXTURE" "$OUT" "$ERR" "$ISOLATED"; }
 trap cleanup EXIT
 
 if [ ! -f "$HTML_FIXTURE" ]; then
@@ -168,6 +169,33 @@ grep -qi 'source' "$ERR" \
 [ ! -s "$OUT" ] \
   && log "PASS" "(d) stdout 미출력(JSON 없음)" \
   || log "FAIL" "(d) stdout 미출력(JSON 없음)" "$(cat "$OUT")"
+
+# ── (e) cheerio 없는 격리 환경에서 jumpit 호출 → saramin.mjs 정적 import 만으로는 안 죽음 ──
+# fetch-jobs.mjs 가 bin/parsers/saramin.mjs 를 최상위에서 정적 import 한다. cheerio 로드가
+# lazy(호출 시점)가 아니라 모듈 로드 시점(top-level require)이면, saramin 이 아닌 플랫폼을
+# 호출해도 cheerio 미설치 환경에서 모듈 로드 단계에서 크래시한다(리뷰 반영 회귀 포인트).
+# node_modules 를 실제로 비운 격리 디렉터리를 만들어 검증한다(cwd 조작이 아니라 ESM 모듈
+# 해석이 실제로 참조하는 파일 트리 자체를 옮겨야 한다 — cwd 는 bare specifier 해석에 영향 없음).
+mkdir -p "$ISOLATED/bin/parsers" "$ISOLATED/bin/sources" "$ISOLATED/bin/node_modules"
+cp "$REPO/bin/fetch-jobs.mjs" "$REPO/bin/fetch-diag.mjs" "$REPO/bin/wanted-verify.mjs" \
+   "$REPO/bin/is-fetch-adapter.mjs" "$ISOLATED/bin/"
+cp "$REPO/bin/parsers/saramin.mjs" "$ISOLATED/bin/parsers/"
+cp "$REPO/bin/sources/saramin-api.mjs" "$ISOLATED/bin/sources/"
+# playwright 만 심링크 — cheerio 는 이 트리 어디에도 없다(node_modules 통째로 복사 안 함).
+ln -s "$REPO/bin/node_modules/playwright" "$ISOLATED/bin/node_modules/playwright"
+
+: > "$OUT"; : > "$ERR"
+PLAYWRIGHT_BROWSERS_PATH=/nonexistent \
+node "$ISOLATED/bin/fetch-jobs.mjs" jumpit x >"$OUT" 2>"$ERR"
+RC=$?
+
+[ "$RC" -eq 0 ] && log "PASS" "(e) cheerio 없는 환경 + jumpit: exit 0" || log "FAIL" "(e) cheerio 없는 환경 + jumpit: exit 0" "실제 exit=$RC, stderr: $(cat "$ERR")"
+[ "$(json_check "$OUT" 'Array.isArray(d) && d.length === 0')" = "true" ] \
+  && log "PASS" "(e) cheerio 없는 환경 + jumpit: 빈 배열([])" \
+  || log "FAIL" "(e) cheerio 없는 환경 + jumpit: 빈 배열([])" "$(cat "$OUT")"
+! grep -qi 'cheerio' "$ERR" \
+  && log "PASS" "(e) cheerio 없는 환경 + jumpit: cheerio 관련 크래시 없음(모듈 로드가 죽지 않음)" \
+  || log "FAIL" "(e) cheerio 없는 환경 + jumpit: cheerio 관련 크래시 없음" "$(cat "$ERR")"
 
 echo ""
 echo "════════════════════════════════════════"

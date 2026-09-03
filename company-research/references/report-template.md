@@ -67,6 +67,6 @@ company-research 스킬 SKILL.md Phase 5 에서 Read 한다.
 - 직무: {POSITION}
 - 핵심 키워드: {5~10개}
 - '이미 팀원처럼' 화두: {3개}
-- 적합도 종합: {1줄}
+- 적합도 종합: {종합 적합도 정수 — 세 점수 평균 반올림, 미산출이면 생략} · {1줄}
 <!-- /jobstack:summary -->
 ```

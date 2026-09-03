@@ -156,7 +156,7 @@ AI풍 일반문장      치환 테스트 2종 통과
 
 즉답 근거가 서류에 없는 문장은 `⚠️위험`으로 표시하고, **면접 전 답변 준비 필수** 또는 **문장 수위 조정** 중 택일을 안내합니다.
 
-**defense-map 산출**: 미끼 문장·예상 질문·방어 판정의 매핑을 `${CLAUDE_SKILL_DIR}/references/defense-map-schema.md`의 YAML 계약 형식(schema_version 1, `source_skill: review`)으로 산출해 mock-interview가 소비할 수 있게 합니다. 저장 경로는 `$_JS_STATE/defense-maps/<회사명>_<직무>_<YYYYMMDD>.yaml`이며, Phase 6과 동일한 Bash heredoc 방식으로 기록합니다(`answer_hint`는 사용자가 확인하기 전이면 `null` — 추정 작성 금지). 저장은 YAML을 손으로 쓰지 않고 `"$_JS_BIN/jobstack-defense-map.mjs" add --company <회사명> --position <직무> --source-skill review --document-ref <원문> --entries-json '<entries JSON>'` (env.sh 소싱 후)로 하며, 스키마 검증 오류가 나면 entry를 고쳐 재시도합니다.
+**defense-map 산출**: 미끼 문장·예상 질문·방어 판정의 매핑을 `${CLAUDE_SKILL_DIR}/references/defense-map-schema.md`의 YAML 계약 형식(schema_version 1, `source_skill: review`)으로 산출해 mock-interview가 소비할 수 있게 합니다. 저장 경로는 `$_JS_STATE/defense-maps/<회사명>_<직무>_<YYYYMMDD>.yaml`이며, 저장은 YAML을 손으로 쓰지 않고 `"$_JS_BIN/jobstack-defense-map.mjs" add --company <회사명> --position <직무> --source-skill review --document-ref <원문> --entries-json '<entries JSON>'` (env.sh 소싱 후)로 하며, 스키마 검증 오류가 나면 entry를 고쳐 재시도합니다.
 
 ---
 

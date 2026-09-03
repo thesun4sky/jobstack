@@ -106,15 +106,33 @@ has "update 안 한 카드2 는 그대로" "카드2" "$(cat "$F")"
 "$E" update "$ID1" --tags "백엔드,인프라" >/dev/null 2>&1
 has "update --tags 반영" "인프라" "$(cat "$F")"
 
-# ai_usage 없는 카드(카드2)에 부분 update -> null 에서 map 으로 승격, 나머지는 null 유지
+# ai_usage 없는 카드(카드2)에 부분 update -> 갱신 후 task/effect 가 비므로 add 와 동일하게
+# 거부(exit 1)해야 한다(리뷰 반영 — 이전엔 null->map 승격을 허용해 validate 만 통과하는
+# 스키마 위반 파일을 만들 수 있었다). 파일은 변경되지 않아야 한다(die 는 atomicWrite 이전에 발생).
 ID2="exp-${TODAY_COMPACT}-02"
-"$E" update "$ID2" --ai-usage-tool "Claude Code" >/dev/null 2>&1
-has "ai_usage null -> map 승격(부분 update)" "tool: Claude Code" "$(cat "$F")"
-VALIDATE_PARTIAL=$("$E" validate 2>&1); RC=$?
-[ $RC -eq 1 ] && has "ai_usage 3필드 미완성 시 validate 실패" "ai_usage" "$VALIDATE_PARTIAL" || bad "부분 ai_usage validate 실패해야 함" "rc=$RC out=$VALIDATE_PARTIAL"
-"$E" update "$ID2" --ai-usage-task "코드리뷰" --ai-usage-effect "40분 단축" >/dev/null 2>&1
+BEFORE_ID2=$(cat "$F")
+PARTIAL_OUT=$("$E" update "$ID2" --ai-usage-tool "Claude Code" 2>&1); RC=$?
+[ $RC -eq 1 ] && has "ai_usage 없는 카드의 부분 update 는 거부(exit 1)" "채워져 있어야" "$PARTIAL_OUT" \
+  || bad "ai_usage 부분 update 거부(exit 1)" "rc=$RC out=$PARTIAL_OUT"
+[ "$(cat "$F")" = "$BEFORE_ID2" ] && ok "거부된 부분 update 는 파일 미변경" || bad "거부된 부분 update 파일 미변경" "파일이 변경됨"
+VALIDATE_UNCHANGED=$("$E" validate 2>&1); RC=$?
+[ $RC -eq 0 ] && has "거부 후에도 파일은 여전히 유효(validate 통과)" "PASS" "$VALIDATE_UNCHANGED" \
+  || bad "거부 후 validate 통과해야 함" "rc=$RC out=$VALIDATE_UNCHANGED"
+
+# 세 플래그를 한 번에 지정하면(= add 와 동일 조건) update 로도 성공
+"$E" update "$ID2" --ai-usage-tool "Claude Code" --ai-usage-task "코드리뷰" --ai-usage-effect "40분 단축" >/dev/null 2>&1
+has "ai_usage 3플래그 동시 update 성공" "tool: Claude Code" "$(cat "$F")"
 VALIDATE_FULL=$("$E" validate 2>&1); RC=$?
 [ $RC -eq 0 ] && has "ai_usage 3필드 완성 후 validate 통과" "PASS" "$VALIDATE_FULL" || bad "ai_usage 완성 후 validate" "rc=$RC out=$VALIDATE_FULL"
+
+# 이미 완전한 ai_usage 가 있는 카드는 한 필드만 갱신해도 허용 — 나머지 필드가 그대로 남아
+# 갱신 후에도 세 값이 모두 채워져 있기 때문(요구사항의 명시적 예외).
+"$E" update "$ID2" --ai-usage-tool "Cursor" >/dev/null 2>&1
+has "완전한 ai_usage 의 일부 필드만 갱신은 허용" "tool: Cursor" "$(cat "$F")"
+has "일부 필드만 갱신해도 나머지 필드는 유지" "코드리뷰" "$(cat "$F")"
+VALIDATE_AFTER_PARTIAL=$("$E" validate 2>&1); RC=$?
+[ $RC -eq 0 ] && has "완전한 ai_usage 의 부분 갱신 후에도 validate 통과" "PASS" "$VALIDATE_AFTER_PARTIAL" \
+  || bad "완전한 ai_usage 부분 갱신 후 validate" "rc=$RC out=$VALIDATE_AFTER_PARTIAL"
 
 OUT_UPD_MISS=$("$E" update exp-nonexistent --title x 2>&1); RC=$?
 [ $RC -eq 1 ] && has "update 없는 id 오류(exit 1)" "찾을 수 없습니다" "$OUT_UPD_MISS" || bad "update 없는 id exit 1" "rc=$RC"

@@ -11,6 +11,7 @@ allowed-tools:
   - WebSearch
   - WebFetch
   - Agent
+  - Task
 argument-hint: "[회사명] [직무] [현재 연봉]"
 when_to_use: |
   직무별·기업별 연봉 벤치마크를 조사하고, 오퍼 협상 전략을 수립할 때 사용한다.
@@ -60,7 +61,7 @@ AskUserQuestion으로 확인:
 
 ### Phase 2: 연봉 데이터 검색
 
-> **병렬 리서치**: Agent 도구를 쓸 수 있으면 아래 소스들을 `researcher` 서브에이전트(저장소 `agents/researcher.md`)에 소스별로 맡겨 병렬로 조사하고, 돌아온 JSON의 `numbers`(값·단위·URL·기준일)만 벤치마크 표에 씁니다. `found: false`·`blocked: true`인 소스는 "(출처 미확보)"로 남기고 훈련 데이터로 채우지 않습니다. Agent 도구가 없는 환경에서는 아래 순차 절차로 진행합니다.
+> **병렬 리서치**: Agent 도구를 쓸 수 있으면 아래 소스들을 `researcher` 서브에이전트(저장소 `agents/researcher.md`)에 소스별로 맡겨 병렬로 조사하고, 돌아온 JSON의 `numbers`(값·단위·URL·기준일)만 벤치마크 표에 씁니다. `found: false`·`blocked: true`인 소스는 "(출처 미확보)"로 남기고, `partial: true`(예산 초과로 일부만 확인)는 "(일부 확인)"으로 표시하며, 훈련 데이터로 채우지 않습니다. Agent 도구가 없는 환경에서는 아래 순차 절차로 진행합니다.
 
 WebSearch로 연봉 정보를 수집합니다. **시장 수치(평균 연봉·초봉·인상률 등)는 SKILL.md에 박아두지 않고, 실행 시점에 WebSearch로 확인하고 출처·기준 시점을 병기합니다** (`${CLAUDE_SKILL_DIR}/references/guardrails.md` §3·§5 규칙).
 

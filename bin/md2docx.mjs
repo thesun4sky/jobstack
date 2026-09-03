@@ -19,7 +19,7 @@
  * 사용법: node md2docx.mjs <입력.md> <출력.docx> [--font "Noto Sans KR"]
  * 종료 코드: 0 성공 · 1 입력 오류 · 3 변환 실패(docx 패키지 부재 포함)
  */
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, renameSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 
 // docx 부재는 여기서 exit 하지 않는다 — 모듈 import 자체는 항상 성공해야 테스트가
@@ -181,7 +181,12 @@ async function main() {
 
   try {
     const buf = await Packer.toBuffer(doc);
-    writeFileSync(output, buf);
+    // 임시 파일에 쓴 뒤 rename 으로 교체 — writeFileSync(output, buf) 직접 쓰기는 중간에
+    // 프로세스가 죽으면 output 경로에 반쯤 쓰인 손상된 .docx 가 남는다(리뷰 반영).
+    // rename 은 같은 파일시스템 안에서 원자적이라 output 은 항상 완성본이거나 이전 버전이다.
+    const tmpPath = `${output}.tmp.${process.pid}`;
+    writeFileSync(tmpPath, buf);
+    renameSync(tmpPath, output);
     process.stdout.write(output + '\n');
   } catch (e) {
     process.stderr.write(`md2docx: 변환 실패: ${e.message}\n`);

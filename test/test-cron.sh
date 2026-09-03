@@ -146,6 +146,71 @@ has "(f) daily 파일 헤더에 수집 실패 표기" "수집 실패: jobkorea" 
 has "(f) daily 파일에 성공 플랫폼도 함께 표기" "수집 성공: saramin, jumpit, wanted" "$DF"
 has "(f) 실패 플랫폼을 제외한 새 공고 3건 집계" "새 공고 3건" "$OUT_F"
 
+# ── (g) status: 실행 기록 없음 문구 ────────────────────────────────────────
+STATE_G="$WORK/state-g"
+OUT_G=$(JOBSTACK_STATE_DIR="$STATE_G" "$CRON" status 2>&1); RC_G=$?
+[ "$RC_G" -eq 0 ] && ok "(g) status exit 0" || bad "(g) status exit 코드" "rc=$RC_G"
+has "(g) status: 실행 기록 없음 문구" "마지막 실행 기록 없음" "$OUT_G"
+
+# ── (h) uninstall: 마커 없는 crontab 에서 안전 종료 ────────────────────────
+# 실제 crontab 을 절대 건드리지 않도록 PATH 맨 앞에 가짜 crontab 을 둔다. 가짜는 -l 에
+# jobstack-cron 마커가 없는 다른 항목을 돌려주고, - (쓰기)가 호출되면 실패로 표시한다 —
+# 마커가 없으면 uninstall 은 애초에 crontab - 를 부르지 않아야 하므로, 이 표시가 나오면 버그다.
+FAKEBIN="$WORK/fakebin"
+mkdir -p "$FAKEBIN"
+cat > "$FAKEBIN/crontab" <<'FAKECRONTAB_EOF'
+#!/usr/bin/env bash
+case "$1" in
+  -l) echo "0 9 * * * /some/other/job.sh  # not-jobstack-cron"; exit 0 ;;
+  -) cat >/dev/null; echo "[fake crontab] unexpected write attempt" >&2; exit 9 ;;
+  *) exit 0 ;;
+esac
+FAKECRONTAB_EOF
+chmod +x "$FAKEBIN/crontab"
+STATE_H="$WORK/state-h"
+OUT_H=$(PATH="$FAKEBIN:$PATH" JOBSTACK_STATE_DIR="$STATE_H" JOBSTACK_CRON_OS_NAME=Linux "$CRON" uninstall 2>&1); RC_H=$?
+[ "$RC_H" -eq 0 ] && ok "(h) uninstall(마커 없음) exit 0" || bad "(h) uninstall exit 코드" "rc=$RC_H"
+has "(h) uninstall: 등록된 항목 없음 안내" "등록된 crontab 항목이 없습니다" "$OUT_H"
+hasnt "(h) uninstall: 가짜 crontab 에 쓰기 시도 없음(실제 crontab 미접촉 확인용)" "unexpected write attempt" "$OUT_H"
+
+# ── (i) JOBSTACK_CRON_OS_NAME=Darwin: install --dry-run 이 launchd plist 를 출력하고
+#        & 가 든 상태 디렉토리 경로가 &amp; 로 이스케이프되는지 ────────────────────
+STATE_AMP="$WORK/cron&state"
+mkdir -p "$STATE_AMP"
+OUT_I=$(JOBSTACK_STATE_DIR="$STATE_AMP" JOBSTACK_CRON_OS_NAME=Darwin "$CRON" install --time 08:15 --dry-run 2>&1); RC_I=$?
+[ "$RC_I" -eq 0 ] && ok "(i) Darwin install --dry-run exit 0" || bad "(i) Darwin install --dry-run exit 코드" "rc=$RC_I"
+has "(i) Darwin install --dry-run: launchd job 안내 출력" "launchd job" "$OUT_I"
+has "(i) Darwin install --dry-run: plist XML 마커 출력" "<key>Label</key>" "$OUT_I"
+has "(i) Darwin install --dry-run: & 가 든 경로가 &amp; 로 이스케이프됨" "cron&amp;state" "$OUT_I"
+hasnt "(i) Darwin install --dry-run: 이스케이프 안 된 날 & 경로는 남지 않음" "cron&state" "$OUT_I"
+
+# ── (j) % 가 든 상태 디렉토리 경로 → Linux install --dry-run 도 exit 1 로 거부 ──────
+STATE_PCT="$WORK/state%pct"
+mkdir -p "$STATE_PCT"
+OUT_J=$(JOBSTACK_STATE_DIR="$STATE_PCT" JOBSTACK_CRON_OS_NAME=Linux "$CRON" install --time 09:00 --dry-run 2>&1); RC_J=$?
+[ "$RC_J" -eq 1 ] && ok "(j) % 경로 Linux install --dry-run exit 1" || bad "(j) % 경로 install exit 코드" "rc=$RC_J"
+has "(j) % 경로 거부 안내 메시지" "crontab 에 등록할 수 없습니다" "$OUT_J"
+
+# ── (k) --time 형식 오류(25:99) → exit 1 ──────────────────────────────────
+STATE_K="$WORK/state-k"
+OUT_K=$(JOBSTACK_STATE_DIR="$STATE_K" "$CRON" install --time 25:99 --dry-run 2>&1); RC_K=$?
+[ "$RC_K" -eq 1 ] && ok "(k) --time 25:99 형식 오류 exit 1" || bad "(k) --time 25:99 exit 코드" "rc=$RC_K"
+has "(k) --time 형식 오류 안내 메시지" "HH:MM" "$OUT_K"
+
+# ── (l) PII 불변식: analytics/cron.log 에 검색 조건(직무·경력·지역) 평문이 남지 않음 ──
+# (a) 블록에서 --keyword 백엔드 --career entry --location seoul 로 이미 두 번 실행했다 —
+# 그 실행이 남긴 cron.log 를 재검사한다(새로 실행하지 않음, 로그는 메타만 남겨야 한다).
+CRONLOG_A="$STATE_A/analytics/cron.log"
+if [ -f "$CRONLOG_A" ]; then
+  ok "(l) cron.log 존재"
+  CL_CONTENT="$(cat "$CRONLOG_A")"
+  hasnt "(l) cron.log 에 검색 직무(키워드) 평문 없음" "백엔드" "$CL_CONTENT"
+  hasnt "(l) cron.log 에 경력 조건(entry) 평문 없음" "entry" "$CL_CONTENT"
+  hasnt "(l) cron.log 에 지역 조건(seoul) 평문 없음" "seoul" "$CL_CONTENT"
+else
+  bad "(l) cron.log 존재" "$CRONLOG_A 없음"
+fi
+
 rm -rf "$WORK"
 
 echo ""

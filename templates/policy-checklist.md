@@ -24,5 +24,5 @@ tracker(탈락 후 안내)·salary(협상 근거)·strategy(로드맵 재료)가
 
 ## 갱신 주기
 
-- 분기 1회 재확인한다. `bin/jobstack-cron run` 의 daily 파일 하단에 "제도 체크리스트 재확인" 줄이 분기 첫 실행에 붙는다(U-14).
+- 분기 1회 재확인한다(알림 자동화는 후속 과제 — `bin/jobstack-cron` 에는 아직 분기 알림이 없다).
 - 이 문서에 항목을 추가할 때도 수치는 넣지 않는다(`test/lint-conventions.sh` 시장 수치 검사 대상).

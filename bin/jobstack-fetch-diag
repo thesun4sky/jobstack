@@ -59,8 +59,11 @@ def _host_only(raw):
     try:
         host = urlparse(candidate).hostname
     except ValueError:
-        host = None
-    return host or raw
+        # 파싱 자체가 실패하면 raw 를 그대로 돌려주지 않는다 — 리댁션의 목적이 detail 에
+        # 섞여든 경로·쿼리(민감정보 가능)를 자르는 것인데, raw 폴백은 그걸 그대로 새게
+        # 둔다(리뷰 반영). 호스트를 못 골라내면 안전하게 자리표시자로 대체한다.
+        return '[unparseable]'
+    return host or '[unparseable]'
 
 
 def _redact_url_tokens(text):
