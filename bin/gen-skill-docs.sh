@@ -3,6 +3,7 @@
 #
 #   <skill>/scripts/preamble.sh   ← templates/skill-preamble.sh (동일 내용)
 #   <skill>/references/<name>.md  ← templates/<name>.md 또는 docs/<name>.md
+#   <skill>/references/<path>.md  (원본 없음) 스킬 소유 참조 — 존재만 검사한다(U-08 분할)
 #   <skill>/references/bot-protocol.md ← templates/bot-protocol.md + templates/bot/<skill>.md (있으면)
 #
 # 각 스킬이 어떤 참조 파일을 필요로 하는지는 SKILL.md 본문의
@@ -62,7 +63,8 @@ for dir in $(skill_dirs); do
   [ "$CHECK" = 1 ] || chmod +x "$dir/scripts/preamble.sh"
 
   # 2. references/*.md — SKILL.md 가 언급하는 것 + guardrails + (봇 노출 스킬) bot-protocol
-  refs=$(grep -oE '(\$\{?CLAUDE_SKILL_DIR\}?/)?references/[A-Za-z0-9_-]+\.md' "$dir/SKILL.md" 2>/dev/null \
+  # 하위 디렉토리(references/modes/pt.md 등)도 허용 — 스킬 소유 참조(U-08)
+  refs=$(grep -oE '(\$\{?CLAUDE_SKILL_DIR\}?/)?references/[A-Za-z0-9_./-]+\.md' "$dir/SKILL.md" 2>/dev/null \
          | sed -E 's#^.*references/##' | sort -u || true)
   refs="$refs guardrails.md"
   case "$NO_BOT_SKILLS" in *" $skill "*) ;; *) refs="$refs bot-protocol.md" ;; esac
@@ -83,19 +85,20 @@ for dir in $(skill_dirs); do
       sync_file "$TEMPLATES/$name" "$dir/references/$name"
     elif [ -f "$DOCS/$name" ]; then
       sync_file "$DOCS/$name" "$dir/references/$name"
+    elif [ -f "$dir/references/$name" ]; then
+      : # 스킬 소유 참조(U-08 분할 산출물) — 원본이 없고 스킬 안에서만 관리한다
     else
-      echo "  [ERROR] $skill/SKILL.md 가 참조하는 references/$name 의 원본이 templates/ 나 docs/ 에 없습니다" >&2
+      echo "  [ERROR] $skill/SKILL.md 가 참조하는 references/$name 이 templates/·docs/ 원본에도, 스킬 디렉토리에도 없습니다" >&2
       DRIFT=$((DRIFT + 1))
     fi
   done
 
-  # 3. 참조되지 않는 생성 파일은 경고 (원본이 없어진 복제본)
+  # 3. 참조되지 않는 references 파일은 경고 (원본이 없어진 복제본 또는 고아 스킬 소유 파일)
   if [ -d "$dir/references" ]; then
-    for f in "$dir"/references/*.md; do
-      [ -f "$f" ] || continue
-      base="$(basename "$f")"
-      case " $wanted " in *" $base "*) ;; *)
-        echo "  [WARN] ${f#$ROOT/} 는 SKILL.md 가 참조하지 않는 복제본입니다 (삭제 검토)"
+    for f in $(find "$dir/references" -type f -name '*.md' | sort); do
+      rel="${f#$dir/references/}"
+      case " $wanted " in *" $rel "*) ;; *)
+        echo "  [WARN] ${f#$ROOT/} 는 SKILL.md 가 참조하지 않는 파일입니다 (삭제 검토)"
         ;;
       esac
     done

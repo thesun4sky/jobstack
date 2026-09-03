@@ -1,7 +1,5 @@
 ---
 name: review
-preamble-tier: 4
-version: 0.2.0
 description: |
   지원서류 통합 점검 스킬. 이력서↔자소서↔포트폴리오↔프로필↔경력기술서 일관성, 최종 제출 전 체크리스트.
   "전체 점검", "제출 전 확인", "서류 리뷰" 등의 요청 시 활용.
@@ -11,10 +9,18 @@ allowed-tools:
   - Glob
   - Grep
   - AskUserQuestion
-benefits-from: [resume, cover-letter, portfolio, company-research, career-history, scout-profile]
+argument-hint: "[이력서.md] [자소서.md] [공고.md]"
+when_to_use: |
+  제출 전 마지막 단계로, 이력서·자소서·포트폴리오 간의 일관성과 공고 키워드 반영도를 최종 확인할 때 사용한다.
+  개별 서류 작성은 /resume, /cover_letter, /portfolio 등 각 스킬 담당이며, 이 스킬은 통합 일관성만 점검한다.
+  기본 정보 일관성, 경험 수치 일치, 스토리 연계성을 엄격하게 검증한다.
+metadata:
+  preamble-tier: 4
+  version: 0.2.0
+  benefits-from: [resume, cover-letter, portfolio, company-research, career-history, scout-profile]
 ---
 
-!`bash "${CLAUDE_SKILL_DIR}/scripts/preamble.sh" review "${CLAUDE_SESSION_ID}"`
+!`bash "${CLAUDE_SKILL_DIR}/scripts/preamble.sh" review "${CLAUDE_SESSION_ID}" "${CLAUDE_PLUGIN_DATA:-}"`
 
 > 위 실행 컨텍스트가 비어 있거나 `KEY=VALUE` 목록 대신 `!` 명령·정책 차단 문구가 그대로 보이면(`!` 주입이 꺼진 환경), 첫 Bash 명령으로 `bash "${CLAUDE_SKILL_DIR}/scripts/preamble.sh" review`를 실행해 같은 컨텍스트를 확보하고 `${CLAUDE_SKILL_DIR}/references/guardrails.md`를 Read 하세요. 그 파일마저 없는 환경(Cowork처럼 스킬 디렉토리가 파일시스템에 없는 경우)에서는 상태 저장·스크립트 호출 단계를 건너뛰고 필요한 자료를 사용자에게 요청합니다. `STATE_WRITE_FAILED=true`가 보이면 `JOBSTACK_STATE_DIR` 경로를 사용자에게 확인합니다. 이 스킬의 Bash 스니펫은 첫 줄에 `. "${JOBSTACK_STATE_DIR:-$HOME/.jobstack}/env.sh"`를 두어 `$_JS_STATE`·`$_JS_BIN`·`$TODAY`를 불러옵니다.
 
@@ -149,7 +155,7 @@ AI풍 일반문장      치환 테스트 2종 통과
 
 즉답 근거가 서류에 없는 문장은 `⚠️위험`으로 표시하고, **면접 전 답변 준비 필수** 또는 **문장 수위 조정** 중 택일을 안내합니다.
 
-**defense-map 산출**: 미끼 문장·예상 질문·방어 판정의 매핑을 `${CLAUDE_SKILL_DIR}/references/defense-map-schema.md`의 YAML 계약 형식(schema_version 1, `source_skill: review`)으로 산출해 mock-interview가 소비할 수 있게 합니다. 저장 경로는 `$_JS_STATE/defense-maps/<회사명>_<직무>_<YYYYMMDD>.yaml`이며, Phase 6과 동일한 Bash heredoc 방식으로 기록합니다(`answer_hint`는 사용자가 확인하기 전이면 `null` — 추정 작성 금지).
+**defense-map 산출**: 미끼 문장·예상 질문·방어 판정의 매핑을 `${CLAUDE_SKILL_DIR}/references/defense-map-schema.md`의 YAML 계약 형식(schema_version 1, `source_skill: review`)으로 산출해 mock-interview가 소비할 수 있게 합니다. 저장 경로는 `$_JS_STATE/defense-maps/<회사명>_<직무>_<YYYYMMDD>.yaml`이며, Phase 6과 동일한 Bash heredoc 방식으로 기록합니다(`answer_hint`는 사용자가 확인하기 전이면 `null` — 추정 작성 금지). 저장은 YAML을 손으로 쓰지 않고 `"$_JS_BIN/jobstack-defense-map.mjs" add --company <회사명> --position <직무> --source-skill review --document-ref <원문> --entries-json '<entries JSON>'` (env.sh 소싱 후)로 하며, 스키마 검증 오류가 나면 entry를 고쳐 재시도합니다.
 
 ---
 

@@ -1,7 +1,5 @@
 ---
 name: salary
-preamble-tier: 2
-version: 0.2.0
 description: |
   연봉 분석/협상 스킬. 직무별/기업별 벤치마크, 협상 전략, 처우 비교.
   "연봉", "연봉 협상", "처우 비교" 등의 요청 시 활용.
@@ -12,9 +10,18 @@ allowed-tools:
   - AskUserQuestion
   - WebSearch
   - WebFetch
+  - Agent
+argument-hint: "[회사명] [직무] [현재 연봉]"
+when_to_use: |
+  직무별·기업별 연봉 벤치마크를 조사하고, 오퍼 협상 전략을 수립할 때 사용한다.
+  협상 골든타임은 최종합격 후 서명 전이므로, 오퍼를 받은 직후 이 스킬을 사용하는 것이 효과적이다.
+  총보상 구성(기본급, 성과급, 주식, 복리후생)과 현실적인 협상 범위를 제시한다.
+metadata:
+  preamble-tier: 2
+  version: 0.2.0
 ---
 
-!`bash "${CLAUDE_SKILL_DIR}/scripts/preamble.sh" salary "${CLAUDE_SESSION_ID}"`
+!`bash "${CLAUDE_SKILL_DIR}/scripts/preamble.sh" salary "${CLAUDE_SESSION_ID}" "${CLAUDE_PLUGIN_DATA:-}"`
 
 > 위 실행 컨텍스트가 비어 있거나 `KEY=VALUE` 목록 대신 `!` 명령·정책 차단 문구가 그대로 보이면(`!` 주입이 꺼진 환경), 첫 Bash 명령으로 `bash "${CLAUDE_SKILL_DIR}/scripts/preamble.sh" salary`를 실행해 같은 컨텍스트를 확보하고 `${CLAUDE_SKILL_DIR}/references/guardrails.md`를 Read 하세요. 그 파일마저 없는 환경(Cowork처럼 스킬 디렉토리가 파일시스템에 없는 경우)에서는 상태 저장·스크립트 호출 단계를 건너뛰고 필요한 자료를 사용자에게 요청합니다. `STATE_WRITE_FAILED=true`가 보이면 `JOBSTACK_STATE_DIR` 경로를 사용자에게 확인합니다. 이 스킬의 Bash 스니펫은 첫 줄에 `. "${JOBSTACK_STATE_DIR:-$HOME/.jobstack}/env.sh"`를 두어 `$_JS_STATE`·`$_JS_BIN`·`$TODAY`를 불러옵니다.
 
@@ -52,6 +59,8 @@ AskUserQuestion으로 확인:
 - 받은 오퍼 금액 (오퍼 협상의 경우)
 
 ### Phase 2: 연봉 데이터 검색
+
+> **병렬 리서치**: Agent 도구를 쓸 수 있으면 아래 소스들을 `researcher` 서브에이전트(저장소 `agents/researcher.md`)에 소스별로 맡겨 병렬로 조사하고, 돌아온 JSON의 `numbers`(값·단위·URL·기준일)만 벤치마크 표에 씁니다. `found: false`·`blocked: true`인 소스는 "(출처 미확보)"로 남기고 훈련 데이터로 채우지 않습니다. Agent 도구가 없는 환경에서는 아래 순차 절차로 진행합니다.
 
 WebSearch로 연봉 정보를 수집합니다. **시장 수치(평균 연봉·초봉·인상률 등)는 SKILL.md에 박아두지 않고, 실행 시점에 WebSearch로 확인하고 출처·기준 시점을 병기합니다** (`${CLAUDE_SKILL_DIR}/references/guardrails.md` §3·§5 규칙).
 

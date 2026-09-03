@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # 컨벤션 린트 — CLAUDE.md 컨벤션과 templates/guardrails.md §3·§6을 집행한다.
-# 검사 대상: */SKILL.md, templates/*.md, ETHOS.md, CLAUDE.md
+# 검사 대상: */SKILL.md, templates/*.md, ETHOS.md, CLAUDE.md, */references/**/*.md(①②만)
 # 검사 3종:
 #   ① AI 만능 표현 (다각적|포괄적|심층적|혁신적|체계적) — fail
 #   ② 금지 표현 (합격 보장|무조건 통과|전문가가 직접 첨삭|AI 대체 불가) — fail
@@ -108,6 +108,22 @@ run_scan() { # $1=루트 (self-test용 오버라이드)
   for f in "$root"/templates/*.md "$root/ETHOS.md" "$root/CLAUDE.md"; do
     [ -f "$f" ] && scan_file "$f" 0
   done
+  # 스킬 참조 자료(*/references/**/*.md — 분할된 정적 자료와 docs/ 복제본)도 ①② 대상 (v0.5.0 U-08).
+  # 파일이 많아(150개+) 줄 단위 루프 대신 grep 한 번으로 훑는다(펜스 안·규칙 인용 줄은 제외).
+  local hit rel lineno content
+  while IFS= read -r hit; do
+    [ -n "$hit" ] || continue
+    f="${hit%%:*}"; rel="${f#$root/}"
+    lineno="$(echo "$hit" | cut -d: -f2)"; content="$(echo "$hit" | cut -d: -f3-)"
+    echo "$content" | grep -qE "$RE_QUOTE_EXEMPT" && continue
+    if echo "$content" | grep -qE "$RE_SLOP" && ! is_allowed "$rel" "$content" slop; then
+      echo "$rel:$lineno:AI만능표현:$(echo "$content" | grep -oE "$RE_SLOP" | head -1)"; FAIL_COUNT=$((FAIL_COUNT + 1))
+    elif echo "$content" | grep -qE "$RE_BANNED" && ! is_allowed "$rel" "$content" banned; then
+      echo "$rel:$lineno:금지표현:$(echo "$content" | grep -oE "$RE_BANNED" | head -1)"; FAIL_COUNT=$((FAIL_COUNT + 1))
+    fi
+  done < <(find "$root"/*/references -type f -name '*.md' 2>/dev/null | sort \
+           | xargs -r awk 'FNR==1{fence=0} /^[[:space:]]*```/{fence=!fence; next} !fence{print FILENAME":"FNR":"$0}' 2>/dev/null \
+           | grep -E "$RE_SLOP|$RE_BANNED" || true)
 }
 
 if [ -n "$SELF_TEST" ]; then

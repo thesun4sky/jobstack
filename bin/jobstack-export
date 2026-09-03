@@ -7,9 +7,18 @@
 # 종료 코드:
 #   0 — 변환 성공 (stdout에 산출 파일 절대경로 출력)
 #   1 — 입력 오류 (파일 없음 등)
-#   2 — pandoc 미설치 (호출 스킬은 md 복붙 폴백으로 전환)
+#   2 — pandoc과 Node docx 폴백 둘 다 사용 불가 (호출 스킬은 md 복붙 폴백으로 전환)
 #   3 — 변환 실패 (호출 스킬은 md 복붙 폴백으로 전환)
 #   4 — 미확인 placeholder 잔존 (markdown 복붙 폴백 금지 — 항목 보완 후 재시도)
+#
+# 변환 경로 (U-13 이중화 — pandoc 부재/구버전 환경에서도 ATS-safe .docx 산출):
+#   pandoc ≥ 3.6 설치        → 기존 pandoc 경로(--reference-doc=ats-reference.docx)
+#   pandoc < 3.6 설치        → stderr 경고 후 Node 폴백(JOBSTACK_EXPORT_FORCE_PANDOC=1이면
+#                               경고만 내고 pandoc을 그대로 사용)
+#   pandoc 미설치            → Node 폴백(bin/md2docx.mjs + bin/node_modules/docx)
+#   pandoc도 docx 패키지도 없음 → exit 2 (brew install pandoc 또는 cd bin && npm install 안내)
+# Node 폴백은 표를 문단으로 풀어 쓴다(표·이미지·텍스트박스 없는 ATS-safe 산출 유지 — 헤더 행은 굵게).
+# 폴백 스크립트 경로는 JOBSTACK_MD2DOCX 환경변수로 재정의할 수 있다(테스트용).
 #
 # 환경 분기 (docs 참조): jobclaw 봇 워크스페이스에서는 File output protocol
 # ([OUTPUT_FILE:] + render-docx.sh)이 docx 산출을 담당한다. 이 유틸은
@@ -18,6 +27,9 @@
 # ATS-safe: templates/export/ats-reference.docx 기준 — 표·이미지·텍스트박스 없는
 # 단일 컬럼, 표준 제목 스타일, 본문 11pt, Noto Sans KR(Council #1 Q5 — 로컬에
 # 폰트가 없으면 시스템 한글 폰트로 대체 렌더링됨).
+#
+# ats-reference.docx 재생성 절차(pandoc ≥ 3.6 필요 — 이 저장소 환경엔 pandoc이 없어 미실행):
+#   pandoc -o custom-reference.docx --print-default-data-file reference.docx 실행 후 스타일 편집.
 
 set -u
 
@@ -33,6 +45,14 @@ fi
 
 OUT="${2:-${IN%.md}.docx}"
 
+# 절대경로로 출력 (성공 경로 공용 — pandoc/Node 폴백 어느 쪽이든 동일하게 사용).
+print_abs_path() {
+  case "$1" in
+    /*) echo "$1" ;;
+    *)  echo "$(cd "$(dirname "$1")" && pwd)/$(basename "$1")" ;;
+  esac
+}
+
 # 가드레일: 미확인 placeholder가 남은 채로 제출용 파일이 나가지 않도록 차단.
 # pandoc 존재 여부와 무관하게 **가장 먼저** 검사한다 — pandoc 미설치 환경에서도
 # 미확인 정보가 그대로 제출되지 않도록 한다.
@@ -42,40 +62,88 @@ OUT="${2:-${IN%.md}.docx}"
 PLACEHOLDERS=$(grep -nE '\[[^]]*(확인 필요|입력 필요|추정)[^]]*\]' "$IN" || true)
 if [ -n "$PLACEHOLDERS" ]; then
   echo "차단: 미확인 placeholder가 남아 있어 변환하지 않습니다 — 아래 항목을 먼저 채우세요:" >&2
-  echo "$PLACEHOLDERS" | sed 's/^/  /' >&2
+  while IFS= read -r pl_line; do echo "  $pl_line" >&2; done <<<"$PLACEHOLDERS"
   echo "(이 파일은 markdown 복붙 폴백 대상이 아닙니다 — 항목을 채운 뒤 다시 시도하세요)" >&2
   exit 4
 fi
 
-if ! command -v pandoc >/dev/null 2>&1; then
-  cat >&2 <<'MSG'
-pandoc 미설치 — .docx 변환을 건너뜁니다.
-  설치 후 재시도: brew install pandoc  (macOS)
-  또는 마크다운 내용을 문서 앱(Word/한글/Pages)에 복사해 저장하세요.
-MSG
-  exit 2
-fi
-
-if [ ! -f "$REFERENCE" ]; then
-  echo "경고: ATS 레퍼런스 템플릿 없음($REFERENCE) — pandoc 기본 스타일로 변환합니다" >&2
-  REF_ARGS=()
-else
-  REF_ARGS=(--reference-doc="$REFERENCE")
-fi
-
-# ATS 경고: 입력에 마크다운 표가 있으면 표 그대로 docx에 들어간다 (파싱 위험)
+# ATS 경고: 입력에 마크다운 표가 있으면(pandoc 경로에서는 표 그대로, Node 폴백에서는 문단으로
+# 풀려 들어간다) ATS 파서 호환을 위해 목록 형식 전환을 권장한다.
 if grep -qE '^\|.*\|' "$IN"; then
   echo "경고: 입력에 표가 있습니다 — ATS 파서가 표 내용을 누락할 수 있으니 목록 형식 전환을 권장합니다" >&2
 fi
 
-if pandoc "$IN" -o "$OUT" "${REF_ARGS[@]+"${REF_ARGS[@]}"}" 2>/dev/null; then
-  # 절대경로 출력
-  case "$OUT" in
-    /*) echo "$OUT" ;;
-    *)  echo "$(cd "$(dirname "$OUT")" && pwd)/$(basename "$OUT")" ;;
-  esac
-  exit 0
-else
-  echo "변환 실패 — 마크다운 문법을 확인하거나 내용을 문서 앱에 복사해 저장하세요" >&2
-  exit 3
+# ── pandoc 탐지 + 버전 판정 (bash 정규식·파라미터 확장만 사용 — head/sed 등 외부 유틸
+# 없이 bash 3.2(macOS 기본)·BSD 유틸 환경에서도 동일하게 동작한다) ──
+PANDOC_MAJOR=0
+PANDOC_MINOR=0
+HAVE_PANDOC=0
+if command -v pandoc >/dev/null 2>&1; then
+  HAVE_PANDOC=1
+  PANDOC_VER_FULL="$(pandoc --version 2>/dev/null)"
+  PANDOC_VER_LINE="${PANDOC_VER_FULL%%$'\n'*}"   # head -1 대용(첫 줄만)
+  if [[ "$PANDOC_VER_LINE" =~ ([0-9]+)\.([0-9]+) ]]; then
+    PANDOC_MAJOR="${BASH_REMATCH[1]}"
+    PANDOC_MINOR="${BASH_REMATCH[2]}"
+  fi
 fi
+
+pandoc_new_enough() {
+  [ "$PANDOC_MAJOR" -gt 3 ] && return 0
+  [ "$PANDOC_MAJOR" -eq 3 ] && [ "$PANDOC_MINOR" -ge 6 ] && return 0
+  return 1
+}
+
+USE_PANDOC=0
+if [ "$HAVE_PANDOC" -eq 1 ]; then
+  if pandoc_new_enough; then
+    USE_PANDOC=1
+  else
+    echo "경고: pandoc ${PANDOC_MAJOR}.${PANDOC_MINOR} < 3.6 — ats-reference.docx 호환을 보장하지 않아 Node 폴백을 사용" >&2
+    if [ "${JOBSTACK_EXPORT_FORCE_PANDOC:-}" = "1" ]; then
+      USE_PANDOC=1
+    fi
+  fi
+fi
+
+if [ "$USE_PANDOC" -eq 1 ]; then
+  # ── 기존 pandoc 경로 ──
+  if [ ! -f "$REFERENCE" ]; then
+    echo "경고: ATS 레퍼런스 템플릿 없음($REFERENCE) — pandoc 기본 스타일로 변환합니다" >&2
+    REF_ARGS=()
+  else
+    REF_ARGS=(--reference-doc="$REFERENCE")
+  fi
+
+  if pandoc "$IN" -o "$OUT" "${REF_ARGS[@]+"${REF_ARGS[@]}"}" 2>/dev/null; then
+    print_abs_path "$OUT"
+    exit 0
+  else
+    echo "변환 실패 — 마크다운 문법을 확인하거나 내용을 문서 앱에 복사해 저장하세요" >&2
+    exit 3
+  fi
+fi
+
+# ── Node 폴백 경로 (pandoc 미설치, 또는 구버전이라 정책상 사용하지 않음) ──
+NODE_SCRIPT="${JOBSTACK_MD2DOCX:-$SCRIPT_DIR/md2docx.mjs}"
+echo "Node docx 폴백으로 변환(표는 문단으로 풀림)" >&2
+
+NODE_STDERR="$(node "$NODE_SCRIPT" "$IN" "$OUT" 2>&1 >/dev/null)"
+NODE_RC=$?
+
+if [ "$NODE_RC" -eq 0 ]; then
+  print_abs_path "$OUT"
+  exit 0
+fi
+
+if [ "$NODE_RC" -eq 3 ] && printf '%s' "$NODE_STDERR" | grep -q 'docx' && printf '%s' "$NODE_STDERR" | grep -q '패키지'; then
+  echo "pandoc·Node docx 폴백 둘 다 사용할 수 없어 .docx 변환을 건너뜁니다." >&2
+  echo "  설치 후 재시도: brew install pandoc  (macOS, pandoc 경로)" >&2
+  echo "  또는: cd bin && npm install  (Node docx 폴백 활성화)" >&2
+  echo "  또는 마크다운 내용을 문서 앱(Word/한글/Pages)에 복사해 저장하세요." >&2
+  exit 2
+fi
+
+[ -n "$NODE_STDERR" ] && printf '%s\n' "$NODE_STDERR" >&2
+echo "변환 실패 — 마크다운 문법을 확인하거나 내용을 문서 앱에 복사해 저장하세요" >&2
+exit 3

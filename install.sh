@@ -6,7 +6,9 @@
 #
 # v0.4.0: 스킬은 Claude Code 표준 위치 ~/.claude/skills/ 에 심링크한다(이전 ~/.claude/commands/ 는
 # 파일 단위 레거시 경로). 이 저장소가 만든 옛 commands/ 심링크는 정리한다.
-# 플러그인 설치(`/plugin marketplace add thesun4sky/jobstack`)는 v0.5.0 부터 지원한다.
+# v0.5.0: 플러그인 설치(`/plugin marketplace add thesun4sky/jobstack` → `/plugin install jobstack@jobstack`)를
+# 병행 지원한다 — 이 스크립트는 저장소 클론을 심링크로 쓰는 개발자·기여자 경로다. 플러그인 설치에서는
+# Node 의존성이 ${CLAUDE_PLUGIN_DATA}/node 에 들어가고(bin/jobstack-preamble 가 처리) is-venv 는 지원하지 않는다.
 set -euo pipefail
 
 PREFIX=""

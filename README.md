@@ -98,6 +98,15 @@ cd jobstack
 
 설치 후 Claude Code에서 `/auto`를 입력하면 자동으로 시작됩니다.
 
+플러그인으로 설치하려면(Claude Code 2.1 이상, 저장소가 곧 마켓플레이스):
+
+```
+/plugin marketplace add thesun4sky/jobstack
+/plugin install jobstack@jobstack
+```
+
+플러그인 설치에서는 스킬을 `/jobstack:auto`처럼 네임스페이스로 호출하고, `claude plugin update jobstack`으로 갱신합니다. Node 의존성은 첫 `/jobstack:job_search` 실행 시 플러그인 데이터 디렉토리(`${CLAUDE_PLUGIN_DATA}`)에 설치돼 플러그인 갱신 후에도 유지됩니다.
+
 - 스킬은 Claude Code 표준 위치 `~/.claude/skills/`에 심링크됩니다 (v0.3까지 쓰던 `~/.claude/commands/` 심링크는 설치 시 자동 정리). 저장소를 `git pull`하면 바로 반영됩니다.
 - 옵션: `./install.sh --with-insane-search` (차단 사이트 수집 어댑터, Python 3.10+), `./install.sh --prefix` (스킬명에 `jobstack-` 접두어)
 
@@ -293,7 +302,10 @@ flowchart LR
 - **동적 주입 프리앰블** — 스킬 로드 시점에 `bin/jobstack-preamble`가 실행 컨텍스트(프로필·기준일·런타임)와 공유 가드레일을 프롬프트에 넣습니다 ([templates/preamble.md](templates/preamble.md))
 - **파일 기반 상태관리** — `~/.jobstack/`에 YAML/JSONL
 - **로컬 사용 기록** — 스킬 사용 이벤트가 `~/.jobstack/analytics/`에 로컬 파일로만 기록됩니다 (네트워크 전송 없음, 문서 내용·개인정보 미포함 — [규격](docs/telemetry-events.md))
-- **의존성** — 기본 기능은 bash + python3. 선택: `job_search` 크롤링은 Node 22+ (Playwright 자동 설치), 차단 사이트 수집은 `--with-insane-search`(Python 3.10+, curl_cffi), .docx 내보내기는 pandoc
+- **결정적 스크립트 계층** — 지원 현황(`jobstack-tracker`)·경험 카드(`jobstack-exp.mjs`)·방어맵(`jobstack-defense-map.mjs`)·키워드 매칭률(`jobstack-ats-match`)·회고 집계(`jobstack-retro-stats`)는 스크립트가 저장·계산하고 스킬은 해석·코칭만 합니다 (같은 입력 → 같은 결과)
+- **진행적 공개** — SKILL.md 는 300줄 이하의 흐름·게이트만 담고, 모드별·플랫폼별·트랙별 자료는 `references/`에서 필요한 시점에만 읽습니다
+- **병렬 리서치 서브에이전트** — `agents/researcher.md`가 기업분석·연봉·전략의 웹 조사를 소스별로 나눠 맡고 출처 URL·기준일이 붙은 JSON만 돌려줍니다
+- **의존성** — 기본 기능은 bash + python3. 선택: `job_search` 수집은 Node 22+ (`cd bin && npm install` — Playwright·cheerio·docx·yaml, 첫 실행 시 자동), 사람인은 브라우저 없이 동작하고 사람인 오픈API 키(`jobstack-config set saramin_api_key …`)가 있으면 API 를 먼저 씁니다. 차단 사이트 수집은 `--with-insane-search`(Python 3.10+, curl_cffi). .docx 내보내기는 pandoc 3.6+ 또는 Node `docx` 폴백. 한글 `.hwpx`는 추가 설치 없이, `.hwp`는 kordoc/rhwp 가 있을 때 변환
 - **스킬 체이닝** — `benefits-from`으로 스킬 간 의존성 정의
 
 ```
@@ -305,9 +317,12 @@ jobstack/
 ├── cover-letter/           # 자소서
 ├── mock-interview/         # 모의면접
 ├── ...
-├── bin/jobstack-config     # 설정 관리
-├── templates/              # 공유 템플릿
-└── install.sh              # 설치 스크립트
+├── <skill>/references/     # 스킬별 참조 자료 (생성 복제본 + 스킬 소유)
+├── agents/researcher.md    # 리서치 서브에이전트
+├── bin/                    # 결정적 스크립트 (tracker·exp·defense-map·ats-match·fetch-jobs·export …)
+├── .claude-plugin/         # 플러그인·마켓플레이스 매니페스트
+├── templates/, docs/       # 공유 템플릿·계약 문서 (references/ 의 원본)
+└── install.sh              # 심링크 설치 스크립트
 ```
 
 ---

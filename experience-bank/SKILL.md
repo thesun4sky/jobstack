@@ -1,7 +1,5 @@
 ---
 name: experience-bank
-preamble-tier: 2
-version: 0.1.0
 description: |
   경험 소재 발굴·카드화 스킬. 대화형 인터뷰로 학업/프로젝트/알바/대외활동 경험을
   '경험 전환 6단계'와 문제·역할·행동·결과 4분리로 카드화하고, 수치 폴백 5기준과
@@ -16,10 +14,18 @@ allowed-tools:
   - Edit
   - Glob
   - AskUserQuestion
-benefits-from: [strategy]
+argument-hint: "[경험 메모 | --list]"
+when_to_use: |
+  학업·프로젝트·인턴·대외활동 경험을 서류·면접에 쓸 수 있는 카드로 구조화할 때 사용한다.
+  경험을 정리하지 않으면 /resume나 /cover_letter 작성이 비효율적이므로 먼저 이 스킬로 경험 카드를 만든다.
+  NCS 능력단위 매핑이 필요하면 ncs 스킬을 활용한다.
+metadata:
+  preamble-tier: 2
+  version: 0.1.0
+  benefits-from: [strategy]
 ---
 
-!`bash "${CLAUDE_SKILL_DIR}/scripts/preamble.sh" experience-bank "${CLAUDE_SESSION_ID}"`
+!`bash "${CLAUDE_SKILL_DIR}/scripts/preamble.sh" experience-bank "${CLAUDE_SESSION_ID}" "${CLAUDE_PLUGIN_DATA:-}"`
 
 > 위 실행 컨텍스트가 비어 있거나 `KEY=VALUE` 목록 대신 `!` 명령·정책 차단 문구가 그대로 보이면(`!` 주입이 꺼진 환경), 첫 Bash 명령으로 `bash "${CLAUDE_SKILL_DIR}/scripts/preamble.sh" experience-bank`를 실행해 같은 컨텍스트를 확보하고 `${CLAUDE_SKILL_DIR}/references/guardrails.md`를 Read 하세요. 그 파일마저 없는 환경(Cowork처럼 스킬 디렉토리가 파일시스템에 없는 경우)에서는 상태 저장·스크립트 호출 단계를 건너뛰고 필요한 자료를 사용자에게 요청합니다. `STATE_WRITE_FAILED=true`가 보이면 `JOBSTACK_STATE_DIR` 경로를 사용자에게 확인합니다. 이 스킬의 Bash 스니펫은 첫 줄에 `. "${JOBSTACK_STATE_DIR:-$HOME/.jobstack}/env.sh"`를 두어 `$_JS_STATE`·`$_JS_BIN`·`$TODAY`를 불러옵니다.
 
@@ -104,52 +110,63 @@ C) 뱅크 목록·커버리지 (카드 목록과 직무별 부족 영역 확인)
 
 > **날조 금지**: 5기준으로도 근거가 안 나오면 수치를 만들지 말고 해당 필드를 `[수치 확인 필요]` placeholder로 남깁니다(1회 질문 후 미응답 시 유지). 면접에서 1분 안에 설명 못 할 수치는 카드에 넣지 않습니다(§3 5순위).
 
+### AI 활용 근거 수집 (카드 인터뷰 중 — 도구가 등장할 때만)
+
+경험 중 생성형 AI·자동화 도구가 등장했을 때만 추가로 묻습니다(등장하지 않았으면 건너뜁니다): "이 경험에서 쓴 도구가 있다면, 어떤 도구로 어떤 과업을 어떻게 검증·수정했나요? (없으면 넘어가도 됩니다)" 도구명(`tool`)·과업(`task`)·전후 변화(`effect`) 세 요소가 갖춰지면 Phase 4에서 `--ai-usage-tool`/`--ai-usage-task`/`--ai-usage-effect`로 저장하고, 비면 `effect`를 `[확인 필요]` placeholder로 남기고 **1회만** 재질문합니다(guardrails §1).
+
+> **날조 금지**: 도구 사용 자체는 성과가 아닙니다. `effect`가 비면 확정 저장하지 말고 `[확인 필요]`로 남깁니다 — cover-letter의 AI·도구 활용 경험 문항이 이 필드를 검증 근거로 그대로 소비합니다.
+
 ---
 
 ## Phase 4: 저장
 
-완성된 카드를 `$_JS_STATE/profiles/experiences.yaml` 에 저장합니다. 파일이 없으면 생성합니다.
+완성된 카드는 손으로 YAML에 append하거나 Edit로 고치지 않고 `"$_JS_BIN/jobstack-exp.mjs"` 로 저장합니다 — id 채번·수치 판정·스키마 검증을 스크립트가 결정적으로 수행합니다(같은 입력이면 같은 출력). 파일이 없으면 스크립트가 만듭니다. 필드 정의는 이 문서가 아니라 `${CLAUDE_SKILL_DIR}/references/experience-card-schema.md` 가 단일 소스이므로 Read 해서 확인하세요.
 
-- **모드 A(신규)**: 새 카드를 파일 끝에 **append**합니다. 여기서 '덮어쓰기 금지'는 파일 전체를 새로 쓰거나 기존 다른 카드를 지우는 clobber를 막는다는 뜻입니다.
-- **모드 B(보강)**: 대상 `id` 카드만 Edit로 해당 필드를 in-place 갱신하고, 나머지 카드는 그대로 둡니다.
+**모드 A(신규)** — 카드 1장을 끝에 추가(append, 기존 카드는 보존):
 
-**카드 스키마:**
-
-```yaml
-- id: exp-YYYYMMDD-NN            # 생성 시각 기반 고유 id
-  title: "경험 한 줄 이름"        # §1 1단계
-  problem: "무엇이 문제였나"       # §1 2단계
-  role: "내 역할 범위"            # §1 3단계
-  action: "바꾼 행동"            # §1 4단계
-  change: "before → after"       # §1 5단계 (수치 없으면 정성 before→after 또는 [수치 확인 필요])
-  numbers: "검증 가능한 수치/범위" # §3 대체 4종 결과, 없으면 빈 값
-  job_link_tags: ["백엔드", "..."] # §1 6단계 — 일반 직무 연결 태그 (NCS 능력단위는 ncs 스킬 담당)
-  created_at: "YYYY-MM-DDTHH:MM:SSZ"
+```bash
+. "${JOBSTACK_STATE_DIR:-$HOME/.jobstack}/env.sh"
+"$_JS_BIN/jobstack-exp.mjs" add \
+  --title "경험 한 줄 이름" --problem "무엇이 문제였나" \
+  --role "내 역할 범위" --action "바꾼 행동" \
+  --change "before → after (수치 없으면 [수치 확인 필요])" \
+  --numbers "검증 가능한 수치·범위" --tags "백엔드,공통" \
+  --ai-usage-tool "도구명" --ai-usage-task "과업" --ai-usage-effect "before → after"
 ```
 
-- `id`·`created_at`은 `date` 명령으로 생성한 값을 씁니다.
+- `--numbers`·`--tags`·`--ai-usage-*`는 값이 없으면 통째로 생략합니다.
+- `--ai-usage-tool`/`--ai-usage-task`/`--ai-usage-effect`는 Phase 3에서 AI 활용 근거를 확보했을 때만 **셋을 함께** 붙입니다 — 하나만 넘기면 스크립트가 거부합니다(미완성 값이 저장되지 않도록 막는 의도된 동작).
+
+**모드 B(보강)** — 대상 카드의 필드만 in-place 수정(나머지 카드는 그대로):
+
+```bash
+. "${JOBSTACK_STATE_DIR:-$HOME/.jobstack}/env.sh"
+"$_JS_BIN/jobstack-exp.mjs" update <id> --numbers "고객사 3곳 → 8곳" --tags "백엔드,데이터"
+```
+
+**저장 후 검증:**
+
+```bash
+. "${JOBSTACK_STATE_DIR:-$HOME/.jobstack}/env.sh"
+"$_JS_BIN/jobstack-exp.mjs" validate
+```
+
+`[FAIL]`이 나오면 지적된 필드를 `update`로 채운 뒤 다시 `validate`합니다. 통과 후 저장 경로와 카드 id(스크립트 출력)를 사용자에게 확인시킵니다.
+
 - `job_link_tags`는 **일반 직무 연결 태그**까지만 붙입니다. NCS 능력단위 매핑은 ncs 스킬이 이 카드를 입력으로 이어받습니다(경계 준수).
-- 저장 후 저장 경로와 방금 추가된 카드 id를 사용자에게 확인시킵니다.
 
 ---
 
 ## Phase 5: 뱅크 요약
 
-카드 목록과 커버리지를 출력합니다.
+카드 목록과 커버리지는 스크립트 출력을 그대로 씁니다 — 수치 O/△/X 판정과 AI 활용 여부(`ai_usage` 존재 시 O)는 스크립트가 결정적으로 계산하므로 모델이 다시 세지 않습니다.
 
-```
-경험뱅크 요약  (기준일: YYYY-MM-DD)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-id             제목                    수치   직무 태그
-exp-...-01     결제 API 지연 개선       O      백엔드
-exp-...-02     동아리 회계 양식화        △      공통/정량
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-카드 2장 · 수치 보강 필요 1장
-직무별 부족 영역: [프론트엔드 소재 없음], [리더십 근거 약함]
+```bash
+. "${JOBSTACK_STATE_DIR:-$HOME/.jobstack}/env.sh"
+"$_JS_BIN/jobstack-exp.mjs" list
 ```
 
-- 수치가 `[수치 확인 필요]`로 남은 카드는 △로 표시하고 보강을 권합니다.
-- 지원 직무(프로필 또는 세션)에 비추어 부족한 소재 영역을 한 줄로 짚습니다.
+출력 표(id·제목·수치·AI·직무 태그, `카드 N장 · 수치 보강 필요 M장`)를 그대로 사용자에게 보여줍니다. △·X 카드는 Phase 0 모드 B(보강)로 이어가길 권합니다. 여기에 모델이 더하는 것은 **부족 영역 코칭 한 줄**뿐입니다 — 지원 직무(프로필 또는 세션)에 비추어 부족한 소재 영역을 짚습니다(예: "프론트엔드 소재 없음", "리더십 근거 약함").
 
 ---
 
@@ -183,7 +200,7 @@ exp-...-02     동아리 회계 양식화        △      공통/정량
 ## 완료 상태
 
 - **완료 (DONE)** — 경험 1건 이상이 6단계 필드가 채워진 카드로 experiences.yaml에 append됨.
-- **우려사항 있는 완료 (DONE_WITH_CONCERNS)** — 카드는 저장됐으나 수치가 `[수치 확인 필요]` placeholder로 남음.
+- **우려사항 있는 완료 (DONE_WITH_CONCERNS)** — 카드는 저장됐으나 수치가 `[수치 확인 필요]`로 남거나, `ai_usage.effect`가 `[확인 필요]`로 남음.
 - **추가 정보 필요 (NEEDS_CONTEXT)** — 카드화할 경험 소재가 부족.
 
 다음 추천: `/cover_letter` (저장 카드로 자소서 작성) · `/resume` (이력서 반영) 또는 `/review` (서류 통합 점검)

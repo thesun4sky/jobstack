@@ -1,0 +1,133 @@
+#!/usr/bin/env python3
+"""jobstack-retro-stats — 회고 파일(retro-*.md) 프론트매터의 결정적 집계 (U-09).
+
+retro 스킬 Phase 3.3(누적 패턴 분석)이 Grep 으로 어림잡던 태그 빈도·단계별 교차표를
+표준 라이브러리만으로 계산한다. 프론트매터 형식은 retro/SKILL.md Phase 5 참조.
+
+사용법:
+  jobstack-retro-stats [--dir <interview-history 디렉토리>] [--json]
+환경: JOBSTACK_STATE_DIR (기본 ~/.jobstack) → interview-history/retro-*.md
+종료 코드: 0 정상 · 1 입력 오류
+"""
+from __future__ import annotations
+
+import argparse
+import glob
+import json
+import os
+import re
+import sys
+from collections import Counter, defaultdict
+
+STATE_DIR = os.environ.get('JOBSTACK_STATE_DIR') or os.path.expanduser('~/.jobstack')
+FIXED_TAGS = ['기업연구부족', '꼬리질문대응', '수치화부족', '기술깊이', '기준미스매치', '근거부족', '표현문제', '컬처핏']
+
+
+def parse_frontmatter(text: str) -> dict:
+    """`---` 로 감싼 YAML 프론트매터의 단순 부분집합: key: value, key: [a, b], key:\n  - a"""
+    if not text.startswith('---'):
+        return {}
+    end = text.find('\n---', 3)
+    if end < 0:
+        return {}
+    block = text[3:end].strip('\n').split('\n')
+    data: dict = {}
+    key = None
+    for raw in block:
+        line = raw.rstrip()
+        if not line.strip() or line.lstrip().startswith('#'):
+            continue
+        m = re.match(r'^([A-Za-z_][A-Za-z0-9_]*):\s*(.*)$', line)
+        if m and not line.startswith((' ', '\t')):
+            key, val = m.group(1), m.group(2)
+            val = re.sub(r'\s+#.*$', '', val).strip()
+            if val.startswith('[') and val.endswith(']'):
+                inner = val[1:-1].strip()
+                data[key] = [v.strip().strip('"\'') for v in inner.split(',') if v.strip()] if inner else []
+            elif val == '':
+                data[key] = []
+            else:
+                data[key] = val.strip('"\'')
+        elif key is not None and line.lstrip().startswith('- '):
+            if not isinstance(data.get(key), list):
+                data[key] = []
+            data[key].append(re.sub(r'\s+#.*$', '', line.lstrip()[2:]).strip().strip('"\''))
+    return data
+
+
+def main(argv=None) -> int:
+    p = argparse.ArgumentParser(prog='jobstack-retro-stats', description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument('--dir', default=os.path.join(STATE_DIR, 'interview-history'))
+    p.add_argument('--json', action='store_true')
+    a = p.parse_args(argv)
+
+    files = sorted(glob.glob(os.path.join(a.dir, 'retro-*.md')))
+    retros = []
+    for f in files:
+        try:
+            fm = parse_frontmatter(open(f, encoding='utf-8').read())
+        except OSError:
+            continue
+        if not fm:
+            continue
+        tags = fm.get('weakness_tags') or []
+        if isinstance(tags, str):
+            tags = [tags]
+        retros.append({'file': os.path.basename(f), 'date': fm.get('date', ''), 'company': fm.get('company', ''),
+                       'role': fm.get('role', ''), 'stage': fm.get('stage', ''), 'result': fm.get('result', ''),
+                       'weakness_tags': tags, 'actions': fm.get('actions') or []})
+    retros.sort(key=lambda r: (str(r['date']), r['file']))
+
+    tag_counts: Counter = Counter()
+    stage_tag: dict[str, Counter] = defaultdict(Counter)
+    unknown_tags: Counter = Counter()
+    for r in retros:
+        for t in r['weakness_tags']:
+            tag_counts[t] += 1
+            stage_tag[r['stage'] or '(미기재)'][t] += 1
+            if t not in FIXED_TAGS:
+                unknown_tags[t] += 1
+    # 추세: 최근 3건 vs 그 이전의 태그 수 평균
+    trend = None
+    if len(retros) >= 4:
+        recent = retros[-3:]
+        earlier = retros[:-3]
+        avg = lambda rs: round(sum(len(r['weakness_tags']) for r in rs) / len(rs), 1)
+        trend = {'recent_avg_tags': avg(recent), 'earlier_avg_tags': avg(earlier)}
+
+    if a.json:
+        print(json.dumps({'count': len(retros), 'tag_counts': dict(tag_counts.most_common()),
+                          'stage_tag': {s: dict(c) for s, c in stage_tag.items()},
+                          'unknown_tags': dict(unknown_tags), 'trend': trend, 'retros': retros},
+                         ensure_ascii=False, indent=2))
+        return 0
+
+    bar = '━' * 40
+    print(f'회고 누적 통계 — {len(retros)}건 ({a.dir})')
+    print(bar)
+    if not retros:
+        print('회고 파일 없음 (retro-*.md)')
+        return 0
+    print('반복 약점 태그:')
+    for t, n in tag_counts.most_common():
+        flag = '' if t in FIXED_TAGS else '  (고정 8태그 밖 — 정리 필요)'
+        print(f'  {t:10s} {"■" * n:10s} {n}건{flag}')
+    print()
+    print('단계 × 태그:')
+    for s, c in stage_tag.items():
+        print(f'  {s}: ' + ', '.join(f'{t} {n}' for t, n in c.most_common()))
+    if trend:
+        print()
+        print(f'추세: 최근 3건 평균 약점 {trend["recent_avg_tags"]}개 vs 이전 평균 {trend["earlier_avg_tags"]}개')
+    print()
+    print('최근 회고:')
+    for r in retros[-5:]:
+        print(f'  {r["date"]}  {r["company"]}  {r["stage"]}  {r["result"]}  [{", ".join(r["weakness_tags"])}]')
+    print(bar)
+    if len(retros) < 3:
+        print('※ 3건 미만이라 패턴 단정은 보류합니다 (표본 소규모).')
+    return 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())

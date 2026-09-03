@@ -98,12 +98,25 @@ case "$SKILL" in
     if [ -f "$JS_BIN/fetch-jobs.mjs" ]; then
       # job-search 만 첫 사용 시 playwright 를 설치한다(브라우저 바이너리는 받지 않음).
       # JOBSTACK_NPM_AUTO_INSTALL=0 으로 끌 수 있다.
+      # 플러그인 설치(U-07): node_modules 는 플러그인 캐시가 아니라 ${CLAUDE_PLUGIN_DATA}/node 에 두고
+      # bin/node_modules 를 심링크로 연결한다 — `claude plugin update` 로 캐시가 교체돼도 의존성이 남는다.
+      NPM_DIR="$JS_BIN"
+      if [ -n "$PLUGIN_DATA" ]; then
+        NPM_DIR="$PLUGIN_DATA/node"
+        mkdir -p "$NPM_DIR" 2>/dev/null && cp -f "$JS_BIN/package.json" "$NPM_DIR/package.json" 2>/dev/null || true
+        if [ ! -e "$JS_BIN/node_modules" ] && [ -d "$NPM_DIR/node_modules" ]; then
+          ln -s "$NPM_DIR/node_modules" "$JS_BIN/node_modules" 2>/dev/null || true
+        fi
+      fi
       if [ "$SKILL" = job-search ] && [ ! -d "$JS_BIN/node_modules/playwright" ] \
          && [ "${JOBSTACK_NPM_AUTO_INSTALL:-1}" = 1 ] && command -v npm >/dev/null 2>&1; then
         if command -v timeout >/dev/null 2>&1; then
-          (cd "$JS_BIN" && timeout 120 npm install --silent --no-audit --no-fund >/dev/null 2>&1) || true
+          (cd "$NPM_DIR" && PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD="${PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD:-0}" timeout 120 npm install --silent --no-audit --no-fund >/dev/null 2>&1) || true
         else
-          (cd "$JS_BIN" && npm install --silent --no-audit --no-fund >/dev/null 2>&1) || true
+          (cd "$NPM_DIR" && npm install --silent --no-audit --no-fund >/dev/null 2>&1) || true
+        fi
+        if [ -n "$PLUGIN_DATA" ] && [ ! -e "$JS_BIN/node_modules" ] && [ -d "$NPM_DIR/node_modules" ]; then
+          ln -s "$NPM_DIR/node_modules" "$JS_BIN/node_modules" 2>/dev/null || true
         fi
       fi
       if [ -d "$JS_BIN/node_modules/playwright" ]; then BROWSER_SCRAPER_AVAILABLE=true; else BROWSER_SCRAPER_AVAILABLE=false; fi

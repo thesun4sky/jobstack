@@ -1,0 +1,303 @@
+#!/usr/bin/env python3
+"""
+jobstack-fetch-diag — fetch 진단 로그 집계 도구 (검토 보고서 U-12 ⑦, 표준 라이브러리만 사용).
+
+bin/fetch-diag.mjs 의 logFailure() 가 append 하는 로그를 읽어 플랫폼별 실패 원인을
+집계한다. 로그 한 줄의 형식(고정):
+  <ISO 8601 ts> [fetch-jobs:diag] platform=<p> cause=<c> <detail...>
+예: 2026-08-30T12:34:56.789Z [fetch-jobs:diag] platform=saramin cause=challenge marker="datadome" status=403
+
+cause 값(bin/fetch-diag.mjs classifyFailure 참조): no_html · challenge · too_small · empty_result
+
+사용법:
+  jobstack-fetch-diag summary [logfile] [--since 7d|24h|30d] [--json]
+  jobstack-fetch-diag tail [logfile] [-n 20]
+
+logfile 을 생략하면 다음 순서로 기본 경로를 찾는다:
+  1) $JOBSTACK_FETCH_DIAG_LOG
+  2) $JOBSTACK_STATE_DIR/analytics/fetch-diag.log
+  3) ~/.jobstack/analytics/fetch-diag.log
+
+로그에는 원래 URL이 남지 않지만(fetch-diag.mjs 는 URL을 로깅하지 않는다), 혹시 detail 에
+`url=` 토큰이 섞여 들어와도 출력 시 호스트만 남기고 나머지(경로·쿼리)는 잘라낸다.
+
+종료코드: 0 정상(로그 없음 포함) · 2 인자 오류.
+"""
+import json
+import os
+import re
+import sys
+from collections import defaultdict
+from datetime import datetime, timedelta, timezone
+from urllib.parse import urlparse
+
+KST = timezone(timedelta(hours=9))
+
+LINE_RE = re.compile(
+    r'^(?P<ts>\S+)\s+\[fetch-jobs:diag\]\s+platform=(?P<platform>\S+)\s+cause=(?P<cause>\S+)\s*(?P<detail>.*)$'
+)
+
+
+class _ArgError(Exception):
+    """인자 파싱 오류 — main() 이 stderr 안내 + exit 2 로 변환한다."""
+
+
+# ── 로그 경로 해석 ───────────────────────────────────────────────────────
+def _default_log_path():
+    env = os.environ.get('JOBSTACK_FETCH_DIAG_LOG')
+    if env:
+        return env
+    state = os.environ.get('JOBSTACK_STATE_DIR')
+    if state:
+        return os.path.join(state, 'analytics', 'fetch-diag.log')
+    return os.path.join(os.path.expanduser('~'), '.jobstack', 'analytics', 'fetch-diag.log')
+
+
+# ── url= 토큰 리댁션 — 로그에는 원래 URL이 없지만 혹시 섞여도 호스트만 남긴다 ──
+def _host_only(raw):
+    candidate = raw if '://' in raw else '//' + raw
+    try:
+        host = urlparse(candidate).hostname
+    except ValueError:
+        host = None
+    return host or raw
+
+
+def _redact_url_tokens(text):
+    return re.sub(r'url=(\S+)', lambda mm: f'url={_host_only(mm.group(1))}', text)
+
+
+# ── 로그 줄 파싱 ─────────────────────────────────────────────────────────
+def _parse_ts(raw):
+    try:
+        return datetime.fromisoformat(raw.replace('Z', '+00:00'))
+    except ValueError:
+        return None
+
+
+def _parse_line(raw_line):
+    """한 줄을 {'ts','platform','cause','detail'} 로. 형식이 안 맞거나 타임스탬프를 못
+    읽으면 None(호출측이 파싱 불가 카운트에 반영)."""
+    line = raw_line.rstrip('\n')
+    if not line.strip():
+        return None
+    m = LINE_RE.match(line)
+    if not m:
+        return None
+    ts = _parse_ts(m.group('ts'))
+    if ts is None:
+        return None
+    return {
+        'ts': ts,
+        'platform': m.group('platform'),
+        'cause': m.group('cause'),
+        'detail': _redact_url_tokens(m.group('detail').strip()),
+    }
+
+
+def _read_lines(path):
+    with open(path, 'r', encoding='utf-8', errors='replace') as f:
+        return f.readlines()
+
+
+def _fmt_kst(dt):
+    return dt.astimezone(KST).strftime('%Y-%m-%d %H:%M KST')
+
+
+def _parse_since(value):
+    """'7d'·'24h'·'30d' 형식을 timedelta 로. 형식이 다르면 _ArgError."""
+    match = re.fullmatch(r'(\d+)([dh])', value.strip()) if value else None
+    if not match:
+        raise _ArgError(f'jobstack-fetch-diag: --since 형식 오류 "{value}" (예: 7d, 24h, 30d)')
+    n = int(match.group(1))
+    return timedelta(days=n) if match.group(2) == 'd' else timedelta(hours=n)
+
+
+# ── summary ──────────────────────────────────────────────────────────────
+def _parse_summary_args(args):
+    logfile = None
+    since = None
+    as_json = False
+    i = 0
+    while i < len(args):
+        a = args[i]
+        if a == '--since':
+            i += 1
+            if i >= len(args):
+                raise _ArgError('jobstack-fetch-diag: --since 값 누락')
+            since = args[i]
+        elif a == '--json':
+            as_json = True
+        elif a.startswith('--'):
+            raise _ArgError(f'jobstack-fetch-diag: 알 수 없는 옵션 {a}')
+        elif logfile is None:
+            logfile = a
+        else:
+            raise _ArgError(f'jobstack-fetch-diag: 알 수 없는 인자 {a}')
+        i += 1
+    return logfile, since, as_json
+
+
+def _aggregate(lines, cutoff):
+    """로그 줄 목록을 집계한다. 반환: (rows, platform_totals, parse_errors, warn_platforms).
+    rows 는 (platform, cause) 별 {count, last_ts} 를 정렬된 리스트로 편 것이고,
+    warn_platforms 는 최근 3건이 모두 challenge 인 플랫폼 이름 집합이다."""
+    agg = defaultdict(lambda: {'count': 0, 'last_ts': None})
+    platform_totals = defaultdict(int)
+    platform_recent = defaultdict(list)
+    parse_errors = 0
+
+    for raw in lines:
+        if not raw.strip():
+            continue
+        parsed = _parse_line(raw)
+        if parsed is None:
+            parse_errors += 1
+            continue
+        if cutoff is not None and parsed['ts'] < cutoff:
+            continue
+        key = (parsed['platform'], parsed['cause'])
+        entry = agg[key]
+        entry['count'] += 1
+        if entry['last_ts'] is None or parsed['ts'] > entry['last_ts']:
+            entry['last_ts'] = parsed['ts']
+        platform_totals[parsed['platform']] += 1
+        platform_recent[parsed['platform']].append(parsed)
+
+    warn_platforms = set()
+    for platform, entries in platform_recent.items():
+        last3 = entries[-3:]
+        if len(last3) == 3 and all(e['cause'] == 'challenge' for e in last3):
+            warn_platforms.add(platform)
+
+    rows = []
+    for (platform, cause), v in agg.items():
+        rows.append({
+            'platform': platform,
+            'cause': cause,
+            'count': v['count'],
+            'last_ts': v['last_ts'],
+        })
+    rows.sort(key=lambda r: (r['platform'], -r['count'], r['cause']))
+
+    return rows, platform_totals, parse_errors, warn_platforms
+
+
+def cmd_summary(args):
+    logfile, since_str, as_json = _parse_summary_args(args)
+    path = logfile or _default_log_path()
+
+    if not os.path.exists(path):
+        print('기록 없음')
+        return 0
+
+    cutoff = None
+    if since_str:
+        cutoff = datetime.now(timezone.utc) - _parse_since(since_str)
+
+    lines = _read_lines(path)
+    rows, platform_totals, parse_errors, warn_platforms = _aggregate(lines, cutoff)
+    grand_total = sum(platform_totals.values())
+
+    if grand_total == 0:
+        print('기록 없음')
+        if parse_errors:
+            print(f'(파싱 불가 {parse_errors}줄 건너뜀)')
+        return 0
+
+    warnings = [
+        f'{p}: 최근 3건 모두 challenge — 셀렉터/차단 점검 권장' for p in sorted(warn_platforms)
+    ]
+
+    if as_json:
+        print(json.dumps({
+            'path': path,
+            'since': since_str,
+            'rows': [
+                {
+                    'platform': r['platform'],
+                    'cause': r['cause'],
+                    'count': r['count'],
+                    'last_kst': _fmt_kst(r['last_ts']),
+                }
+                for r in rows
+            ],
+            'platform_totals': dict(platform_totals),
+            'total': grand_total,
+            'parse_errors': parse_errors,
+            'warnings': warnings,
+        }, ensure_ascii=False, indent=2))
+        return 0
+
+    print(f'{"플랫폼":<12}{"원인":<14}{"건수":>6}  마지막 발생(KST)')
+    for r in rows:
+        print(f'{r["platform"]:<12}{r["cause"]:<14}{r["count"]:>6}  {_fmt_kst(r["last_ts"])}')
+    print(f'\n전체 합계: {grand_total}건')
+    if parse_errors:
+        print(f'파싱 불가: {parse_errors}줄 건너뜀')
+    for w in warnings:
+        print(f'경고: {w}')
+    return 0
+
+
+# ── tail ─────────────────────────────────────────────────────────────────
+def _parse_tail_args(args):
+    logfile = None
+    n = 20
+    i = 0
+    while i < len(args):
+        a = args[i]
+        if a == '-n':
+            i += 1
+            if i >= len(args):
+                raise _ArgError('jobstack-fetch-diag: -n 값 누락')
+            try:
+                n = int(args[i])
+            except ValueError:
+                raise _ArgError(f'jobstack-fetch-diag: -n 값이 정수가 아님: {args[i]}')
+            if n <= 0:
+                raise _ArgError('jobstack-fetch-diag: -n 값은 1 이상이어야 함')
+        elif a.startswith('-'):
+            raise _ArgError(f'jobstack-fetch-diag: 알 수 없는 옵션 {a}')
+        elif logfile is None:
+            logfile = a
+        else:
+            raise _ArgError(f'jobstack-fetch-diag: 알 수 없는 인자 {a}')
+        i += 1
+    return logfile, n
+
+
+def cmd_tail(args):
+    logfile, n = _parse_tail_args(args)
+    path = logfile or _default_log_path()
+
+    if not os.path.exists(path):
+        print('기록 없음')
+        return 0
+
+    lines = [ln.rstrip('\n') for ln in _read_lines(path) if ln.strip()]
+    for ln in lines[-n:]:
+        print(_redact_url_tokens(ln))
+    return 0
+
+
+# ── 진입점 ───────────────────────────────────────────────────────────────
+def main(argv):
+    if not argv:
+        sys.stderr.write('Usage: jobstack-fetch-diag summary|tail [options]\n')
+        return 2
+    cmd, rest = argv[0], argv[1:]
+    try:
+        if cmd == 'summary':
+            return cmd_summary(rest)
+        if cmd == 'tail':
+            return cmd_tail(rest)
+    except _ArgError as err:
+        sys.stderr.write(str(err) + '\n')
+        return 2
+    sys.stderr.write(f'jobstack-fetch-diag: 알 수 없는 명령 "{cmd}" (summary|tail)\n')
+    return 2
+
+
+if __name__ == '__main__':
+    sys.exit(main(sys.argv[1:]))

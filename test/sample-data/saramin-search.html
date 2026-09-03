@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>사람인 검색결과 테스트 픽스처(합성 데이터)</title>
+</head>
+<body>
+<!--
+  test-saramin-parser.mjs 전용 합성 픽스처다. 실제 사람인 채용정보가 아니며 회사명·
+  공고 제목은 전부 가상이다. 사람인 검색결과 페이지의 .item_recruit 카드 구조를
+  단순화해 흉내낸다(실제 마크업의 부가 요소는 생략).
+-->
+<div class="content">
+  <div class="list_recruit">
+
+    <!-- 1) "~ MM/DD(요일)" 형식 마감일 + 상대경로 링크 + 제목에 여분 공백(정리 검증용) -->
+    <div class="item_recruit">
+      <div class="area_job">
+        <h2 class="job_tit">
+          <a href="/zf_user/jobs/relay/view?rec_idx=51000001" title="백엔드 신입 개발자 채용(가상)">
+            백엔드   신입 개발자 채용(가상)
+          </a>
+        </h2>
+        <div class="corp_name"><a href="/zf_user/company-info/view?csn=9000000001">가짜테크(주)</a></div>
+        <div class="job_condition">
+          <span class="job_day"><span class="job_date">~ 01/05(월)</span></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 2) "YYYY.MM.DD" 형식 마감일 -->
+    <div class="item_recruit">
+      <div class="area_job">
+        <h2 class="job_tit"><a href="/zf_user/jobs/relay/view?rec_idx=51000002" title="프런트엔드 경력 개발자 채용(가상)">프런트엔드 경력 개발자 채용(가상)</a></h2>
+        <div class="corp_name"><a href="/zf_user/company-info/view?csn=9000000002">모의상사(유)</a></div>
+        <div class="job_condition">
+          <span class="job_day"><span class="job_date">2026.12.31 마감</span></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 3) 상시채용 -->
+    <div class="item_recruit">
+      <div class="area_job">
+        <h2 class="job_tit"><a href="/zf_user/jobs/relay/view?rec_idx=51000003" title="데이터엔지니어 채용(가상)">데이터엔지니어 채용(가상)</a></h2>
+        <div class="corp_name"><a href="/zf_user/company-info/view?csn=9000000003">테스트랩스(주)</a></div>
+        <div class="job_condition">
+          <span class="job_day"><span class="job_date">상시채용</span></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 4) 채용시마감 -->
+    <div class="item_recruit">
+      <div class="area_job">
+        <h2 class="job_tit"><a href="/zf_user/jobs/relay/view?rec_idx=51000004" title="QA 엔지니어 채용(가상)">QA 엔지니어 채용(가상)</a></h2>
+        <div class="corp_name"><a href="/zf_user/company-info/view?csn=9000000004">가상소프트(주)</a></div>
+        <div class="job_condition">
+          <span class="job_day"><span class="job_date">채용시 마감</span></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 5) 날짜 정보 없음 + 링크가 이미 절대경로 -->
+    <div class="item_recruit">
+      <div class="area_job">
+        <h2 class="job_tit"><a href="https://www.saramin.co.kr/zf_user/jobs/relay/view?rec_idx=51000005" title="마케팅 매니저 채용(가상)">마케팅 매니저 채용(가상)</a></h2>
+        <div class="corp_name"><a href="/zf_user/company-info/view?csn=9000000005">널데이터(주)</a></div>
+      </div>
+    </div>
+
+    <!-- 6) 깨진 카드 — title 없음(공고 내려간 경우 등 마크업 결손 시뮬레이션). 결과에서 제외돼야 함 -->
+    <div class="item_recruit">
+      <div class="area_job">
+        <h2 class="job_tit"></h2>
+        <div class="corp_name"><a href="/zf_user/company-info/view?csn=9000000006">유령회사</a></div>
+        <div class="job_condition">
+          <span class="job_day"><span class="job_date">~ 07/01(수)</span></span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+</body>
+</html>

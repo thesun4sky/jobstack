@@ -1,5 +1,55 @@
 # Changelog
 
+## [0.5.0] - 2026-09-03
+
+검토 보고서 P1 항목(U-07~U-13, U-17, U-21) — 실행 기반 현대화와 시장 정합. 실행 기록은
+`docs/plans/v1.0-execution-log.md`.
+
+### Added
+- **플러그인 패키징 (U-07)** — `.claude-plugin/plugin.json`(스킬 16개·`researcher` 에이전트)과
+  `.claude-plugin/marketplace.json`으로 저장소 자체가 마켓플레이스가 된다(`/plugin marketplace add
+  thesun4sky/jobstack` → `/plugin install jobstack@jobstack`). 플러그인 설치에서는 Node 의존성을
+  `${CLAUDE_PLUGIN_DATA}/node`에 두고 `bin/node_modules`를 심링크한다. `test/test-plugin-manifest.sh`.
+- **결정적 스크립트 계층 (U-09)** — `bin/jobstack-tracker`(add/update/list/calendar/stats/nudge/
+  migrate/validate, `docs/tracker-states.md` 구현), `bin/jobstack-exp.mjs`(경험 카드 add/list/show/
+  update/validate), `bin/jobstack-defense-map.mjs`(add/list/show/set-status/stats/validate),
+  `bin/jobstack-ats-match`(키워드 매칭률·등급), `bin/jobstack-retro-stats`(회고 프론트매터 집계).
+  스킬은 호출·해석만 하고 상태 파일을 손으로 쓰지 않는다 — `test/test-script-layer.sh`가 강제.
+  `docs/experience-card-schema.md` 신설.
+- **병렬 리서치 서브에이전트 (U-10)** — `agents/researcher.md`(WebSearch·WebFetch·Bash·Read, JSON
+  반환 계약: 출처 URL·기준일 필수, 원티드 마감은 `deadline_verified: false`). company-research·
+  salary·strategy가 Agent 도구로 소스별 fan-out 후 합성.
+- **한글 문서 인제스트 (U-11)** — `bin/hwpx2md.py`: HWPX(OWPML)를 표준 라이브러리만으로
+  마크다운으로, HWP 5.x는 kordoc/rhwp가 있을 때 변환하고 없으면 HWPX 저장 안내. auto Phase 1에
+  감지→변환 단계 추가.
+- **수집 계층 정비 (U-12)** — `bin/is-fetch.py`: 경계 매칭 마커·`block_class`(waf_challenge/captcha/
+  access_denied/rate_limited/login_wall)·Retry-After 1회 재시도·`--profiles`; `bin/jobstack-fetch-diag`
+  (진단 로그 집계·연속 차단 경고); 사람인은 `bin/parsers/saramin.mjs`(cheerio)로 브라우저 없이
+  파싱하고 `bin/sources/saramin-api.mjs`(사람인 오픈API, `jobstack-config set saramin_api_key`)를
+  `--source api|scrape|auto`로 우선 사용; `fetch-jobs.mjs`는 브라우저를 필요한 플랫폼에서만 lazy 기동.
+  의존성 고정: playwright `~1.62.1`, cheerio, docx, yaml, `engines.node >= 22`, curl_cffi `>=0.16,<0.17`.
+- **docx 내보내기 이중화 (U-13)** — `bin/md2docx.mjs`(Node `docx`, 표·이미지 없는 단일 컬럼)를
+  `jobstack-export`의 폴백으로 연결. pandoc 3.6 미만은 폴백으로 전환, exit 2는 "pandoc·Node 폴백
+  모두 불가"로 재정의.
+- **NCS 개편 참조 (U-17)** — `docs/ncs-competencies.md`(구 직업기초능력 10영역·34하위 확정 /
+  신 직업공통능력 7영역·21하위 `[2차]`, 체계 판정 규칙, 구→신 매핑 원칙). ncs·cover-letter·
+  mock-interview 본문의 고정 영역 목록을 제거하고 실행 시 공고에서 체계를 확인한다.
+- **구조화 전형 대응 (U-21)** — `templates/structured-modes.md`: 경험기술서 모드(문제·역할·행동·
+  결과 4분리, 문항별 글자수 게이트, AI·도구 활용 문항 지침)와 문답형 상세지원서 모드(일괄 초안,
+  답변 간 사실 일관성 검사). cover-letter Phase 0 선택지 D. 경험 카드 `ai_usage` 필드.
+
+### Changed
+- **진행적 공개 (U-08)** — 거대 스킬 6개를 SKILL.md(흐름·게이트) + `references/`(모드별·플랫폼별·
+  트랙별 자료, 스킬 소유)로 분할: auto 338→275, cover-letter 505→294, resume 487→296,
+  mock-interview 461→292, job-search 443→264, company-research 419→260(바이트 기준 초기 로드 26~38%
+  감소 — 검토 보고서 목표 50%에는 못 미침: 게이트·판단 규칙을 SKILL.md에 남기는 쪽을 택했다). 16개 스킬 전부 300줄 이하,
+  프론트매터에 `argument-hint`·`when_to_use` 추가, jobstack 메타는 `metadata:` 아래로. 원본 줄
+  보존은 결정적 검증기로 확인(유실 0). `test/test-skill-size.sh`, `bin/gen-skill-docs.sh`가 스킬
+  소유 참조·하위 디렉토리를 지원.
+- tracker·retro·experience-bank·ncs 본문이 스크립트 호출 흐름으로 바뀜(JSONL/YAML 직접 편집 지시 0건).
+- CI: Node 의존성 설치, 스크립트 테스트 12종, 크기·프론트매터·스크립트 계층·매니페스트 린트 추가.
+- README·CLAUDE.md·CONTRIBUTING·templates/preamble.md 현행화.
+
 ## [0.4.0] - 2026-09-03
 
 검토 보고서(`docs/plans/version-upgrade-review-2026-09.md`) P0 항목 U-01~U-06. 실측으로 확인한

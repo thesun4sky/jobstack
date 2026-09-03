@@ -1,7 +1,5 @@
 ---
 name: portfolio
-preamble-tier: 2
-version: 0.2.0
 description: |
   포트폴리오 최적화 스킬. 프로젝트 임팩트 표현, 기술스택별 구성 가이드.
   "포트폴리오 봐줘", "포트폴리오 만들어줘", "GitHub 프로필" 등의 요청 시 활용.
@@ -15,10 +13,18 @@ allowed-tools:
   - AskUserQuestion
   - WebSearch
   - WebFetch
-benefits-from: [strategy]
+argument-hint: "[GitHub URL | README.md | 포트폴리오 파일]"
+when_to_use: |
+  프로젝트 결과물의 임팩트를 before→after 수치로 표현하고, 지원 직무 요구사항과의 갭을 분석할 때 사용한다.
+  README 작성이나 프로젝트 설명 개선에 초점을 맞추며, 성과 중심의 구성을 제안한다.
+  링크드인·원티드 프로필 텍스트는 /scout_profile 담당이다.
+metadata:
+  preamble-tier: 2
+  version: 0.2.0
+  benefits-from: [strategy]
 ---
 
-!`bash "${CLAUDE_SKILL_DIR}/scripts/preamble.sh" portfolio "${CLAUDE_SESSION_ID}"`
+!`bash "${CLAUDE_SKILL_DIR}/scripts/preamble.sh" portfolio "${CLAUDE_SESSION_ID}" "${CLAUDE_PLUGIN_DATA:-}"`
 
 > 위 실행 컨텍스트가 비어 있거나 `KEY=VALUE` 목록 대신 `!` 명령·정책 차단 문구가 그대로 보이면(`!` 주입이 꺼진 환경), 첫 Bash 명령으로 `bash "${CLAUDE_SKILL_DIR}/scripts/preamble.sh" portfolio`를 실행해 같은 컨텍스트를 확보하고 `${CLAUDE_SKILL_DIR}/references/guardrails.md`를 Read 하세요. 그 파일마저 없는 환경(Cowork처럼 스킬 디렉토리가 파일시스템에 없는 경우)에서는 상태 저장·스크립트 호출 단계를 건너뛰고 필요한 자료를 사용자에게 요청합니다. `STATE_WRITE_FAILED=true`가 보이면 `JOBSTACK_STATE_DIR` 경로를 사용자에게 확인합니다. 이 스킬의 Bash 스니펫은 첫 줄에 `. "${JOBSTACK_STATE_DIR:-$HOME/.jobstack}/env.sh"`를 두어 `$_JS_STATE`·`$_JS_BIN`·`$TODAY`를 불러옵니다.
 

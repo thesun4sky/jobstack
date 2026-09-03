@@ -1,7 +1,5 @@
 ---
 name: scout-profile
-preamble-tier: 3
-version: 0.1.0
 description: |
   스카우트 프로필 첨삭 스킬. 링크드인/원티드/리멤버 등 채용 플랫폼 프로필 텍스트를
   헤드라인 5초 규칙, 리크루터 검색 키워드 배치, 기능 서술→성과 서술 전환 기준으로
@@ -15,10 +13,18 @@ allowed-tools:
   - Read
   - Write
   - AskUserQuestion
-benefits-from: [resume, portfolio, strategy, experience-bank]
+argument-hint: "[플랫폼: 링크드인|원티드|리멤버] [프로필 텍스트]"
+when_to_use: |
+  링크드인·원티드·리멤버 등 채용 플랫폼 프로필을 5초 규칙과 성과 중심으로 최적화할 때 사용한다.
+  헤드라인·한 줄 소개·경력 요약의 3영역을 진단하고, 리크루터 검색 키워드 배치를 개선한다.
+  GitHub나 기술 포트폴리오 최적화는 /portfolio, 서류 간 사실 정합성 확인은 /review 담당이다.
+metadata:
+  preamble-tier: 3
+  version: 0.1.0
+  benefits-from: [resume, portfolio, strategy, experience-bank]
 ---
 
-!`bash "${CLAUDE_SKILL_DIR}/scripts/preamble.sh" scout-profile "${CLAUDE_SESSION_ID}"`
+!`bash "${CLAUDE_SKILL_DIR}/scripts/preamble.sh" scout-profile "${CLAUDE_SESSION_ID}" "${CLAUDE_PLUGIN_DATA:-}"`
 
 > 위 실행 컨텍스트가 비어 있거나 `KEY=VALUE` 목록 대신 `!` 명령·정책 차단 문구가 그대로 보이면(`!` 주입이 꺼진 환경), 첫 Bash 명령으로 `bash "${CLAUDE_SKILL_DIR}/scripts/preamble.sh" scout-profile`를 실행해 같은 컨텍스트를 확보하고 `${CLAUDE_SKILL_DIR}/references/guardrails.md`를 Read 하세요. 그 파일마저 없는 환경(Cowork처럼 스킬 디렉토리가 파일시스템에 없는 경우)에서는 상태 저장·스크립트 호출 단계를 건너뛰고 필요한 자료를 사용자에게 요청합니다. `STATE_WRITE_FAILED=true`가 보이면 `JOBSTACK_STATE_DIR` 경로를 사용자에게 확인합니다. 이 스킬의 Bash 스니펫은 첫 줄에 `. "${JOBSTACK_STATE_DIR:-$HOME/.jobstack}/env.sh"`를 두어 `$_JS_STATE`·`$_JS_BIN`·`$TODAY`를 불러옵니다.
 

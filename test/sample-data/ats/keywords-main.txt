@@ -1,0 +1,11 @@
+# 필수
+Python
+Java
+Spring Boot | Spring | 스프링
+AWS
+데이터 분석
+# 우대
+Kubernetes | k8s
+Docker
+Go
+GraphQL

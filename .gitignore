@@ -21,6 +21,7 @@ Thumbs.db
 
 # Generated HTML (from jobstack-view)
 *.html
+!test/sample-data/*.html
 
 # Generated (rebuild with gen-skill-docs.sh)
 # SKILL.md files are committed for convenience

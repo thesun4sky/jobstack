@@ -1,7 +1,5 @@
 ---
 name: strategy
-preamble-tier: 1
-version: 0.2.0
 description: |
   취업전략 수립 스킬. 개인 역량 진단, 목표 기업 설정, 준비 로드맵 생성.
   "취업 전략", "어디서부터 시작", "취업 준비 계획" 등의 요청 시 활용.
@@ -11,9 +9,18 @@ allowed-tools:
   - Write
   - AskUserQuestion
   - WebSearch
+  - Agent
+argument-hint: "[목표 직무] [희망 기업군]"
+when_to_use: |
+  취업을 준비하는 초기 단계에서 개인 역량을 진단하고, 지원 직무·기업을 설정해 준비 로드맵을 세울 때 사용한다.
+  구체적 서류 작성이나 경험 정리는 다른 스킬들이 담당하며, 이 스킬은 전체 방향과 우선순위를 잡는 데 중점이다.
+  지원·면접 현황 추적은 tracker 스킬 담당이다.
+metadata:
+  preamble-tier: 1
+  version: 0.2.0
 ---
 
-!`bash "${CLAUDE_SKILL_DIR}/scripts/preamble.sh" strategy "${CLAUDE_SESSION_ID}"`
+!`bash "${CLAUDE_SKILL_DIR}/scripts/preamble.sh" strategy "${CLAUDE_SESSION_ID}" "${CLAUDE_PLUGIN_DATA:-}"`
 
 > 위 실행 컨텍스트가 비어 있거나 `KEY=VALUE` 목록 대신 `!` 명령·정책 차단 문구가 그대로 보이면(`!` 주입이 꺼진 환경), 첫 Bash 명령으로 `bash "${CLAUDE_SKILL_DIR}/scripts/preamble.sh" strategy`를 실행해 같은 컨텍스트를 확보하고 `${CLAUDE_SKILL_DIR}/references/guardrails.md`를 Read 하세요. 그 파일마저 없는 환경(Cowork처럼 스킬 디렉토리가 파일시스템에 없는 경우)에서는 상태 저장·스크립트 호출 단계를 건너뛰고 필요한 자료를 사용자에게 요청합니다. `STATE_WRITE_FAILED=true`가 보이면 `JOBSTACK_STATE_DIR` 경로를 사용자에게 확인합니다. 이 스킬의 Bash 스니펫은 첫 줄에 `. "${JOBSTACK_STATE_DIR:-$HOME/.jobstack}/env.sh"`를 두어 `$_JS_STATE`·`$_JS_BIN`·`$TODAY`를 불러옵니다.
 
@@ -103,6 +110,8 @@ updated_at: 2026-03-29
 ## Phase 2: 시장 분석
 
 WebSearch로 사용자의 목표 직무/산업 현황을 조사합니다.
+
+> **병렬 리서치**: Agent 도구를 쓸 수 있으면 직무 수요·산업 동향·전형 방식·요구 역량 조사를 `researcher` 서브에이전트(저장소 `agents/researcher.md`)에 항목별로 맡겨 병렬로 모으고, `items[].url`·`date`가 붙은 사실만 합성합니다. `found: false`·`blocked: true`는 "(출처 미확보)"로 남기고, Agent 도구가 없으면 WebSearch 순차 조사로 진행합니다.
 
 **검색 항목:** (연도는 실행 시점 KST 기준 현재 연도로 동적 치환, 하드코딩 금지)
 - "[직무명] 채용 동향 [현재 연도]"

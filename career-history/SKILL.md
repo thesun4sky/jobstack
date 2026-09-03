@@ -1,7 +1,5 @@
 ---
 name: career-history
-preamble-tier: 3
-version: 0.1.0
 description: |
   경력기술서 작성/첨삭 스킬. 프로젝트 단위 성과 서술(역할·기여도·before→after 수치),
   중고신입/경력직 분기 템플릿, 이력서-경력기술서-자소서 3문서 역할 구분·중복 제거 가이드.
@@ -16,10 +14,18 @@ allowed-tools:
   - Glob
   - AskUserQuestion
   - WebSearch
-benefits-from: [strategy, company-research, experience-bank, resume]
+argument-hint: "[이력서.md] [프로젝트 목록]"
+when_to_use: |
+  프로젝트 단위의 성과를 before→after 수치와 본인 기여도로 구조화하고, 이력서·자소서와의 역할을 구분할 때 사용한다.
+  strategy나 experience-bank 스킬로 경험을 먼저 정리한 후 활용하면 더 효과적이다.
+  이력서 본문은 /resume, 플랫폼 프로필은 /scout_profile 담당이다.
+metadata:
+  preamble-tier: 3
+  version: 0.1.0
+  benefits-from: [strategy, company-research, experience-bank, resume]
 ---
 
-!`bash "${CLAUDE_SKILL_DIR}/scripts/preamble.sh" career-history "${CLAUDE_SESSION_ID}"`
+!`bash "${CLAUDE_SKILL_DIR}/scripts/preamble.sh" career-history "${CLAUDE_SESSION_ID}" "${CLAUDE_PLUGIN_DATA:-}"`
 
 > 위 실행 컨텍스트가 비어 있거나 `KEY=VALUE` 목록 대신 `!` 명령·정책 차단 문구가 그대로 보이면(`!` 주입이 꺼진 환경), 첫 Bash 명령으로 `bash "${CLAUDE_SKILL_DIR}/scripts/preamble.sh" career-history`를 실행해 같은 컨텍스트를 확보하고 `${CLAUDE_SKILL_DIR}/references/guardrails.md`를 Read 하세요. 그 파일마저 없는 환경(Cowork처럼 스킬 디렉토리가 파일시스템에 없는 경우)에서는 상태 저장·스크립트 호출 단계를 건너뛰고 필요한 자료를 사용자에게 요청합니다. `STATE_WRITE_FAILED=true`가 보이면 `JOBSTACK_STATE_DIR` 경로를 사용자에게 확인합니다. 이 스킬의 Bash 스니펫은 첫 줄에 `. "${JOBSTACK_STATE_DIR:-$HOME/.jobstack}/env.sh"`를 두어 `$_JS_STATE`·`$_JS_BIN`·`$TODAY`를 불러옵니다.
 
@@ -165,7 +171,7 @@ C) 3문서 역할 진단 ("이력서와 경력기술서 뭐가 다른가")
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
-- **미끼 인벤토리 저장(선택)**: 미끼 포인트를 `${CLAUDE_SKILL_DIR}/references/defense-map-schema.md`의 YAML 계약 형식으로 `$_JS_STATE/defense-maps/<회사명>_<직무>_<YYYYMMDD>.yaml`에 저장하면 `/mock_interview`가 질문 소스로 소비할 수 있습니다. entry별 `sentence`·`bait_type`·`questions`(2개 이상)를 채우고, `answer_hint`는 사용자가 확인한 경우에만 기록합니다(추정 금지).
+- **미끼 인벤토리 저장(선택)**: 미끼 포인트를 `${CLAUDE_SKILL_DIR}/references/defense-map-schema.md`의 YAML 계약 형식으로 `$_JS_STATE/defense-maps/<회사명>_<직무>_<YYYYMMDD>.yaml`에 저장하면 `/mock_interview`가 질문 소스로 소비할 수 있습니다. entry별 `sentence`·`bait_type`·`questions`(2개 이상)를 채우고, `answer_hint`는 사용자가 확인한 경우에만 기록합니다(추정 금지). 저장 명령: `"$_JS_BIN/jobstack-defense-map.mjs" add --company <회사명> --position <직무> --source-skill career-history --document-ref <경력기술서 파일> --entries-json '<entries JSON>'` (env.sh 소싱 후) — YAML 을 손으로 쓰지 않습니다.
 - 답변 연습·심화 준비는 `/mock_interview`로 핸드오프합니다.
 
 ---
@@ -175,7 +181,7 @@ C) 3문서 역할 진단 ("이력서와 경력기술서 뭐가 다른가")
 완성한 경력기술서를 현재 디렉토리에 Markdown 파일로 저장하고 결과물 경로를 안내합니다.
 
 - 파일 뷰어(HTML/PDF): `"$_JS_BIN/jobstack-view" <결과파일.md>` — 스타일링된 HTML로 열리고 "PDF 저장" 버튼으로 PDF 출력이 가능합니다.
-- docx 산출: `command -v pandoc`으로 변환 도구가 있으면 `"$_JS_BIN/jobstack-export" <결과파일.md>`로 ATS 안전 docx로 변환하고, 없으면 Markdown/HTML로 산출한 뒤 변환 방법을 간단히 안내합니다(exit 2 등 실패 시 복붙 폴백 메시지).
+- docx 산출: pandoc 유무와 관계없이 `"$_JS_BIN/jobstack-export" <결과파일.md>` (env.sh 소싱 후)로 ATS 안전 docx를 산출합니다 — pandoc이 없으면 스크립트가 Node docx 폴백으로 변환합니다. exit 4(placeholder 잔존)면 항목을 채운 뒤 재시도하고, exit 2(pandoc·Node 폴백 모두 불가)·exit 3(변환 실패)일 때만 Markdown/HTML로 산출하고 변환 방법을 안내합니다.
 - 봇 환경의 파일 출력 규칙은 실행 컨텍스트가 `bot`일 때 주입되는 bot-protocol을 따릅니다 — 위 뷰어·docx 안내는 CLI 전용입니다.
 
 > 신규 상태 파일은 만들지 않습니다. `profiles/default.yaml`과 `experiences.yaml`은 읽기 전용으로만 소비합니다.

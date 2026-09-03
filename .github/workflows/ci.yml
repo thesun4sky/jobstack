@@ -17,12 +17,18 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Node 의존성 (bin/ — playwright·cheerio·docx·yaml, 브라우저 바이너리 제외)
+        run: cd bin && PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm install --no-audit --no-fund
+
       - name: 컨벤션·표기·경로 린트
         run: |
           bash test/lint-conventions.sh
           bash test/test-command-style.sh
           bash test/test-no-home-paths.sh
           bash test/test-skill-refs.sh
+          bash test/test-skill-size.sh --frontmatter
+          bash test/test-script-layer.sh
+          bash test/test-plugin-manifest.sh
 
       - name: 프리앰블 격리 실행
         run: bash test/test-preambles.sh
@@ -36,6 +42,22 @@ jobs:
           node test/test-wanted-verify.mjs
           node test/test-is-fetch-adapter.mjs
           node test/test-is-fetch-ssrf.mjs
+          node test/test-saramin-parser.mjs
+          node test/test-saramin-api.mjs
+          node test/test-md2docx.mjs
+
+      - name: 결정적 스크립트 테스트 (tracker·exp·defense-map·ats-match·retro-stats·hwpx·export·is-fetch·fetch-diag·saramin)
+        run: |
+          bash test/test-tracker.sh
+          bash test/test-exp.sh
+          bash test/test-defense-map.sh
+          bash test/test-ats-match.sh
+          bash test/test-retro-stats.sh
+          bash test/test-hwpx.sh
+          bash test/test-export.sh
+          bash test/test-is-fetch-classify.sh
+          bash test/test-fetch-diag-summary.sh
+          bash test/test-fetch-jobs-saramin.sh
 
       - name: 통합 테스트 (격리된 HOME)
         run: |

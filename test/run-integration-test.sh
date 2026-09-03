@@ -36,7 +36,12 @@ echo ""
 echo "## 0. 린트 게이트"
 echo ""
 
-for lint in test-preambles.sh test-skill-refs.sh test-command-style.sh test-no-home-paths.sh lint-conventions.sh run-golden.sh test-fetch-diag.mjs test-wanted-verify.mjs test-is-fetch-adapter.mjs test-is-fetch-ssrf.mjs; do
+for lint in test-preambles.sh test-skill-refs.sh test-command-style.sh test-no-home-paths.sh lint-conventions.sh run-golden.sh \
+            test-script-layer.sh test-plugin-manifest.sh \
+            test-fetch-diag.mjs test-wanted-verify.mjs test-is-fetch-adapter.mjs test-is-fetch-ssrf.mjs \
+            test-tracker.sh test-exp.sh test-defense-map.sh test-ats-match.sh test-retro-stats.sh test-hwpx.sh \
+            test-export.sh test-md2docx.mjs test-is-fetch-classify.sh test-fetch-diag-summary.sh \
+            test-saramin-parser.mjs test-saramin-api.mjs test-fetch-jobs-saramin.sh; do
   if [ ! -x "$SCRIPT_DIR/$lint" ]; then
     log_test "FAIL" "린트: $lint" "스크립트 없음 또는 실행 권한 없음"
     continue
@@ -47,6 +52,12 @@ for lint in test-preambles.sh test-skill-refs.sh test-command-style.sh test-no-h
     log_test "FAIL" "린트: $lint" "위반 발견 — $SCRIPT_DIR/$lint 를 직접 실행해 확인"
   fi
 done
+# SKILL.md 크기·프론트매터 게이트 (U-08) — 인자가 필요해 별도 호출
+if bash "$SCRIPT_DIR/test-skill-size.sh" --frontmatter > /dev/null 2>&1; then
+  log_test "PASS" "린트: test-skill-size.sh --frontmatter"
+else
+  log_test "FAIL" "린트: test-skill-size.sh --frontmatter" "SKILL.md 300줄 초과 또는 필수 프론트매터 키 누락"
+fi
 
 # ────────────────────────────────────────
 echo ""
@@ -151,7 +162,7 @@ for skill_dir in "$PROJECT_DIR"/{auto,strategy,resume,cover-letter,company-resea
   fi
 
   # 동적 주입 프리앰블 라인 + 생성 파일 확인 (v0.4.0)
-  if grep -qF '!`bash "${CLAUDE_SKILL_DIR}/scripts/preamble.sh" '"$skill_name"' "${CLAUDE_SESSION_ID}"`' "$SKILL_FILE" \
+  if grep -qF '!`bash "${CLAUDE_SKILL_DIR}/scripts/preamble.sh" '"$skill_name"' "${CLAUDE_SESSION_ID}" "${CLAUDE_PLUGIN_DATA:-}"`' "$SKILL_FILE" \
      && [ -x "$skill_dir/scripts/preamble.sh" ] && [ -f "$skill_dir/references/guardrails.md" ]; then
     log_test "PASS" "프리앰블 주입·생성 파일: $skill_name"
   else

@@ -31,7 +31,8 @@ for s in $SKILLS; do
   errors=()
 
   # (a) SKILL.md 계약: 동적 주입 라인 존재, 가드레일 주입 존재, 옛 인라인 프리앰블 부재
-  grep -qF '!`bash "${CLAUDE_SKILL_DIR}/scripts/preamble.sh" '"$s"' "${CLAUDE_SESSION_ID}"`' "$SKILL_FILE" \
+  # v0.5.0: 세 번째 인자 "${CLAUDE_PLUGIN_DATA:-}" (플러그인 데이터 디렉토리) 가 붙는다
+  grep -qF '!`bash "${CLAUDE_SKILL_DIR}/scripts/preamble.sh" '"$s"' "${CLAUDE_SESSION_ID}" "${CLAUDE_PLUGIN_DATA:-}"`' "$SKILL_FILE" \
     || errors+=("missing !\`preamble.sh $s\` injection line")
   grep -qF '"${CLAUDE_SKILL_DIR}/references/guardrails.md"' "$SKILL_FILE" \
     || errors+=("missing guardrails.md injection")
@@ -126,6 +127,18 @@ if [ "$WF_RC" -eq 0 ] && echo "$WF" | grep -q "^STATE_WRITE_FAILED=true$" && ech
   PASS=$((PASS+1)); echo "[PASS] unwritable state dir → exit 0 + STATE_WRITE_FAILED=true"
 else
   FAIL=$((FAIL+1)); FAILED_LIST+=("unwritable-state"); echo "[FAIL] unwritable state dir (rc=$WF_RC)"; echo "$WF" | tail -8 | sed 's/^/    /'
+fi
+rm -rf "$WORK"
+
+# (g) 플러그인 설치: PLUGIN_DATA/node/node_modules 가 있으면 bin/node_modules 심링크를 만들고 env.sh 에 JOBSTACK_PLUGIN_DATA 를 적는다 (U-07)
+WORK=$(mktemp -d "${TMPDIR:-/tmp}/jobstack-test.XXXXXX")
+mkdir -p "$WORK/plug/bin" "$WORK/pdata/node/node_modules/playwright" "$WORK/state"
+cp "$REPO/bin/jobstack-preamble" "$REPO/bin/package.json" "$WORK/plug/bin/" && touch "$WORK/plug/bin/fetch-jobs.mjs"
+PG=$(JOBSTACK_STATE_DIR="$WORK/state" JOBSTACK_NPM_AUTO_INSTALL=0 bash "$WORK/plug/bin/jobstack-preamble" job-search "" "$WORK/pdata" 2>/dev/null)
+if [ -L "$WORK/plug/bin/node_modules" ] && echo "$PG" | grep -q "^BROWSER_SCRAPER_AVAILABLE=true$" && grep -q "^JOBSTACK_PLUGIN_DATA=" "$WORK/state/env.sh"; then
+  PASS=$((PASS+1)); echo "[PASS] plugin data dir → bin/node_modules symlink + JOBSTACK_PLUGIN_DATA"
+else
+  FAIL=$((FAIL+1)); FAILED_LIST+=("plugin-data"); echo "[FAIL] plugin data dir"; echo "$PG" | tail -8 | sed 's/^/    /'
 fi
 rm -rf "$WORK"
 
