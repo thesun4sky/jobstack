@@ -1,5 +1,41 @@
 # Changelog
 
+## [1.0.0] - 2026-09-03
+
+검토 보고서 P2 항목(U-14~U-16, U-18~U-20, U-22, U-23) — 기능 확장. 실행 기록은
+`docs/plans/v1.0-execution-log.md`.
+
+### Added
+- **반복 실행 경로 (U-14)** — `bin/jobstack-cron run|install|uninstall|status`: 플랫폼별
+  `fetch-jobs.mjs` 수집 결과를 이전 스냅샷과 비교해 새 공고·마감 D-7·`jobstack-tracker nudge`
+  정체 건을 `job-cache/daily-YYYY-MM-DD.md`로 남기고 cron(리눅스)/launchd(macOS)에 등록한다.
+  모델 호출은 하지 않는다(비용·무인 권한). 클라우드 Routines 가이드 `docs/routines.md`.
+- **Claude in Chrome 경로 (U-15)** — `templates/chrome-path.md`: scout-profile(프로필 탭 읽기)·
+  company-research(로그인 리뷰 상세 익명 집계)·job-search(로그인 필터 결과)가 확장이 있을 때만
+  쓰는 선택 경로. 읽기·초안 반영까지만, 자동 지원·제출은 비목표. 확장이 없으면 붙여넣기 경로.
+- **스킬 eval 체계 (U-16)** — `evals/<skill>/evals.json`(5개 스킬 × 3케이스 + 트리거 질의)과
+  `test/run-evals.sh`: `claude -p` 헤드리스 실행 스트림에서 산출물·Bash 호출·Read 경로를 뽑아
+  must_contain/must_call/must_read를 결정적으로 판정하고, `periodic` 케이스는 Haiku 채점을 한 번
+  더 거친다. gate/periodic/e2e 3계층. API 비용 때문에 CI가 아니라 로컬·야간 실행(`docs/evals.md`).
+- **claude.ai/Cowork 패키징 (U-18)** — `bin/package-skill.sh <skill|all>`: SKILL.md·references·
+  scripts/preamble.sh만 담은 zip을 만들고 참조 무결성을 검사한다. bin이 없는 환경의 축소 모드는
+  `docs/cowork.md`(실제 Cowork 세션 실측은 미완 — 확인 항목 명시).
+- **운영 학습 로그 (U-20)** — `bin/jobstack-learn add|top|list|validate`: 수집 셀렉터 깨짐·차단·
+  반복 자료 요청 같은 메타만 `analytics/learnings.jsonl`에 남기고(개인정보 휴리스틱 거부),
+  `/auto` 대시보드가 상위 3건을 보여준다. 어휘는 `docs/telemetry-events.md`에 정식 등록.
+- **AI 협업 평가 대비 (U-22)** — mock-interview 기술면접에 "AI 도구 활용 과제" 서브모드(문제
+  접근→프롬프트 설계→출력 검증 근거→수정 이력), company-research 전형 확인 항목 ⑥(코딩테스트·
+  과제의 AI 사용 허용 여부 — 미확인 시 "사용 안 함이 안전").
+- **제도·지원금 체크리스트 (U-23)** — `templates/policy-checklist.md`: 탈락 후 권리(tracker)와
+  지원 시 정책 인센티브(salary·strategy) 항목. 수치·시행 여부는 적지 않고 실행 시 WebSearch로
+  출처·기준일을 병기한다.
+
+### Changed
+- **모델·effort 라우팅 (U-19)** — tracker `model: sonnet`·`effort: low`, 문서 첨삭·면접·기업분석·
+  전략 스킬 `effort: high`를 프론트매터로 선언. 비교 실측은 `docs/plans/v1.0-execution-log.md`.
+- auto 대시보드의 지원 현황·정체 넛지가 `jobstack-tracker stats|nudge` 출력을 쓰도록 통일.
+- CI·통합 테스트에 cron·learn·package-skill 테스트 추가. README·CLAUDE.md·CONTRIBUTING 현행화.
+
 ## [0.5.0] - 2026-09-03
 
 검토 보고서 P1 항목(U-07~U-13, U-17, U-21) — 실행 기반 현대화와 시장 정합. 실행 기록은

@@ -1,5 +1,38 @@
 # E2E 통합 테스트 리포트
 
+## 2026-09-03 — v1.0 헤드리스 실측 (스킬 eval 체계, U-16)
+
+> 아래 2026-03 리포트는 v0.3 시점의 페르소나 서사 기록이다. v0.4.0~v1.0 에서 프리앰블·references 분할·
+> 결정적 스크립트 계층이 도입되어 점수 체계와 흐름이 바뀌었으므로, 현재 동작의 근거는 이 절의 실측이다.
+> 실행 방법: `REPO=<repo> bash test/run-evals.sh --tier gate|periodic|e2e` (격리 HOME, `claude -p --permission-mode auto`, 모델 sonnet).
+
+### gate (결정적 판정, 5케이스) — 수정 후 5/5 통과
+
+| 스킬 | 케이스 | 판정 | 확인한 것 |
+|---|---|---|---|
+| auto | auto-gate-file-detection | PASS | 이력서·자소서·채용공고 3종 감지, `references/cases.md` Read, telemetry append |
+| cover-letter | cover-letter-gate-diagnosis | PASS | 작업 폴더의 자소서 파일을 스스로 Read(Phase 0 입력 확보), 결이요 진단, `references/review-steps.md` Read |
+| experience-bank | expbank-gate-single-card | PASS | `jobstack-exp.mjs add` 호출로 카드 저장 |
+| resume | resume-gate-ats-grade | PASS | `jobstack-ats-match --keywords --doc` 호출, 매칭률·등급 A·80% 출력 |
+| tracker | tracker-gate-v1-migration-list | PASS | v1 한글 상태 파일을 스크립트가 정규화해 목록 출력 |
+
+1차 실행에서는 3/5 였다 — cover-letter 가 폴더의 파일을 찾지 않고 되물었고(스킬 Phase 0 에 입력 확보 규칙 추가), resume 케이스는 CLI 인자 지시 프롬프트 때문에 Skill 대신 셸 탐색으로 흘러 턴 상한을 넘겼다(프롬프트를 `/resume …` 로 교정). 재실행 5/5.
+
+### periodic·e2e (LLM 채점 병행, 각 5케이스)
+
+(재실행 결과를 아래에 기록한다)
+
+### 모델 비교 (U-19, tracker gate 케이스 2회씩)
+
+| 모델 | 판정 | 턴 | 소요 | 비용(USD) |
+|---|---|---|---|---|
+| sonnet | PASS·PASS | 4·4 | 26s·26s | 0.19·0.18 |
+| opus | PASS·PASS | 4·4 | 23s·29s | 0.94·0.47 |
+
+판정·턴 수가 같고 비용만 2.5~5배 차이 — tracker 는 `model: sonnet`·`effort: low` 로 확정.
+
+---
+
 > 페르소나: **김민수** (신입 백엔드 개발자, 서울과학기술대 컴공 졸업, 인턴 6개월)
 > 목표 기업: **네이버 서버 플랫폼 개발**
 > 테스트 일시: 2026-03-29

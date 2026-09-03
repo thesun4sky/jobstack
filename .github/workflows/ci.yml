@@ -58,6 +58,9 @@ jobs:
           bash test/test-is-fetch-classify.sh
           bash test/test-fetch-diag-summary.sh
           bash test/test-fetch-jobs-saramin.sh
+          bash test/test-cron.sh
+          bash test/test-learn.sh
+          bash test/test-package-skill.sh
 
       - name: 통합 테스트 (격리된 HOME)
         run: |

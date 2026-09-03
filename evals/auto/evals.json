@@ -1,0 +1,148 @@
+{
+  "skill": "auto",
+  "cases": [
+    {
+      "id": "auto-gate-file-detection",
+      "tier": "gate",
+      "prompt": "이 폴더에 있는 파일들을 보고 제 취업 준비가 지금 어느 단계인지, 다음에 뭘 하면 좋을지 알려주세요.",
+      "files": [
+        "test/sample-data/이력서_홍길동.md",
+        "test/sample-data/자소서_네이버_홍길동.md",
+        "test/sample-data/채용공고_네이버_백엔드.md"
+      ],
+      "setup": [],
+      "expectations": {
+        "must_contain": [
+          "이력서",
+          "자소서",
+          "채용공고"
+        ],
+        "must_not_contain": [
+          "다각적",
+          "포괄적",
+          "심층적",
+          "혁신적",
+          "체계적",
+          "합격 보장",
+          "무조건 통과",
+          "전문가가 직접 첨삭",
+          "AI 대체 불가"
+        ],
+        "must_call": [
+          "skill-usage.jsonl detected"
+        ],
+        "must_read": [
+          "references/cases.md"
+        ],
+        "max_turns": 10
+      },
+      "grader": "deterministic",
+      "note": "3종 서류(이력서·자소서·채용공고)가 모두 감지되는 Case 4 라우팅. references/cases.md Case 4 대본 Read 여부와 Phase 1 감지 완료 텔레메트리(event=detected) append를 결정적으로 확인한다. PR 게이트 1순위 후보 — Glob 스캔·분류 로직의 최소 회귀 신호."
+    },
+    {
+      "id": "auto-periodic-jd-paste-routing",
+      "tier": "periodic",
+      "prompt": "이 텍스트 보고 저 지금 뭐부터 준비하면 될까요?\n\n네이버 백엔드 개발자 채용공고\n자격요건: Java/Kotlin 기반 서버 개발 경험, Spring Framework 활용 경험, RDBMS 및 NoSQL 사용 경험, RESTful API 설계 및 구현 경험\n우대사항: 대용량 트래픽 처리 경험, MSA 경험, Kubernetes·Docker 활용 경험\n전형 절차: 서류전형 → 코딩테스트 → 1차 면접(기술) → 2차 면접(임원) → 최종합격",
+      "files": [],
+      "setup": [],
+      "expectations": {
+        "must_contain": [
+          "채용공고"
+        ],
+        "must_not_contain": [
+          "다각적",
+          "포괄적",
+          "심층적",
+          "혁신적",
+          "체계적",
+          "합격 보장",
+          "무조건 통과",
+          "전문가가 직접 첨삭",
+          "AI 대체 불가"
+        ],
+        "must_call": [],
+        "must_read": [
+          "references/cases.md"
+        ],
+        "max_turns": 10
+      },
+      "grader": "llm",
+      "note": "파일이 아니라 '붙여넣은 텍스트'가 JD 원문으로 정확히 분류되어 Case 2 흐름(서류 형태 진단)으로 이어지는지, AskUserQuestion 규칙(현재상황→질문→추천→선택지)과 보이스 원칙을 지키는지는 grep만으로 판정하기 어려워 LLM 채점을 병행한다."
+    },
+    {
+      "id": "auto-e2e-resume-handoff",
+      "tier": "e2e",
+      "prompt": "/auto 로 시작해 주세요. 이 폴더의 이력서를 보고 지금 제 준비 상태를 진단하고, 사용자 확인 없이 바로 이어서 첨삭까지 이 세션에서 진행해 주세요. 이름·이메일 등은 이력서에 있는 그대로 실제 정보이니 확인 질문 없이 사용하시면 됩니다.",
+      "files": [
+        "test/sample-data/이력서_홍길동.md"
+      ],
+      "setup": [],
+      "expectations": {
+        "must_contain": [
+          "이력서",
+          "7대 실수"
+        ],
+        "must_not_contain": [
+          "다각적",
+          "포괄적",
+          "심층적",
+          "혁신적",
+          "체계적",
+          "합격 보장",
+          "무조건 통과",
+          "전문가가 직접 첨삭",
+          "AI 대체 불가"
+        ],
+        "must_call": [],
+        "must_read": [
+          "references/cases.md"
+        ],
+        "max_turns": 16
+      },
+      "grader": "llm",
+      "note": "Case 1(이력서만 있음) 진단·제안에서 그치지 않고 Phase 5 핸드오프로 resume 워크플로우까지 같은 세션에서 실제로 이어지는지 확인하는 전체 흐름 케이스. 헤드리스 실행에서 AskUserQuestion 대기를 줄이려 프롬프트에 '확인 없이 진행'을 선제 명시했다 — docs/evals.md 케이스 작성 규칙 참조."
+    }
+  ],
+  "should_trigger": [
+    {
+      "query": "취업 준비 뭐부터 시작해야 할지 모르겠어요",
+      "expect": true
+    },
+    {
+      "query": "이 폴더에 이력서랑 자소서 넣어놨는데 봐주세요",
+      "expect": true
+    },
+    {
+      "query": "안녕하세요, 뭐 도와줄 수 있나요?",
+      "expect": true
+    },
+    {
+      "query": "지금 제 상황에서 뭐부터 하면 좋을까요",
+      "expect": true
+    },
+    {
+      "query": "이력서 첨삭해줘",
+      "expect": false
+    },
+    {
+      "query": "카카오 연봉 협상 어떻게 하죠",
+      "expect": false
+    },
+    {
+      "query": "면접에서 왜 떨어졌는지 분석해줘",
+      "expect": false
+    },
+    {
+      "query": "경험 정리부터 하고 싶어요",
+      "expect": false
+    },
+    {
+      "query": "지원 현황 목록 보여줘",
+      "expect": false
+    },
+    {
+      "query": "네이버 기업분석 해줘",
+      "expect": false
+    }
+  ]
+}

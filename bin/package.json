@@ -1,6 +1,6 @@
 {
   "name": "jobstack-bin",
-  "version": "0.5.0",
+  "version": "1.0.0",
   "description": "jobstack 스크립트 의존성 — 채용공고 수집(Playwright·cheerio), .docx 산출(docx), YAML 계약(yaml)",
   "type": "module",
   "private": true,

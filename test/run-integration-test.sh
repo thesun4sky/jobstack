@@ -41,7 +41,8 @@ for lint in test-preambles.sh test-skill-refs.sh test-command-style.sh test-no-h
             test-fetch-diag.mjs test-wanted-verify.mjs test-is-fetch-adapter.mjs test-is-fetch-ssrf.mjs \
             test-tracker.sh test-exp.sh test-defense-map.sh test-ats-match.sh test-retro-stats.sh test-hwpx.sh \
             test-export.sh test-md2docx.mjs test-is-fetch-classify.sh test-fetch-diag-summary.sh \
-            test-saramin-parser.mjs test-saramin-api.mjs test-fetch-jobs-saramin.sh; do
+            test-saramin-parser.mjs test-saramin-api.mjs test-fetch-jobs-saramin.sh \
+            test-cron.sh test-learn.sh test-package-skill.sh; do
   if [ ! -x "$SCRIPT_DIR/$lint" ]; then
     log_test "FAIL" "린트: $lint" "스크립트 없음 또는 실행 권한 없음"
     continue

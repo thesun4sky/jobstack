@@ -14,6 +14,7 @@ when_to_use: |
   제출 전 마지막 단계로, 이력서·자소서·포트폴리오 간의 일관성과 공고 키워드 반영도를 최종 확인할 때 사용한다.
   개별 서류 작성은 /resume, /cover_letter, /portfolio 등 각 스킬 담당이며, 이 스킬은 통합 일관성만 점검한다.
   기본 정보 일관성, 경험 수치 일치, 스토리 연계성을 엄격하게 검증한다.
+effort: high
 metadata:
   preamble-tier: 4
   version: 0.2.0

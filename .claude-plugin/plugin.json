@@ -1,7 +1,7 @@
 {
   "name": "jobstack",
   "displayName": "jobstack — 한국 취업 통합 엑셀러레이터",
-  "version": "0.5.0",
+  "version": "1.0.0",
   "description": "이력서·자소서 첨삭, 기업분석, 채용공고 탐색, 모의면접, 지원 현황 추적까지 한국 취업 준비 전 과정을 코칭하는 16개 스킬",
   "author": { "name": "thesun4sky", "url": "https://github.com/thesun4sky" },
   "homepage": "https://github.com/thesun4sky/jobstack",

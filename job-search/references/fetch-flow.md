@@ -17,6 +17,8 @@ job-search 스킬 SKILL.md Phase 2 에서 Read 한다.
 > 어느 사이트가 왜 막히는지는 이 파일에 보존됩니다. 실시간으로 원인을 보려면 `2>/dev/null`을 떼세요.
 >
 > 플랫폼별 집계·연속 차단 경고는 `"$_JS_BIN/jobstack-fetch-diag" summary --since 7d` (env.sh 소싱 후)로 확인합니다. is-fetch 결과 JSON의 `block_class`(waf_challenge/captcha/access_denied/rate_limited/login_wall)는 차단 원인 설명에 쓰되, 채택 여부는 여전히 `verdict`로 판정합니다.
+>
+> 진단 원인이 challenge·too_small·empty_result 로 반복되면 `"$_JS_BIN/jobstack-learn" add --skill job-search --kind selector_broken --key <플랫폼>.<cause>`(차단이면 `--kind source_blocked`) (env.sh 소싱 후)로 운영 메모를 남깁니다 — key·note 에 검색어 같은 사용자 값은 넣지 않습니다.
 
 #### 5단계: WebSearch 보조 (결과 부족 시에만)
 

@@ -13,6 +13,7 @@ argument-hint: "[모드: 인성|PT|토론|AI|기술|임원|컬처핏] [회사명
 when_to_use: |
   실전 면접 상황을 시뮬레이션하며 질문에 답하고 즉시 피드백과 종합 리포트를 받고 싶을 때 사용합니다. 인성·PT·토론·AI역량검사·기술·임원·컬처핏 7개 모드를 지원하고, `/company_research`나 `/cover_letter`에서 만든 자료가 있으면 자동으로 반영해 맞춤 질문을 만듭니다.
   자소서 문항 자체를 쓰거나 고치려면 `/cover_letter`를, 기업 정보 수집이 먼저면 `/company_research`를, 취업 전체 로드맵이 필요하면 `/strategy`를 사용합니다. `/cover_letter`가 만든 미끼 문장(defense-map)을 면접 질문 소재로 이어받아 활용하지만, 문서 첨삭 자체는 이 스킬의 역할이 아닙니다.
+effort: high
 metadata:
   preamble-tier: 4
   version: 0.2.0
@@ -230,6 +231,8 @@ AskUserQuestion으로 면접 강도를 선택합니다:
 | G) 컬처핏 | `references/modes/culture.md` |
 
 공기업·공공기관 지원자의 A) 인성·E) 기술 면접에서는 `${CLAUDE_SKILL_DIR}/references/ncs-competencies.md`(구·신 능력 체계와 판정 규칙)도 Read 해 직업기초능력·직업공통능력 기반 질문을 만든다.
+
+E) 기술면접에는 AI 도구 활용 과제 서브모드(E-2)가 있다 — 공고·기업분석 결과에서 AI 사용 허용 전형이 확인되면 `references/modes/tech.md`의 E-2 절을 적용하고, 리포트에 검증 근거·수정 이력 항목을 둔다.
 
 ---
 

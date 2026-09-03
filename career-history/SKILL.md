@@ -19,6 +19,7 @@ when_to_use: |
   프로젝트 단위의 성과를 before→after 수치와 본인 기여도로 구조화하고, 이력서·자소서와의 역할을 구분할 때 사용한다.
   strategy나 experience-bank 스킬로 경험을 먼저 정리한 후 활용하면 더 효과적이다.
   이력서 본문은 /resume, 플랫폼 프로필은 /scout_profile 담당이다.
+effort: high
 metadata:
   preamble-tier: 3
   version: 0.1.0

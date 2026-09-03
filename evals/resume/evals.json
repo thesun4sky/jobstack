@@ -1,0 +1,148 @@
+{
+  "skill": "resume",
+  "cases": [
+    {
+      "id": "resume-gate-ats-grade",
+      "tier": "gate",
+      "prompt": "/resume 로 첨부한 이력서(resume-grade-a.md)의 ATS 키워드 매칭률을 산출해주세요. 요구 키워드 목록은 첨부한 keywords-grade5.txt 에 있습니다. 스크립트가 계산한 매칭률과 등급을 그대로 알려주세요.",
+      "files": [
+        "test/sample-data/ats/resume-grade-a.md",
+        "test/sample-data/ats/keywords-grade5.txt"
+      ],
+      "setup": [],
+      "expectations": {
+        "must_contain": [
+          "매칭률:",
+          "등급 A",
+          "80%"
+        ],
+        "must_not_contain": [
+          "다각적",
+          "포괄적",
+          "심층적",
+          "혁신적",
+          "체계적",
+          "합격 보장",
+          "무조건 통과",
+          "전문가가 직접 첨삭",
+          "AI 대체 불가"
+        ],
+        "must_call": [
+          "jobstack-ats-match --keywords --doc"
+        ],
+        "must_read": [],
+        "max_turns": 6
+      },
+      "grader": "deterministic",
+      "note": "키워드 추출을 모델에 맡기지 않고 파일을 그대로 쓰라고 지시해 변동성을 제거했다 — jobstack-ats-match 결정적 산출(4/5=80%→등급 A)을 그대로 relay하는지가 판정 기준이므로 PR 게이트 1순위 후보."
+    },
+    {
+      "id": "resume-periodic-pii-sample-guard",
+      "tier": "periodic",
+      "prompt": "제 이력서 첨삭해주세요.",
+      "files": [
+        "test/sample-data/이력서_홍길동.md"
+      ],
+      "setup": [],
+      "expectations": {
+        "must_contain": [
+          "예시"
+        ],
+        "must_not_contain": [
+          "다각적",
+          "포괄적",
+          "심층적",
+          "혁신적",
+          "체계적",
+          "합격 보장",
+          "무조건 통과",
+          "전문가가 직접 첨삭",
+          "AI 대체 불가"
+        ],
+        "must_call": [],
+        "must_read": [
+          "references/diagnosis.md"
+        ],
+        "max_turns": 8
+      },
+      "grader": "llm",
+      "note": "이력서_홍길동.md의 이름/이메일(hong@example.com)은 SKILL.md #130 경고가 명시한 예시값 패턴이다. 확정 사실로 단정하지 않고 사용자 확인을 요청하는지, 최초 첨삭(대조 대상 없음)이므로 7대 실수 진단표가 근거와 함께 나오는지, 보이스 원칙(직접적·구체적, 비판은 대안과 함께)을 지키는지는 LLM 채점으로 판단한다."
+    },
+    {
+      "id": "resume-e2e-jd-match-loop",
+      "tier": "e2e",
+      "prompt": "[네이버 백엔드 채용공고 요약] 자격요건: Java/Kotlin 서버 개발, Spring, RDBMS/NoSQL, RESTful API. 우대: 대용량 트래픽, MSA, Kubernetes, Docker.\n\n이 공고 기준으로 첨부한 제 이력서를 첨삭하고 ATS 매칭까지 진행해주세요. 이름·이메일 등은 이력서에 있는 그대로 실제 정보이니 확인 질문 없이 그대로 사용하시면 됩니다.",
+      "files": [
+        "test/sample-data/이력서_홍길동.md"
+      ],
+      "setup": [],
+      "expectations": {
+        "must_contain": [
+          "매칭률"
+        ],
+        "must_not_contain": [
+          "다각적",
+          "포괄적",
+          "심층적",
+          "혁신적",
+          "체계적",
+          "합격 보장",
+          "무조건 통과",
+          "전문가가 직접 첨삭",
+          "AI 대체 불가"
+        ],
+        "must_call": [
+          "jobstack-ats-match --keywords --doc"
+        ],
+        "must_read": [
+          "references/ats.md"
+        ],
+        "max_turns": 16
+      },
+      "grader": "llm",
+      "note": "Phase 2C(기업 맞춤)→Phase 4(ATS)→Phase 5(STAR)→Phase 6(정량화)→Phase 8(placeholder 스캔 후 .docx 산출 시도)로 이어지는 전체 루프의 완결성과 날조 금지 준수를 LLM으로 판단. #130 확인 절차는 프롬프트에서 선제 해소해 헤드리스 완결을 노렸다(별도 PII 가드 검증은 periodic 케이스 담당)."
+    }
+  ],
+  "should_trigger": [
+    {
+      "query": "이력서 첨삭해줘",
+      "expect": true
+    },
+    {
+      "query": "이력서 새로 써줘, 신입 백엔드 개발자로 지원하려고",
+      "expect": true
+    },
+    {
+      "query": "ATS 키워드 매칭 좀 봐줘, 공고 붙여넣을게",
+      "expect": true
+    },
+    {
+      "query": "이 회사 맞춤으로 이력서 다듬고 싶어요",
+      "expect": true
+    },
+    {
+      "query": "경력기술서 작성해줘",
+      "expect": false
+    },
+    {
+      "query": "자기소개서 첨삭해줘",
+      "expect": false
+    },
+    {
+      "query": "서류랑 면접 방어 논리까지 통합으로 점검해줘",
+      "expect": false
+    },
+    {
+      "query": "헤드헌터용 요약 프로필 만들어줘",
+      "expect": false
+    },
+    {
+      "query": "지원한 회사들 진행 상태 보여줘",
+      "expect": false
+    },
+    {
+      "query": "경험 카드로 정리부터 하고 싶어",
+      "expect": false
+    }
+  ]
+}

@@ -14,7 +14,7 @@
 - 공유 템플릿: `templates/` (guardrails, voice, ask-user-question, completion-status, experience-methods, humanize-check, three-docs-guide, bot-protocol)
 - 상태 관리: `~/.jobstack/` (YAML/JSONL/Markdown) — 경로는 항상 `$_JS_STATE` 또는 `JOBSTACK_STATE_DIR` 로
 - 설정 관리: `bin/jobstack-config` (get/set/list)
-- 결정적 스크립트 계층(`bin/`): 상태 파일은 스킬이 손으로 쓰지 않고 스크립트가 쓴다 — `jobstack-tracker`(지원 현황), `jobstack-exp.mjs`(경험 카드), `jobstack-defense-map.mjs`(방어맵), `jobstack-ats-match`(키워드 매칭률), `jobstack-retro-stats`(회고 집계), `jobstack-fetch-diag`(수집 진단 집계), `hwpx2md.py`(한글 문서 변환), `md2docx.mjs`(pandoc 없는 docx 폴백). `test/test-script-layer.sh` 가 직접 편집 지시를 잡는다
+- 결정적 스크립트 계층(`bin/`): 상태 파일은 스킬이 손으로 쓰지 않고 스크립트가 쓴다 — `jobstack-tracker`(지원 현황), `jobstack-exp.mjs`(경험 카드), `jobstack-defense-map.mjs`(방어맵), `jobstack-ats-match`(키워드 매칭률), `jobstack-retro-stats`(회고 집계), `jobstack-fetch-diag`(수집 진단 집계), `hwpx2md.py`(한글 문서 변환), `md2docx.mjs`(pandoc 없는 docx 폴백), `jobstack-cron`(공고 모니터링 반복 실행·cron/launchd 등록), `jobstack-learn`(운영 학습 로그 — 메타만), `package-skill.sh`(claude.ai/Cowork 업로드 zip). `test/test-script-layer.sh` 가 직접 편집 지시를 잡는다
 - 서브에이전트: `agents/researcher.md` — company-research·salary·strategy 가 Agent 도구로 소스별 병렬 리서치를 맡긴다(JSON 반환 계약, 출처·기준일 필수)
 - 플러그인: `.claude-plugin/plugin.json`(스킬 16개·에이전트) + `.claude-plugin/marketplace.json`. `test/test-plugin-manifest.sh` 가 VERSION·스킬 목록 정합을 검사한다. `install.sh` 심링크 설치와 병행 지원
 
@@ -40,7 +40,8 @@
 - `test/test-preambles.sh` — 프리앰블 격리 실행(심링크 경로 주입) · `test/test-skill-refs.sh` — 참조 경로·생성 파일 드리프트·봇 마커
 - `test/lint-conventions.sh` — AI 만능 표현·금지 표현·시장 수치 · `test/test-command-style.sh` · `test/test-no-home-paths.sh` · `test/run-golden.sh`
 - `test/test-skill-size.sh --frontmatter` — 300줄 상한·description 예산·필수 키 · `test/test-script-layer.sh` — 상태 파일 직접 편집 지시 금지 · `test/test-plugin-manifest.sh`
-- 스크립트 테스트: `test/test-tracker.sh` · `test-exp.sh` · `test-defense-map.sh` · `test-ats-match.sh` · `test-retro-stats.sh` · `test-hwpx.sh` · `test-export.sh` · `test-is-fetch-classify.sh` · `test-fetch-diag-summary.sh` · `test-fetch-jobs-saramin.sh` · `node test/test-*.mjs`
+- 스크립트 테스트: `test/test-tracker.sh` · `test-exp.sh` · `test-defense-map.sh` · `test-ats-match.sh` · `test-retro-stats.sh` · `test-hwpx.sh` · `test-export.sh` · `test-is-fetch-classify.sh` · `test-fetch-diag-summary.sh` · `test-fetch-jobs-saramin.sh` · `test-cron.sh` · `test-learn.sh` · `test-package-skill.sh` · `node test/test-*.mjs`
+- 스킬 eval(`evals/<skill>/evals.json`, `test/run-evals.sh`): `claude -p` 헤드리스 실행으로 must_contain·must_call·must_read 를 판정한다. API 비용이 들어 CI 에 넣지 않고 로컬·야간에 돌린다(`docs/evals.md`)
 
 ## 핵심 철학 (ETHOS.md 참조)
 

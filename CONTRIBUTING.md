@@ -36,7 +36,7 @@ jobstack에 기여해주셔서 감사합니다!
 ## 검사
 
 PR 전에 `test/run-integration-test.sh` 를 실행합니다. 개별 린트:
-`test/run-integration-test.sh` 가 전부 실행한다: 린트(`lint-conventions.sh`, `test-preambles.sh`, `test-skill-refs.sh`, `test-command-style.sh`, `test-no-home-paths.sh`, `test-skill-size.sh --frontmatter`, `test-script-layer.sh`, `test-plugin-manifest.sh`, `run-golden.sh`) + 스크립트 테스트(`test-tracker.sh`, `test-exp.sh`, `test-defense-map.sh`, `test-ats-match.sh`, `test-retro-stats.sh`, `test-hwpx.sh`, `test-export.sh`, `test-is-fetch-classify.sh`, `test-fetch-diag-summary.sh`, `test-fetch-jobs-saramin.sh`, `node test/test-*.mjs`). 플러그인 매니페스트는 `claude plugin validate .` 로도 확인한다(루트 CLAUDE.md 경고는 무시 — 개발 가이드이지 플러그인 컨텍스트가 아니다)
+`test/run-integration-test.sh` 가 전부 실행한다: 린트(`lint-conventions.sh`, `test-preambles.sh`, `test-skill-refs.sh`, `test-command-style.sh`, `test-no-home-paths.sh`, `test-skill-size.sh --frontmatter`, `test-script-layer.sh`, `test-plugin-manifest.sh`, `run-golden.sh`) + 스크립트 테스트(`test-tracker.sh`, `test-exp.sh`, `test-defense-map.sh`, `test-ats-match.sh`, `test-retro-stats.sh`, `test-hwpx.sh`, `test-export.sh`, `test-is-fetch-classify.sh`, `test-fetch-diag-summary.sh`, `test-fetch-jobs-saramin.sh`, `test-cron.sh`, `test-learn.sh`, `test-package-skill.sh`, `node test/test-*.mjs`). 스킬 동작 자체는 `test/run-evals.sh --tier gate`(`claude -p`, API 비용)로 확인한다. 플러그인 매니페스트는 `claude plugin validate .` 로도 확인한다(루트 CLAUDE.md 경고는 무시 — 개발 가이드이지 플러그인 컨텍스트가 아니다)
 
 ## 이슈 제보
 

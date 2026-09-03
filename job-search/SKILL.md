@@ -169,6 +169,7 @@ metadata:
 > 플랫폼 절차: `${CLAUDE_SKILL_DIR}/references/platforms/saramin.md` — 사람인 검색을 시작하기 직전에 Read 한다.
 > 플랫폼 절차: `${CLAUDE_SKILL_DIR}/references/platforms/jumpit.md` — 점핏 검색을 시작하기 직전에 Read 한다.
 > 수집 실행·진단 세부: `${CLAUDE_SKILL_DIR}/references/fetch-flow.md` — 스크립트 실행이 막히거나 결과가 0건이라 원인을 진단할 때, 또는 WebSearch 보조 단계로 넘어갈 때 Read 한다.
+> 로그인 필터·반복 실행: Chrome 확장이 있으면 `${CLAUDE_SKILL_DIR}/references/chrome-path.md`(로그인 필터가 적용된 결과 읽기, 읽기만). 매일 자동 확인은 `"$_JS_BIN/jobstack-cron" install` (env.sh 소싱 후)(로컬 cron/launchd, `job-cache/daily-YYYY-MM-DD.md` 생성) 또는 `${CLAUDE_SKILL_DIR}/references/routines.md`(클라우드 Routines) — 사용자가 물을 때만 안내한다.
 
 4개 플랫폼 결과를 합쳐 10개 미만이면 WebSearch 보조를 사용합니다. 원티드 링크는 출력 전 verify 명령으로 전수 판정하고, 뉴스·회사 채용페이지 등 비플랫폼 소스는 "⚠️ 모집 여부 원문 직접 확인 필요" 라벨을 붙입니다 — 세부 하드게이트는 fetch-flow.md 를 따릅니다.
 

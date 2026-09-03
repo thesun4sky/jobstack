@@ -15,6 +15,7 @@ argument-hint: "[이력서 파일] [--company 회사명]"
 when_to_use: |
   이력서를 새로 작성하거나 기존 이력서를 첨삭·기업 맞춤화할 때 사용합니다. ATS 키워드 매칭, 7대 실수 진단, STAR·정량화 변환처럼 이력서 문서 자체를 다듬는 요청에 적용합니다.
   경력 전체를 길게 정리하는 경력기술서는 `/career_history`, 자기소개서는 `/cover_letter`, 서류·면접 방어 논리 통합 점검은 `/review`, 헤드헌터 노출용 요약 프로필은 `/scout_profile`이 담당하므로 그 경계를 넘어가는 요청은 해당 스킬로 넘깁니다.
+effort: high
 metadata:
   preamble-tier: 3
   version: 0.2.0
