@@ -217,10 +217,18 @@ HOME을 지우지 않고 로그 경로를 리포트에 남긴다(통과한 케�
 - `evals/<skill>/evals.json` — 케이스 정의 5개
 - `test/run-evals.sh` — 러너
 - `test/eval-report.md` / `test/eval-report.json` — 실행 결과(러너가 생성, 저장소에 커밋하지 않음
-  — CI 미포함 이유는 `NOTES.md` 참조)
+  — CI 미포함 이유는 아래 "왜 CI 에 넣지 않나" 절 참조)
 - `test/eval-trigger-report.md` / `test/eval-trigger-report.json` — `--trigger` 결과
 - `test/golden/`, `test/lint-conventions.sh` — 이 체계가 재사용하는 기존 결정적 판정 근거
 
 ## 권한 플래그 실측 (2026-09-03)
 
 `--permission-prompts none` 은 "승인 요청을 전부 거부"라 Skill 도구 호출부터 막혔고, `--dangerously-skip-permissions`/`--permission-mode bypassPermissions` 는 root 컨테이너에서 거부된다. 실제로 동작한 것은 `--permission-mode auto`(모델 분류기가 승인/거부 판단)이며 runner 는 이것을 쓴다. 또 `while read … < <(…)` 루프 안의 `claude -p` 는 반드시 `</dev/null` 로 표준입력을 끊어야 두 번째 케이스부터 조용히 누락되지 않는다(runner 에 반영).
+
+## must_output (2026-09-03 추가)
+
+`must_output` 은 도구 결과(Bash stdout 등)에 있어야 하는 토큰이다. 스크립트가 낸 값이 근거인 케이스(tracker stats 의 `퍼널 전환율` 등)는 모델이 최종 답변에서 출력을 요약해도 스크립트 실행 자체를 판정해야 하므로 `must_contain` 대신 이것을 쓴다. `must_contain` 은 여전히 최종 텍스트 + 생성 파일만 본다.
+
+## 왜 CI 에 넣지 않나
+
+API 키·비용이 필요하고(GitHub Actions 는 모든 브랜치 push 에서 돌아 포크 PR 에 시크릿이 노출될 수 있다), LLM 채점은 비결정적이다. gate 계층만 시크릿이 있는 예약 워크플로우로 돌리는 것이 다음 단계다.

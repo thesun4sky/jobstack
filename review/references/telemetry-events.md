@@ -62,15 +62,6 @@ echo '{"skill":"auto","ts":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","pid":'$$',"event"
 - 하위호환: `event` 필드가 없는 라인은 전부 `entry`로 집계한다 — 기존 v1 파일과 혼재해도 동작.
 - 소비 스킬 반영 지점: auto(`detected` 필수 — 라우팅 결과 기록), cover-letter/resume/review(`submitted`/`diagnosed`/`second_review`), 파일 산출 스킬(`exported`).
 
-# (초안) docs/telemetry-events.md 에 추가할 절 — 운영 학습 로그(learnings.jsonl)
-
-> **통합 방법**: 이 파일 전체를 `docs/telemetry-events.md` 파일 끝에 그대로 이어 붙인다(기존 문서의
-> "## 퍼널 지표 정의" 절 다음). 제목 레벨은 기존 문서 안에서 하나의 새 절로 들어가도록 이미
-> `##`로 맞춰 놓았다. 통합 시 아래 "부록: 원본 U-20 요구사항" 절은 지우고 본문만 남긴다.
-> (검토 보고서 U-20, v1.0 후보 — 2026-09 draft, 미확정)
-
----
-
 ## 운영 학습 로그 — learnings.jsonl
 
 skill-usage.jsonl 이 "스킬이 얼마나 쓰였는지"를 재는 것과 달리, 이 로그는 "스킬을 운영하면서
@@ -157,7 +148,7 @@ skill-usage.jsonl 이 "스킬이 얼마나 쓰였는지"를 재는 것과 달리
   `--since` 로 기간을 한정할 수 있고, auto 대시보드는 기본(전체 기간·상위 3건)으로 호출한다.
 - 이미 고친 문제가 계속 상위 3건에 남아 대시보드 소음이 되는 상황을 막는 "해결 표시"
   (예: `jobstack-learn resolve`) 는 **이 초안 범위에 없다.** 실제로 반복 노출이 문제로
-  확인되면 후속 항목으로 추가한다(NOTES.md 의 "이번 초안이 하지 않은 것" 참조) — 정식 등록 전
+  확인되면 후속 항목으로 추가한다(`docs/plans/v1.0-execution-log.md` v1.0 절의 미검증·후속 항목 참조) — 정식 등록 전
   임의로 스킬 본문에서 흉내 내지 않는다.
 - 사용자가 직접 정리하고 싶으면 `learnings.jsonl` 파일을 지우거나 편집해도 안전하다(다른
   상태 파일과의 참조 관계가 없는 독립 로그).
@@ -192,17 +183,3 @@ skill-usage.jsonl 이 "스킬이 얼마나 쓰였는지"를 재는 것과 달리
 | export(jobstack-export) | pandoc·Node docx 폴백 모두 불가할 때(exit 2) | `tool_missing` | `jobstack-export.pandoc` |
 | export(jobstack-export) | 변환 결과에 미확인 placeholder 가 반복해서 남을 때(exit 4) | `format_mismatch` | `jobstack-export.placeholder` |
 | (모든 스킬 공통) | 위 5종 어디에도 안 맞는 운영 이슈 | `other` | 스킬별로 정의 |
-
----
-
-## 부록: 원본 U-20 요구사항 (통합 시 삭제)
-
-> 검토 보고서 `docs/plans/version-upgrade-review-2026-09.md` §3 U-20 행 원문:
-> "운영 학습 로그 — gstack `learnings.jsonl` 패턴을 축소 도입: 스킬 종료 시 '운영상 배운
-> 것'(어느 플랫폼 셀렉터가 깨졌는지, 어떤 자료 요청이 반복되는지)을
-> `$_JS_STATE/analytics/learnings.jsonl`에 메타만 기록하고 auto 대시보드가 상위 3건을
-> 보여줌. 사용자 문서 내용은 기록하지 않음(telemetry-events.md PII 규칙 준수)." 수용 기준:
-> "이벤트 어휘를 `docs/telemetry-events.md`에 정식 추가한 뒤에만 append."
->
-> 이 초안 문서가 그 수용 기준의 "정식 추가" 절차 자체다 — 리뷰·확정 전까지는 스킬 본문에서
-> `jobstack-learn add` 를 호출하지 않는다.

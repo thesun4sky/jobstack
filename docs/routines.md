@@ -95,4 +95,3 @@ limit: 20
 ## 참고
 
 - 로컬 대안: `bin/jobstack-cron` (`docs/plans/version-upgrade-review-2026-09.md` U-14 ①)
-- 통합 시 바꿔야 할 저장소 파일·결정 사항: `NOTES.md`

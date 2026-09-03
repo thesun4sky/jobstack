@@ -11,7 +11,7 @@ allowed-tools:
   - WebSearch
   - WebFetch
   - Agent
-argument-hint: "<회사명> [직무] [--deep]"
+argument-hint: "<회사명> [직무]"
 when_to_use: |
   채용공고 URL·JD 원문이 있거나 기업명과 직무를 알고 있고, 지원 여부 판단이나 자소서·면접 준비를 위해
   단일 기업을 분석할 때 사용한다. 오늘 날짜 캐시가 있으면 재사용 여부부터 확인한다.

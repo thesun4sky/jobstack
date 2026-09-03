@@ -18,9 +18,22 @@
 
 1차 실행에서는 3/5 였다 — cover-letter 가 폴더의 파일을 찾지 않고 되물었고(스킬 Phase 0 에 입력 확보 규칙 추가), resume 케이스는 CLI 인자 지시 프롬프트 때문에 Skill 대신 셸 탐색으로 흘러 턴 상한을 넘겼다(프롬프트를 `/resume …` 로 교정). 재실행 5/5.
 
-### periodic·e2e (LLM 채점 병행, 각 5케이스)
+### periodic·e2e (LLM 채점 병행, 각 5케이스) — 재실행 periodic 3/5 · e2e 3/5
 
-(재실행 결과를 아래에 기록한다)
+| tier | 스킬 | 케이스 | 판정 | 실패 사유·관찰 |
+|---|---|---|---|---|
+| periodic | auto | auto-periodic-jd-paste-routing | PASS | JD 붙여넣기 → Case 2 라우팅, LLM PASS |
+| periodic | cover-letter | cover-letter-periodic-keyword-rate | FAIL | 반영률을 손으로 계산 — `jobstack-ats-match` 미호출, `references/keyword-checklist.md` 미Read(LLM 은 PASS) |
+| periodic | experience-bank | expbank-periodic-numberless-fallback | FAIL | 수치 폴백 5기준 대신 곧장 인터뷰 질문 — `[수치 확인 필요]` 미표기, experience-methods 미Read(LLM 은 PASS) |
+| periodic | resume | resume-periodic-pii-sample-guard | PASS | 샘플 개인정보를 "예시"로 판별하고 확인 질문 |
+| periodic | tracker | tracker-periodic-rejection-checklist | PASS | 불합격 전환 후 권리 체크리스트 안내(독립 실행 간 문구 편차 있음) |
+| e2e | auto | auto-e2e-resume-handoff | FAIL | Case 대본(`references/cases.md`) 미Read, "확인 없이 진행" 지시에도 질문으로 멈춤(LLM FAIL) |
+| e2e | cover-letter | cover-letter-e2e-new-draft-humanize | FAIL | 신규 작성 흐름이 Phase 1~2 질문에서 멈춰 초안·결이요·인간화 점검까지 못 감(LLM FAIL) |
+| e2e | experience-bank | expbank-e2e-ai-usage-chain | PASS | `jobstack-exp.mjs add → validate → list` 체인, ai_usage 3필드 |
+| e2e | resume | resume-e2e-jd-match-loop | PASS | JD 기준 첨삭 + `jobstack-ats-match` 매칭률 |
+| e2e | tracker | tracker-e2e-add-update-stats-chain | PASS | add/update/stats 스크립트 호출 확인. 최종 답변이 stats 출력을 요약해 "전환율" 이 프로즈에서 빠졌으므로(도구 출력은 사용자 화면에 보임) 판정을 `must_output`(도구 결과 텍스트)으로 옮겨 통과 |
+
+읽는 법: gate 는 게이트(결정적, 5/5), periodic·e2e 는 추세 관찰용이다. 남은 실패 4건 중 3건은 "질문에 답할 사람이 없는 헤드리스 1턴" 특성(auto·cover-letter e2e, experience-bank periodic)이고, 1건은 스킬 지시를 모델이 건너뛴 사례(cover-letter 반영률 스크립트 미호출)다 — 스킬 문구를 보강해 다음 실행에서 다시 본다. tracker 의 "출력 요약" 은 러너에 `must_output`(도구 결과 판정)을 추가해 해결했다. 총 15케이스 기준 11/15.
 
 ### 모델 비교 (U-19, tracker gate 케이스 2회씩)
 

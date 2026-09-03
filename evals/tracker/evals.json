@@ -77,9 +77,7 @@
       "files": [],
       "setup": [],
       "expectations": {
-        "must_contain": [
-          "전환율"
-        ],
+        "must_contain": [],
         "must_not_contain": [
           "다각적",
           "포괄적",
@@ -97,7 +95,12 @@
           "jobstack-tracker stats"
         ],
         "must_read": [],
-        "max_turns": 14
+        "max_turns": 14,
+        "must_output": [
+          "추가됨",
+          "갱신됨",
+          "퍼널 전환율"
+        ]
       },
       "grader": "deterministic",
       "note": "한 세션 안에서 add→update→stats 세 하위 명령이 순서대로 체이닝되는지 확인하는 전체 흐름 케이스. 빈 상태에서 시작하므로 이전 케이스의 seed와 독립적이다(케이스별 격리 작업 디렉토리·STATE_DIR 전제)."

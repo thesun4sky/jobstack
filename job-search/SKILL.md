@@ -162,7 +162,7 @@ metadata:
 
 #### 플랫폼별 채용공고 수집
 
-수집 순서는 원티드 → 잡코리아 → 사람인 → 점핏이며, 한 플랫폼 결과가 비어도 다음 플랫폼 수집은 계속 진행합니다.
+수집 순서는 원티드 → 잡코리아 → 사람인 → 점핏이며, 한 플랫폼 결과가 비어도 다음 플랫폼 수집은 계속 진행합니다. `--platform <wanted|saramin|jobkorea|jumpit>` 인자가 주어지면 그 플랫폼 하나만 수집합니다(나머지 규칙 동일).
 
 > 플랫폼 절차: `${CLAUDE_SKILL_DIR}/references/platforms/wanted.md` — 원티드 검색을 시작하기 직전에 Read 한다.
 > 플랫폼 절차: `${CLAUDE_SKILL_DIR}/references/platforms/jobkorea.md` — 잡코리아 검색을 시작하기 직전에 Read 한다.

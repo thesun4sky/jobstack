@@ -196,7 +196,7 @@ company-cache에 기업분석 리포트가 있으면 **파일명 날짜를 확�
 > 상세 자료: `${CLAUDE_SKILL_DIR}/references/interview-link.md` — 미끼 포인트 인벤토리와 위험 문장 테스트 출력 형식을 만들기 직전에 Read 한다.
 
 - **역할 경계**: 위험 문장의 **수정/삭제 판단**까지 cover-letter가 담당하고, 답변 연습·심화 준비는 `/mock_interview`로 핸드오프합니다.
-- 미끼·위험 문장·예상 질문 산출 구조는 `${CLAUDE_SKILL_DIR}/references/defense-map-schema.md`의 YAML 계약을 따라 `$_JS_STATE/defense-maps/<회사명>_<직무>_<YYYYMMDD>.yaml`로 저장해 mock-interview가 소비할 수 있게 합니다(entry별 `sentence`·`bait_type`·`questions`(2개 이상)·`defense_status`). 저장은 YAML을 손으로 쓰지 않고 `"$_JS_BIN/jobstack-defense-map.mjs" add --company <회사명> --position <직무> --source-skill cover-letter --document-ref <원문 파일> --entries-json '<entries JSON>'` (env.sh 소싱 후)로 하며(스키마 검증·파일명 규칙 포함), 검증 오류가 나면 entry를 고쳐 재시도합니다.
+- 미끼·위험 문장·예상 질문 산출 구조는 `${CLAUDE_SKILL_DIR}/references/defense-map-schema.md`의 YAML 계약을 따라(entries-json을 구성하기 직전에 이 파일을 Read — entry마다 `id`·`sentence`·`location`·`bait_type`·`questions[{q,intent,difficulty}]` 2개 이상·`answer_hint`·`defense_status`; 미끼 포인트는 최소 5개 → entries 5개 이상) `$_JS_STATE/defense-maps/<회사명>_<직무>_<YYYYMMDD>.yaml`로 저장해 mock-interview가 소비할 수 있게 합니다. 저장은 YAML을 손으로 쓰지 않고 `"$_JS_BIN/jobstack-defense-map.mjs" add --company <회사명> --position <직무> --source-skill cover-letter --document-ref <원문 파일> --entries-json '<entries JSON>'` (env.sh 소싱 후)로 하며(스키마 검증·파일명 규칙 포함), 검증 오류가 나면 entry를 고쳐 재시도합니다.
 
 > 상세 자료: `${CLAUDE_SKILL_DIR}/references/interview-link.md` — 면접 예상 질문 세트를 생성하기 직전에 Read 한다.
 
@@ -285,6 +285,7 @@ echo '{"skill":"cover-letter","ts":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","pid":'$$'
 - **완료 (DONE)** — 첨삭 완료 + 키워드 반영률 + 미끼 포인트 + 예상 질문
 - **우려사항 있는 완료 (DONE_WITH_CONCERNS)** — 키워드 반영률 70% 미만
 - **추가 정보 필요 (NEEDS_CONTEXT)** — 기업 정보 또는 경험 소재 부족
+- 구조화 전형(Phase 0 D)이었다면 `${CLAUDE_SKILL_DIR}/references/structured-modes.md` §4 게이트(문항별 글자수·답변 간 일관성)를 추가로 확인하고, 미통과면 DONE_WITH_CONCERNS 로 판정합니다.
 
 ### 결과물 뷰어
 결과 파일이 Markdown으로 저장되면 다음 명령으로 브라우저에서 열 수 있습니다:
