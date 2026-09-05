@@ -2,6 +2,24 @@
 # jobstack 통합 테스트 스크립트
 set -euo pipefail
 
+# 기본값으로 격리 HOME 에서 실행한다(PR #17 리뷰 반영) — 아래에서 install.sh 를 실제로 돌리므로
+# 그대로 두면 사용자의 ~/.claude/skills·~/.jobstack 이 바뀐다. 실제 설치 상태를 검증하려면 --real-home.
+REAL_HOME=0
+for arg in "$@"; do
+  case "$arg" in
+    --real-home) REAL_HOME=1 ;;
+    -h|--help) echo "사용법: $0 [--real-home]   (기본: mktemp 격리 HOME·상태 디렉토리, 종료 시 삭제)"; exit 0 ;;
+  esac
+done
+ISO_HOME=""
+if [ "$REAL_HOME" -ne 1 ]; then
+  ISO_HOME="$(mktemp -d "${TMPDIR:-/tmp}/jobstack-itest-home.XXXXXX")" || { echo "격리 HOME 생성 실패" >&2; exit 1; }
+  export HOME="$ISO_HOME"
+  export JOBSTACK_STATE_DIR="$HOME/.jobstack"
+  trap 'rm -rf "$ISO_HOME"' EXIT
+  echo "(격리 HOME: $ISO_HOME — 실제 ~/.claude/skills·~/.jobstack 은 건드리지 않습니다. 실제 설치 검증: --real-home)"
+fi
+
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 TEST_DATA="$SCRIPT_DIR/sample-data"

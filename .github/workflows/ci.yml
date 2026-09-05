@@ -68,3 +68,27 @@ jobs:
           export JOBSTACK_STATE_DIR="$HOME/.jobstack"
           export JOBSTACK_NPM_AUTO_INSTALL=0
           bash test/run-integration-test.sh
+
+  macos-smoke:
+    # PR #17 리뷰 반영 — 주요 사용자 환경(macOS: /bin/bash 3.2, /tmp → /private/tmp 심링크, launchd)에서
+    # 경로 정규화·docx 폴백·cron 등록·상태 파일 잠금을 최소 검증한다. 테스트는 시스템 bash 3.2 로 돌린다.
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Node 의존성 (bin/ — 브라우저 바이너리 제외)
+        run: cd bin && PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm install --no-audit --no-fund
+
+      - name: macOS smoke (preamble·export·md2docx·cron·tracker·exp·hwpx)
+        run: |
+          /bin/bash --version | head -1
+          /bin/bash test/test-preambles.sh
+          /bin/bash test/test-export.sh
+          node test/test-md2docx.mjs
+          /bin/bash test/test-cron.sh
+          /bin/bash test/test-tracker.sh
+          /bin/bash test/test-exp.sh
+          /bin/bash test/test-hwpx.sh

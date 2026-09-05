@@ -54,6 +54,21 @@ printf '\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1' > "$WORK/legacy.hwp"; head -c 600 /dev
 OUT=$(python3 "$REPO/bin/hwpx2md.py" "$WORK/legacy.hwp" --converter none 2>&1); RC=$?
 [ $RC -eq 3 ] && grep -q 'HWPX' <<<"$OUT" && ok "hwp 변환기 부재 → exit 3 안내" || bad "hwp exit 3" "rc=$RC $OUT"
 
+# npx 자동 실행은 명시 opt-in 만(PR #17 리뷰 반영) — 가짜 npx 로 호출 여부와 고정 버전 인자를 확인한다
+FAKEBIN="$WORK/fakebin"; mkdir -p "$FAKEBIN"
+cat > "$FAKEBIN/npx" <<'FAKE_NPX'
+#!/usr/bin/env bash
+printf '%s\n' "$*" > "${FAKE_NPX_LOG:?}"
+echo "# fake kordoc output"
+FAKE_NPX
+chmod +x "$FAKEBIN/npx"
+NPX_LOG="$WORK/npx.log"
+OUT=$(PATH="$FAKEBIN:$PATH" FAKE_NPX_LOG="$NPX_LOG" JOBSTACK_ALLOW_NPX= python3 "$REPO/bin/hwpx2md.py" "$WORK/legacy.hwp" 2>&1); RC=$?
+[ $RC -eq 3 ] && [ ! -f "$NPX_LOG" ] && ok "npx 기본 미허용 → 호출 없이 exit 3" || bad "npx 기본 미허용" "rc=$RC log=$(cat "$NPX_LOG" 2>/dev/null)"
+grep -q 'JOBSTACK_ALLOW_NPX=1' <<<"$OUT" && ok "exit 3 안내에 opt-in 방법 표기" || bad "opt-in 안내" "$OUT"
+OUT=$(PATH="$FAKEBIN:$PATH" FAKE_NPX_LOG="$NPX_LOG" JOBSTACK_ALLOW_NPX=1 python3 "$REPO/bin/hwpx2md.py" "$WORK/legacy.hwp" 2>&1); RC=$?
+[ $RC -eq 0 ] && grep -q -- '-y kordoc@4.12.3 ' "$NPX_LOG" 2>/dev/null && ok "JOBSTACK_ALLOW_NPX=1 → 고정 버전 kordoc@4.12.3 로 npx 호출" || bad "npx opt-in 호출" "rc=$RC log=$(cat "$NPX_LOG" 2>/dev/null) out=$OUT"
+
 # 정체불명 파일
 echo "plain" > "$WORK/x.bin"
 python3 "$REPO/bin/hwpx2md.py" "$WORK/x.bin" >/dev/null 2>&1; [ $? -eq 1 ] && ok "비 HWP 파일 exit 1" || bad "비 HWP exit 1"

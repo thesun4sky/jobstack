@@ -52,6 +52,13 @@
 - 문서 정정: Routines 과금(구독 사용량 소모)·최소 간격 기준일, Cowork 전제 `[2차]` 표기·`/resume`
   충돌 확인 항목, telemetry-events 초안 잔재 제거, NOTES.md 막다른 참조 제거, tracker 탈락 후
   체크리스트 수치 제거, policy-checklist 의 cron 분기 알림 문구 완화, 0.5.0 바이트 감소율 정정.
+- PR #17 리뷰 반영: `md2docx.mjs` CLI 진입 판정을 realpath 비교로 바꿔 심링크 경로(macOS `/tmp`)에서도
+  변환하고, `jobstack-export` 는 산출물 존재·zip 유효성을 확인한 뒤에만 성공을 보고. `run-integration-test.sh`
+  는 기본으로 격리 HOME 에서 실행(`--real-home` 일 때만 실제 설치 검증). `.hwp` 변환의 `npx kordoc` 자동
+  실행은 기본 꺼짐(`JOBSTACK_ALLOW_NPX=1` 명시 허용, `kordoc@4.12.3` 고정). `jobstack-cron` 은 node 부재
+  시 exit 1, 전 플랫폼 수집 실패 시 exit 2, cron/launchd 등록 항목에 PATH 를 넣음. tracker·exp·defense-map
+  의 읽기-수정-쓰기를 파일 잠금으로 감싸 동시 add 유실 방지. `fetch-jobs.mjs`·cron 의 limit 을 1~100 정수로
+  검증. 테스트를 실경로·launchd 기대값으로 분리하고 CI 에 macOS smoke job 추가.
 
 ## [0.5.0] - 2026-09-03
 

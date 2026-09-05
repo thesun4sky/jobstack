@@ -36,6 +36,23 @@ set -u
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REFERENCE="$SCRIPT_DIR/../templates/export/ats-reference.docx"
 
+# 산출물 검증 — 비어 있지 않고 zip(.docx) 으로 열리며 word/document.xml 이 있는지 확인한다
+# (PR #17 리뷰 반영: 변환기가 exit 0 을 내고도 파일을 만들지 않은 경우를 "성공" 으로 보고했다).
+# python3 이 없는 PATH 에서는 존재·크기 검사만 한다.
+verify_docx() {
+  [ -s "$1" ] || return 1
+  if command -v python3 >/dev/null 2>&1; then
+    python3 -c 'import sys, zipfile
+try:
+    with zipfile.ZipFile(sys.argv[1]) as z:
+        sys.exit(0 if "word/document.xml" in z.namelist() else 1)
+except Exception:
+    sys.exit(1)' "$1"
+  else
+    return 0
+  fi
+}
+
 IN="${1:-}"
 if [ -z "$IN" ] || [ ! -f "$IN" ]; then
   echo "사용법: jobstack-export <입력.md> [출력.docx]" >&2
@@ -115,7 +132,7 @@ if [ "$USE_PANDOC" -eq 1 ]; then
     REF_ARGS=(--reference-doc="$REFERENCE")
   fi
 
-  if pandoc "$IN" -o "$OUT" "${REF_ARGS[@]+"${REF_ARGS[@]}"}" 2>/dev/null; then
+  if pandoc "$IN" -o "$OUT" "${REF_ARGS[@]+"${REF_ARGS[@]}"}" 2>/dev/null && [ -s "$OUT" ]; then
     print_abs_path "$OUT"
     exit 0
   else
@@ -132,8 +149,14 @@ NODE_STDERR="$(node "$NODE_SCRIPT" "$IN" "$OUT" 2>&1 >/dev/null)"
 NODE_RC=$?
 
 if [ "$NODE_RC" -eq 0 ]; then
-  print_abs_path "$OUT"
-  exit 0
+  if verify_docx "$OUT"; then
+    print_abs_path "$OUT"
+    exit 0
+  fi
+  [ -n "$NODE_STDERR" ] && printf '%s\n' "$NODE_STDERR" >&2
+  echo "변환기가 성공을 보고했지만 산출물이 없거나 유효한 .docx(zip) 가 아닙니다: $OUT" >&2
+  echo "변환 실패 — 마크다운 내용을 문서 앱(Word/한글/Pages)에 복사해 저장하세요" >&2
+  exit 3
 fi
 
 if [ "$NODE_RC" -eq 3 ] && printf '%s' "$NODE_STDERR" | grep -q 'docx' && printf '%s' "$NODE_STDERR" | grep -q '패키지'; then

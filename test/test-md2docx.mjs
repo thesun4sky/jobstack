@@ -10,7 +10,7 @@
  */
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync, statSync, writeFileSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -229,6 +229,19 @@ try {
     const cliXml = readDocumentXml(cliOut);
     assert.ok(!cliXml.includes('<w:tbl'), 'CLI 산출물에 표 태그가 있음');
     assert.ok(cliXml.includes('CLI굵게'), 'CLI 산출물에 기대 텍스트가 없음');
+  });
+
+  // ── 심링크를 거친 경로로 실행(macOS 의 /tmp → /private/tmp 재현) → 여전히 main 이 돌아 산출물 생성 ──
+  // PR #17 리뷰 반영: import.meta.url(실경로) 과 process.argv[1](심링크 경로) 의 문자열 비교로
+  // main 이 건너뛰어져 exit 0 인데 파일이 없던 회귀.
+  const linkDir = mkdtempSync(join(tmpdir(), 'md2docx-link-'));
+  const binLink = join(linkDir, 'binlink');
+  symlinkSync(dirname(MD2DOCX), binLink);
+  const linkOut = join(linkDir, 'link.docx');
+  const resLink = spawnSync(process.execPath, [join(binLink, 'md2docx.mjs'), cliMd, linkOut], { encoding: 'utf8' });
+  check('심링크 경로로 실행해도 CLI main 이 돈다(exit 0 + 산출물 존재)', () => {
+    assert.equal(resLink.status, 0, resLink.stderr);
+    assert.ok(existsSync(linkOut), '심링크 경로 실행 시 산출물이 없음');
   });
 
   check('CLI 인자 부족 → exit 1', () => {

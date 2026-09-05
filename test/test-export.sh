@@ -114,13 +114,15 @@ if [ "\${1:-}" = "--version" ]; then
   echo "Compiled with pandoc-types 1.23"
   exit 0
 fi
-# 변환 모드(호출되면 안 됨 — 호출되면 아래처럼 빈 파일을 남겨 테스트가 이를 잡아낸다)
+# 변환 모드(case 3 에서는 호출되면 안 됨 — 호출되면 zip 이 아닌 텍스트를 남겨 zip 검사가 이를 잡아낸다.
+# force 케이스에서는 이 출력이 그대로 산출물이 되므로 비어 있지 않아야 한다 — jobstack-export 가
+# pandoc 경로에서도 산출물 존재를 확인하기 때문(PR #17 리뷰 반영))
 out=""; prev=""
 for a in "\$@"; do
   [ "\$prev" = "-o" ] && out="\$a"
   prev="\$a"
 done
-[ -n "\$out" ] && : > "\$out"
+[ -n "\$out" ] && echo "fake-pandoc-output" > "\$out"
 exit 0
 EOF
 chmod +x "$FAKE3_DIR/pandoc"
@@ -133,7 +135,7 @@ RC3=$?
 grep -q '< 3.6' "$STDERR3" && ok "(3) stderr 버전 경고(< 3.6)" || bad "(3) 버전 경고" "$(cat "$STDERR3")"
 grep -q 'Node docx 폴백' "$STDERR3" && ok "(3) stderr 폴백 알림" || bad "(3) 폴백 알림" "$(cat "$STDERR3")"
 R3="$(zip_table_check "$OUT3")"
-[ "$R3" = "OK_NOTBL" ] && ok "(3) 산출물이 Node 변환 유효 zip(가짜 pandoc 의 빈 파일이 아님)" || bad "(3) 산출물 zip 유효성" "$R3"
+[ "$R3" = "OK_NOTBL" ] && ok "(3) 산출물이 Node 변환 유효 zip(가짜 pandoc 의 텍스트 파일이 아님)" || bad "(3) 산출물 zip 유효성" "$R3"
 
 # ── (4) 가짜 pandoc 3.7.0(>= 3.6) → 실제 사용, 마커 파일로 호출 확인 ──
 FAKE4_DIR="$WORK/fake-pandoc-new"
@@ -194,7 +196,32 @@ JOBSTACK_EXPORT_FORCE_PANDOC=1 run_export "$RUN_PATH3" "$VALID_MD" "$OUT7" >"$ST
 RC7=$?
 [ "$RC7" -eq 0 ] && ok "(force) FORCE_PANDOC=1 + pandoc 3.1.9 → exit 0" || bad "(force) exit 코드" "rc=$RC7 stderr=$(cat "$STDERR7")"
 grep -q '< 3.6' "$STDERR7" && ok "(force) 버전 경고는 그대로 출력" || bad "(force) 버전 경고" "$(cat "$STDERR7")"
-[ -f "$OUT7" ] && [ ! -s "$OUT7" ] && ok "(force) 가짜 pandoc(빈 파일 산출)이 실제로 사용됨" || bad "(force) pandoc 강행 확인" "$(ls -la "$OUT7" 2>&1)"
+grep -q "fake-pandoc-output" "$OUT7" 2>/dev/null && ok "(force) 가짜 pandoc 의 출력이 그대로 산출물(pandoc 경로 사용)" || bad "(force) pandoc 강행 확인" "$(ls -la "$OUT7" 2>&1)"
+
+# ── (8) 심링크를 거친 bin 경로로 실행(macOS /tmp → /private/tmp 재현) → Node 폴백이 실제로 파일을 만든다 ──
+# PR #17 리뷰 반영: md2docx.mjs 의 CLI 진입 판정이 심링크 경로에서 어긋나 exit 0 인데 산출물이 없던 회귀.
+ln -s "$REPO/bin" "$WORK/binlink"
+OUT8="$WORK/case8.docx"
+STDOUT8="$WORK/case8.stdout"; STDERR8="$WORK/case8.stderr"
+PATH="$BASE_RUN_PATH" "$BASH_ABS" "$WORK/binlink/jobstack-export" "$VALID_MD" "$OUT8" >"$STDOUT8" 2>"$STDERR8"
+RC8=$?
+[ "$RC8" -eq 0 ] && ok "(8) 심링크 경로 실행 → exit 0" || bad "(8) exit 코드" "rc=$RC8 stderr=$(cat "$STDERR8")"
+[ -s "$OUT8" ] && ok "(8) 심링크 경로 실행에서도 산출물 존재" || bad "(8) 산출물 존재" "$OUT8 없음"
+R8="$(zip_table_check "$OUT8")"
+[ "$R8" = "OK_NOTBL" ] && ok "(8) 산출물 유효 zip" || bad "(8) 산출물 zip 유효성" "$R8"
+
+# ── (9) 변환기가 exit 0 을 내고도 파일을 만들지 않으면 성공으로 보고하지 않는다 → exit 3 ──
+FAKE_NOOP="$WORK/fake-noop-md2docx.mjs"
+cat > "$FAKE_NOOP" <<'NOOP_EOF'
+process.stdout.write(process.argv[3] + '\n');
+NOOP_EOF
+OUT9="$WORK/case9.docx"
+STDOUT9="$WORK/case9.stdout"; STDERR9="$WORK/case9.stderr"
+JOBSTACK_MD2DOCX="$FAKE_NOOP" run_export "$BASE_RUN_PATH" "$VALID_MD" "$OUT9" >"$STDOUT9" 2>"$STDERR9"
+RC9=$?
+[ "$RC9" -eq 3 ] && ok "(9) 산출물 없는 exit 0 변환기 → exit 3" || bad "(9) exit 코드" "rc=$RC9 stdout=$(cat "$STDOUT9")"
+[ ! -s "$STDOUT9" ] && ok "(9) stdout 에 성공 경로를 출력하지 않음" || bad "(9) stdout" "$(cat "$STDOUT9")"
+grep -q '산출물' "$STDERR9" && ok "(9) stderr 에 산출물 부재 안내" || bad "(9) stderr 안내" "$(cat "$STDERR9")"
 
 echo "PASS: $PASS / FAIL: $FAIL"
 [ "$FAIL" -eq 0 ] && { echo "[PASS] test-export"; exit 0; } || { echo "[FAIL] test-export"; exit 1; }

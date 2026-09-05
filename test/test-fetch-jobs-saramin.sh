@@ -41,7 +41,8 @@ trap cleanup EXIT
 if [ ! -f "$HTML_FIXTURE" ]; then
   log "FAIL" "HTML 픽스처 존재" "$HTML_FIXTURE 없음 — test-saramin-parser.mjs 픽스처 확인"
   echo ""
-  echo "PASS: $PASS / FAIL: $FAIL"
+  
+echo "PASS: $PASS / FAIL: $FAIL"
   exit 1
 fi
 
@@ -196,6 +197,16 @@ RC=$?
 ! grep -qi 'cheerio' "$ERR" \
   && log "PASS" "(e) cheerio 없는 환경 + jumpit: cheerio 관련 크래시 없음(모듈 로드가 죽지 않음)" \
   || log "FAIL" "(e) cheerio 없는 환경 + jumpit: cheerio 관련 크래시 없음" "$(cat "$ERR")"
+
+# ── limit 검증(PR #17 리뷰 반영): 1~100 정수만 허용, 그 외는 네트워크 접근 전에 exit 1 ──
+for bad_limit in 0 -5 1e+21 101 007x; do
+JOBSTACK_STATE_DIR="$STATE_DIR" node "$FETCH_JOBS" saramin 백엔드 "$bad_limit" >"$OUT" 2>"$ERR"; rc=$?
+if [ "$rc" -eq 1 ] && grep -q '1~100' "$ERR"; then
+  log "PASS" "limit=$bad_limit → exit 1 + 사용법 오류"
+else
+  log "FAIL" "limit=$bad_limit 검증" "rc=$rc $(cat "$ERR")"
+fi
+done
 
 echo ""
 echo "════════════════════════════════════════"

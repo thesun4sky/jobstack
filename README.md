@@ -310,7 +310,7 @@ flowchart LR
 - **스킬 eval** — `evals/<skill>/evals.json` 케이스를 `test/run-evals.sh`가 `claude -p` 헤드리스로 실행해 산출물·스크립트 호출·참조 읽기를 판정합니다(결정적 gate / LLM 채점 periodic / e2e 3계층, [docs/evals.md](docs/evals.md))
 - **운영 학습 로그** — 수집 셀렉터 깨짐·차단·반복 자료 요청 같은 운영 메타만 `~/.jobstack/analytics/learnings.jsonl`에 남기고 `/auto` 대시보드가 상위 3건을 보여줍니다(문서 내용·개인정보 미기록)
 - **모델·effort 라우팅** — 명령 감지 위주인 tracker 는 `model: sonnet`·`effort: low`, 문서 첨삭·면접·기업분석 스킬은 `effort: high` 를 프론트매터로 선언합니다
-- **의존성** — 기본 기능은 bash + python3. 선택: `job_search` 수집은 Node 22+ (`cd bin && npm install` — Playwright·cheerio·docx·yaml, 첫 실행 시 자동), 사람인은 브라우저 없이 동작하고 사람인 오픈API 키(`jobstack-config set saramin_api_key …`)가 있으면 API 를 먼저 씁니다. 차단 사이트 수집은 `--with-insane-search`(Python 3.10+, curl_cffi). .docx 내보내기는 pandoc 3.6+ 또는 Node `docx` 폴백. 한글 `.hwpx`는 추가 설치 없이, `.hwp`는 kordoc/rhwp 가 있을 때 변환
+- **의존성** — 기본 기능은 bash + python3. 선택: `job_search` 수집은 Node 22+ (`cd bin && npm install` — Playwright·cheerio·docx·yaml, 첫 실행 시 자동), 사람인은 브라우저 없이 동작하고 사람인 오픈API 키(`jobstack-config set saramin_api_key …`)가 있으면 API 를 먼저 씁니다. 차단 사이트 수집은 `--with-insane-search`(Python 3.10+, curl_cffi). .docx 내보내기는 pandoc 3.6+ 또는 Node `docx` 폴백. 한글 `.hwpx`는 추가 설치 없이, `.hwp`는 kordoc/rhwp 가 설치돼 있을 때 변환(`npx kordoc` 자동 실행은 기본 꺼짐 — `JOBSTACK_ALLOW_NPX=1` 로 명시 허용하면 `kordoc@4.12.3` 고정 버전으로만 호출)
 - **스킬 체이닝** — `benefits-from`으로 스킬 간 의존성 정의
 
 ```

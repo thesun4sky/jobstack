@@ -66,12 +66,20 @@ if (!SOURCE_MODES.includes(sourceMode)) {
 }
 
 // arg3이 숫자가 아니면 career로 해석 (limit 생략 호출: fetch-jobs.mjs platform keyword entry)
+// 숫자면 1~MAX_LIMIT 정수만 허용한다(PR #17 리뷰 반영: -5·0·1e+21 같은 값이 parseInt 를 거쳐
+// 그대로 외부 API 의 count 로 전달되던 것을 사용법 오류 exit 1 로 막는다).
+const MAX_LIMIT = 100;
 let limit, career;
 if (arg3 && isNaN(parseInt(arg3, 10))) {
   limit = 20;
   career = arg3.toLowerCase();
 } else {
-  limit = parseInt(arg3 || '20', 10);
+  const rawLimit = arg3 || '20';
+  if (!/^\d+$/.test(rawLimit) || Number(rawLimit) < 1 || Number(rawLimit) > MAX_LIMIT) {
+    process.stderr.write(`limit 은 1~${MAX_LIMIT} 사이 정수여야 합니다: ${rawLimit}\n`);
+    process.exit(1);
+  }
+  limit = Number(rawLimit);
   career = (arg4 || '').toLowerCase();
 }
 // 지역 필터: 6번째 인수 또는 arg4가 지역 코드인 경우

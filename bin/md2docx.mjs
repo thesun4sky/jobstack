@@ -19,8 +19,8 @@
  * 사용법: node md2docx.mjs <입력.md> <출력.docx> [--font "Noto Sans KR"]
  * 종료 코드: 0 성공 · 1 입력 오류 · 3 변환 실패(docx 패키지 부재 포함)
  */
-import { readFileSync, writeFileSync, renameSync } from 'node:fs';
-import { pathToFileURL } from 'node:url';
+import { readFileSync, writeFileSync, renameSync, realpathSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 
 // docx 부재는 여기서 exit 하지 않는다 — 모듈 import 자체는 항상 성공해야 테스트가
 // toParagraphs/inlineRuns 를 안전하게 가져올 수 있다(exit 3 판단은 main 에서만 한다).
@@ -195,9 +195,13 @@ async function main() {
 }
 
 // CLI 로 직접 실행됐을 때만 main 을 돈다 — import 시(테스트 등)에는 함수 정의만 노출한다.
+// 양쪽을 realpath 로 정규화해 비교한다(PR #17 리뷰 반영): Node 는 진입 모듈 경로를 실경로로
+// 풀어 import.meta.url 에 넣지만 process.argv[1] 은 호출한 문자열 그대로라, macOS 의
+// /tmp → /private/tmp 처럼 심링크를 거친 경로로 실행하면 URL 문자열 비교가 어긋나 main 이
+// 돌지 않은 채 exit 0 으로 끝났다(산출물 없이 "성공").
 let isMain = false;
 try {
-  isMain = import.meta.url === pathToFileURL(process.argv[1]).href;
+  isMain = realpathSync(fileURLToPath(import.meta.url)) === realpathSync(process.argv[1]);
 } catch {
   isMain = false;
 }

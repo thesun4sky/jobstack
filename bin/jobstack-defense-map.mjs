@@ -24,6 +24,7 @@
  */
 
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
+import { withLock } from './lib/lockfile.mjs';
 import { dirname, join, resolve, sep } from 'node:path';
 import { homedir } from 'node:os';
 import { randomBytes } from 'node:crypto';
@@ -613,7 +614,7 @@ const { flags, positionals } = parseArgs(rest);
 
 switch (cmd) {
   case 'add':
-    cmdAdd(flags);
+    withLock(join(DM_DIR, '.write'), () => cmdAdd(flags)); // 디렉토리 단위 잠금(PR #17 리뷰 반영)
     break;
   case 'list':
     cmdList(flags);
@@ -622,7 +623,7 @@ switch (cmd) {
     cmdShow(flags);
     break;
   case 'set-status':
-    cmdSetStatus(flags, positionals);
+    withLock(join(DM_DIR, '.write'), () => cmdSetStatus(flags, positionals)); // 디렉토리 단위 잠금(PR #17 리뷰 반영)
     break;
   case 'stats':
     cmdStats(flags);

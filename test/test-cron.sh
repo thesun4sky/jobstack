@@ -42,6 +42,10 @@ TODAY="$(TZ=Asia/Seoul date +%Y-%m-%d)"
 cat > "$FAKE" <<'FAKE_EOF'
 #!/usr/bin/env bash
 platform="$1"
+if [ -n "${FAKE_FAIL_ALL:-}" ]; then
+  echo "[fixture] simulated failure (all platforms)" >&2
+  exit 1
+fi
 if [ -n "${FAKE_FAIL_PLATFORM:-}" ] && [ "$platform" = "$FAKE_FAIL_PLATFORM" ]; then
   echo "[fixture] simulated failure for $platform" >&2
   exit 1
@@ -127,11 +131,13 @@ fi
 
 # ── (e) install --dry-run 출력에 마커 ────────────────────────────────────
 STATE_E="$WORK/state-e"
-OUT_E=$(JOBSTACK_STATE_DIR="$STATE_E" "$CRON" install --time 07:30 --dry-run 2>&1); RC_E=$?
+# Linux 기대값(crontab 마커·시각 포맷)이므로 macOS 호스트에서도 OS 를 고정한다(PR #17 리뷰 반영)
+OUT_E=$(JOBSTACK_STATE_DIR="$STATE_E" JOBSTACK_CRON_OS_NAME=Linux "$CRON" install --time 07:30 --dry-run 2>&1); RC_E=$?
 [ "$RC_E" -eq 0 ] && ok "(e) install --dry-run exit 0" || bad "(e) install --dry-run exit 코드" "rc=$RC_E"
 has "(e) install --dry-run 출력에 jobstack-cron 마커" "# jobstack-cron" "$OUT_E"
 has "(e) install --dry-run 은 실제 등록 생략 안내" "dry-run" "$OUT_E"
 has "(e) install --dry-run 출력에 지정한 시각 반영" "30 7 \* \* \*" "$OUT_E"
+has "(e) crontab 항목에 PATH 지정(축소된 cron PATH 에서 node·python3 탐색)" 'PATH="' "$OUT_E"
 
 # ── (f) 플랫폼 실패 시 표기 ───────────────────────────────────────────────
 STATE_F="$WORK/state-f"
@@ -181,6 +187,7 @@ OUT_I=$(JOBSTACK_STATE_DIR="$STATE_AMP" JOBSTACK_CRON_OS_NAME=Darwin "$CRON" ins
 [ "$RC_I" -eq 0 ] && ok "(i) Darwin install --dry-run exit 0" || bad "(i) Darwin install --dry-run exit 코드" "rc=$RC_I"
 has "(i) Darwin install --dry-run: launchd job 안내 출력" "launchd job" "$OUT_I"
 has "(i) Darwin install --dry-run: plist XML 마커 출력" "<key>Label</key>" "$OUT_I"
+has "(i) Darwin install --dry-run: plist 에 EnvironmentVariables PATH" "<key>PATH</key>" "$OUT_I"
 has "(i) Darwin install --dry-run: & 가 든 경로가 &amp; 로 이스케이프됨" "cron&amp;state" "$OUT_I"
 hasnt "(i) Darwin install --dry-run: 이스케이프 안 된 날 & 경로는 남지 않음" "cron&state" "$OUT_I"
 
@@ -193,7 +200,7 @@ has "(j) % 경로 거부 안내 메시지" "crontab 에 등록할 수 없습니�
 
 # ── (k) --time 형식 오류(25:99) → exit 1 ──────────────────────────────────
 STATE_K="$WORK/state-k"
-OUT_K=$(JOBSTACK_STATE_DIR="$STATE_K" "$CRON" install --time 25:99 --dry-run 2>&1); RC_K=$?
+OUT_K=$(JOBSTACK_STATE_DIR="$STATE_K" JOBSTACK_CRON_OS_NAME=Linux "$CRON" install --time 25:99 --dry-run 2>&1); RC_K=$?
 [ "$RC_K" -eq 1 ] && ok "(k) --time 25:99 형식 오류 exit 1" || bad "(k) --time 25:99 exit 코드" "rc=$RC_K"
 has "(k) --time 형식 오류 안내 메시지" "HH:MM" "$OUT_K"
 
@@ -210,6 +217,32 @@ if [ -f "$CRONLOG_A" ]; then
 else
   bad "(l) cron.log 존재" "$CRONLOG_A 없음"
 fi
+
+# ── (m) node 부재 → "새 공고 0건" 이 아니라 exit 1 + 안내(PR #17 리뷰 반영) ──────────
+STATE_M="$WORK/state-m"
+OUT_M=$(JOBSTACK_STATE_DIR="$STATE_M" JOBSTACK_NODE_BIN=/nonexistent/node-bin JOBSTACK_TRACKER_BIN="$TRACKER_BIN" \
+  "$CRON" run --keyword 노드없음 2>&1); RC_M=$?
+[ "$RC_M" -eq 1 ] && ok "(m) node 부재 → exit 1" || bad "(m) node 부재 exit 코드" "rc=$RC_M out=$OUT_M"
+has "(m) node 부재 안내 메시지" "node 를 찾을 수 없습니다" "$OUT_M"
+hasnt "(m) node 부재 시 성공 문구 없음" "채용 모니터링 완료" "$OUT_M"
+
+# ── (n) 전 플랫폼 수집 실패 → exit 2(degraded), daily 파일 없음, cron.log 에 degraded ──
+STATE_N="$WORK/state-n"
+DAILY_N="$STATE_N/job-cache/daily-$TODAY.md"
+OUT_N=$(JOBSTACK_STATE_DIR="$STATE_N" JOBSTACK_FETCH_JOBS="$FAKE" FAKE_FAIL_ALL=1 JOBSTACK_TRACKER_BIN="$TRACKER_BIN" \
+  "$CRON" run --keyword 전부실패 2>&1); RC_N=$?
+[ "$RC_N" -eq 2 ] && ok "(n) 전 플랫폼 실패 → exit 2" || bad "(n) 전 플랫폼 실패 exit 코드" "rc=$RC_N out=$OUT_N"
+has "(n) 전 플랫폼 실패 안내" "전 플랫폼" "$OUT_N"
+hasnt "(n) 전 플랫폼 실패 시 성공 문구 없음" "채용 모니터링 완료" "$OUT_N"
+[ ! -f "$DAILY_N" ] && ok "(n) 전 플랫폼 실패 시 daily 파일 미생성" || bad "(n) daily 파일" "$DAILY_N 생성됨"
+grep -q '"status":"degraded"' "$STATE_N/analytics/cron.log" 2>/dev/null && ok "(n) cron.log 에 degraded 기록" || bad "(n) cron.log degraded" "$(cat "$STATE_N/analytics/cron.log" 2>/dev/null)"
+
+# ── (o) --limit 검증: 0·문자 → exit 1 ──────────────────────────────────────────
+for BAD_LIMIT in 0 abc 101; do
+  OUT_O=$(JOBSTACK_STATE_DIR="$WORK/state-o" JOBSTACK_FETCH_JOBS="$FAKE" JOBSTACK_TRACKER_BIN="$TRACKER_BIN" \
+    "$CRON" run --keyword 한도 --limit "$BAD_LIMIT" 2>&1); RC_O=$?
+  [ "$RC_O" -eq 1 ] && has "(o) --limit $BAD_LIMIT → exit 1 + 안내" "1~100" "$OUT_O" || bad "(o) --limit $BAD_LIMIT exit 코드" "rc=$RC_O out=$OUT_O"
+done
 
 rm -rf "$WORK"
 

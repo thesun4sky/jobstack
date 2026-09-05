@@ -97,6 +97,17 @@ echo '{"id":"app-010","company":"깨진행"' >> "$F"   # 닫는 중괄호 없음
 OUT=$("$T" list 2>&1); RC=$?
 [ $RC -eq 2 ] && has "손상 JSONL: list exit 2" "JSON 파싱 실패" "$OUT" || bad "손상 JSONL: list exit 2" "rc=$RC $OUT"
 
+# 동시 add 20건 → 유실 없이 20건(PR #17 리뷰 반영: 잠금 없는 읽기-수정-쓰기는 lost update)
+PSTATE="$WORK/state-parallel"
+for i in $(seq 1 20); do
+  JOBSTACK_STATE_DIR="$PSTATE" "$T" add --company "동시$i" --position 개발 >/dev/null 2>&1 &
+done
+wait
+PCOUNT=$(grep -c '"id"' "$PSTATE/tracker/applications.jsonl" 2>/dev/null || echo 0)
+[ "$PCOUNT" -eq 20 ] && ok "동시 add 20건 → 20건 저장(잠금)" || bad "동시 add 유실" "count=$PCOUNT"
+PUNIQ=$(python3 -c "import json,sys; print(len({json.loads(l)['id'] for l in open(sys.argv[1],encoding='utf-8') if l.strip()}))" "$PSTATE/tracker/applications.jsonl" 2>/dev/null || echo 0)
+[ "$PUNIQ" -eq 20 ] && ok "동시 add 20건 → id 20개 모두 고유" || bad "동시 add id 중복" "unique=$PUNIQ"
+
 rm -rf "$WORK"
 echo "PASS: $PASS / FAIL: $FAIL"
 [ "$FAIL" -eq 0 ] && { echo "[PASS] jobstack-tracker"; exit 0; } || { echo "[FAIL] jobstack-tracker"; exit 1; }

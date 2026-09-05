@@ -5,6 +5,9 @@
   문단 → 줄, 표 → 마크다운 표, 줄바꿈/탭 보존. 이미지·도형은 건너뛴다(개수만 보고).
 - .hwp (5.x 바이너리): 외부 변환기(kordoc 또는 rhwp)가 있으면 호출하고, 없으면 exit 3 과 함께
   "한글에서 HWPX 로 저장" 안내를 낸다. pyhwp 는 채택하지 않는다(2020년 이후 미갱신, Python ≤3.8).
+  npx 로 kordoc 을 내려받아 실행하는 것은 명시 opt-in(JOBSTACK_ALLOW_NPX=1) 일 때만, 고정 버전
+  (JOBSTACK_KORDOC_SPEC, 기본 kordoc@4.12.3) 으로 호출한다 — 기본값으로 npm 레지스트리의 최신 패키지를
+  실행하면 공급망 변조에 노출된다(PR #17 리뷰 반영).
 
 사용법:
   hwpx2md.py <입력.hwpx|입력.hwp> [--out <출력.md>] [--converter auto|kordoc|rhwp|none]
@@ -189,15 +192,25 @@ def convert_hwpx(path: str) -> tuple[str, dict]:
     return text, stats
 
 
+KORDOC_SPEC_DEFAULT = 'kordoc@4.12.3'   # npx 자동 실행 시 고정 버전(2026-09-05 npm latest) — 공급망 변조 완화
+
+
+def npx_allowed() -> bool:
+    """원격 패키지 자동 실행은 명시 opt-in 만 허용한다(기본 꺼짐, PR #17 리뷰 반영)."""
+    return os.environ.get('JOBSTACK_ALLOW_NPX', '0') == '1'
+
+
 def convert_hwp(path: str, converter: str) -> str:
     order = ['kordoc', 'rhwp'] if converter == 'auto' else [converter]
+    kordoc_spec = os.environ.get('JOBSTACK_KORDOC_SPEC', KORDOC_SPEC_DEFAULT)
     for tool in order:
         if tool == 'kordoc' and shutil.which('kordoc'):
             r = subprocess.run(['kordoc', path], capture_output=True, text=True, timeout=180)
             if r.returncode == 0 and r.stdout.strip():
                 return r.stdout
-        if tool == 'kordoc' and shutil.which('npx') and os.environ.get('JOBSTACK_ALLOW_NPX', '1') == '1':
-            r = subprocess.run(['npx', '-y', 'kordoc', path], capture_output=True, text=True, timeout=300)
+        if tool == 'kordoc' and npx_allowed() and shutil.which('npx'):
+            # 사용자가 명시적으로 허용한 경우에만, 버전을 고정해 호출한다.
+            r = subprocess.run(['npx', '-y', kordoc_spec, path], capture_output=True, text=True, timeout=300)
             if r.returncode == 0 and r.stdout.strip():
                 return r.stdout
         if tool == 'rhwp' and shutil.which('rhwp'):
@@ -234,7 +247,9 @@ def main(argv=None) -> int:
     except SystemExit as e:
         if e.code == 3:
             print('[안내] .hwp 바이너리를 변환할 도구(kordoc 또는 rhwp)가 없습니다. 한글에서 "다른 이름으로 저장 → HWPX" 로 '
-                  '저장해 다시 올려주시거나, `npm i -g kordoc` 후 재시도하세요.', file=sys.stderr)
+                  '저장해 다시 올려주시거나, `npm i -g kordoc` 후 재시도하세요. npx 로 자동 실행하려면 '
+                  f'JOBSTACK_ALLOW_NPX=1 을 명시하세요({KORDOC_SPEC_DEFAULT} 고정, JOBSTACK_KORDOC_SPEC 으로 변경).',
+                  file=sys.stderr)
             return 3
         raise
     except DocumentTooLarge:

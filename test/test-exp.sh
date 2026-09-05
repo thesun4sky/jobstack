@@ -221,6 +221,18 @@ hasnt "list 사람이 보는 표에 JSON 내부 키 노출 없음(ai_usage_prese
 # 상태 디렉토리 밖에는 쓰지 않는다 — add/update 는 항상 JOBSTACK_STATE_DIR 안의 고정 경로에만 쓴다
 has "add 결과 경로가 상태 디렉토리 내부" "$JOBSTACK_STATE_DIR/profiles/experiences.yaml" "$OUT"
 
+# 동시 add 20건 → 카드 20장(PR #17 리뷰 반영: 잠금 없는 읽기-수정-쓰기는 lost update — 3장만 남던 재현)
+PSTATE="$WORK/state-parallel"
+for i in $(seq 1 20); do
+  JOBSTACK_STATE_DIR="$PSTATE" "$E" add --title "동시$i" --problem p --role r --action a --change c >/dev/null 2>&1 &
+done
+wait
+PCOUNT=$(grep -c '^- id:' "$PSTATE/profiles/experiences.yaml" 2>/dev/null || echo 0)
+[ "$PCOUNT" -eq 20 ] && ok "동시 add 20건 → 카드 20장(잠금)" || bad "동시 add 유실" "count=$PCOUNT"
+PUNIQ=$(grep '^- id:' "$PSTATE/profiles/experiences.yaml" 2>/dev/null | sort -u | wc -l | tr -d ' ')
+[ "$PUNIQ" -eq 20 ] && ok "동시 add 20건 → id 20개 모두 고유" || bad "동시 add id 중복" "unique=$PUNIQ"
+[ ! -e "$PSTATE/profiles/experiences.yaml.lock" ] && ok "완료 후 잠금 파일 정리" || bad "잠금 파일 잔존" "$PSTATE/profiles/experiences.yaml.lock"
+
 rm -rf "$WORK"
 echo "PASS: $PASS / FAIL: $FAIL"
 [ "$FAIL" -eq 0 ] && { echo "[PASS] jobstack-exp"; exit 0; } || { echo "[FAIL] jobstack-exp"; exit 1; }

@@ -9,8 +9,10 @@
 # 심링크 설치(검토 보고서 D-1)를 재현한다.
 
 set -u
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-REPO="$(cd "$SCRIPT_DIR/.." && pwd)"
+# 실경로(-P)로 잡는다(PR #17 리뷰 반영): 프리앰블은 JS_BIN 을 실경로로 출력하므로, macOS 의
+# /tmp → /private/tmp 처럼 심링크 아래에서 실행하면 논리 경로 기대값과 어긋나 실패했다.
+SCRIPT_DIR="$(cd -P "$(dirname "$0")" && pwd)"
+REPO="$(cd -P "$SCRIPT_DIR/.." && pwd)"
 SKILLS="auto strategy tracker review retro portfolio ncs salary job-search cover-letter mock-interview resume company-research experience-bank career-history scout-profile"
 PASS=0
 FAIL=0

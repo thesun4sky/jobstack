@@ -22,11 +22,17 @@ tracker 스킬이 JSONL 을 손으로 고쳐 쓰던 작업(상태 전이·max_st
 from __future__ import annotations
 
 import argparse
+import contextlib
 import datetime as dt
 import json
 import os
 import sys
 import tempfile
+
+try:
+    import fcntl  # POSIX 전용 — 없는 플랫폼(Windows 등)에서는 잠금 없이 진행한다.
+except ImportError:  # pragma: no cover
+    fcntl = None
 
 STATE_DIR = os.environ.get('JOBSTACK_STATE_DIR') or os.path.expanduser('~/.jobstack')
 TRACKER_FILE = os.path.join(STATE_DIR, 'tracker', 'applications.jsonl')
@@ -152,6 +158,24 @@ def save(records: list[Record]) -> None:
         if os.path.exists(tmp):
             os.unlink(tmp)
         raise
+
+
+@contextlib.contextmanager
+def locked():
+    """add/update/nudge/migrate 의 load() → save() 구간을 파일 잠금(`applications.jsonl.lock`, flock)
+    으로 감싼다(PR #17 리뷰 반영: 잠금 없는 읽기-수정-쓰기는 동시 실행 시 서로의 항목을 덮어써
+    병렬 add 20건 중 13건만 남는 lost update 가 재현됐다). 잠금 파일은 지우지 않는다 — flock 은
+    삭제와 경합하면 다른 프로세스가 새 inode 를 잠그는 틈이 생긴다."""
+    if fcntl is None:
+        yield
+        return
+    os.makedirs(os.path.dirname(TRACKER_FILE), exist_ok=True)
+    with open(TRACKER_FILE + '.lock', 'a+') as lf:
+        fcntl.flock(lf, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(lf, fcntl.LOCK_UN)
 
 
 def next_id(records: list[Record]) -> str:
@@ -586,6 +610,9 @@ def main(argv=None) -> int:
 
     a = p.parse_args(argv)
     try:
+        if a.fn in (cmd_add, cmd_update, cmd_nudge, cmd_migrate):
+            with locked():
+                return a.fn(a)
         return a.fn(a)
     except CorruptFile as e:
         print(e, file=sys.stderr)

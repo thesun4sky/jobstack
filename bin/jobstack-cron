@@ -19,8 +19,15 @@
 #                        <platform> <keyword> <limit> <career> <location>, JSON 배열을 stdout 에)
 #   JOBSTACK_TRACKER_BIN  jobstack-tracker 대신 사용할 경로 (테스트 훅, 기본 "$JS_BIN/jobstack-tracker")
 #   JOBSTACK_CRON_OS_NAME `uname -s` 대신 사용할 OS 이름(테스트 훅, 예: Darwin) — 있으면 이 값을 우선한다
+#   JOBSTACK_NODE_BIN     fetch-jobs.mjs 를 실행할 node 경로(기본: PATH 의 node). cron/launchd 는 PATH 가
+#                        축소돼 Homebrew·nvm 의 node 를 못 찾는 일이 흔하다 — install 이 등록 항목에 PATH 를
+#                        넣어 주지만, 그래도 안 되면 절대경로를 지정한다.
 #
 # 필수: python3 — daily 파일·cron-last.json 스냅샷 생성에 쓴다. 없으면 시작하자마자 종료 코드 1.
+#
+# 종료 코드(run): 0 정상 · 1 인자/환경 오류(검색 조건 없음, node/python3 부재 등) ·
+#                2 전 플랫폼 수집 실패(degraded — daily 파일을 만들지 않고 cron.log 에 status=degraded 기록).
+#                무인 실행에서 "새 공고 0건" 과 "수집기 자체 실패" 를 구분하기 위한 코드다(PR #17 리뷰 반영).
 #
 # macOS bash 3.2 호환: 배열·`[[ ]]` 를 쓰지 않고 `[ ]`·case 로만 분기한다. 날짜 연산이
 # 필요한 곳(_date_days_ago)은 GNU `date -d` 우선 시도 후 BSD `date -v` 로 폴백한다.
@@ -34,6 +41,7 @@ HERE="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 JS_BIN="$HERE"
 _JS_STATE="${JOBSTACK_STATE_DIR:-$HOME/.jobstack}"
 TRACKER_BIN="${JOBSTACK_TRACKER_BIN:-$JS_BIN/jobstack-tracker}"
+NODE_BIN="${JOBSTACK_NODE_BIN:-node}"
 
 # fetch-jobs.mjs 의 자체 0건 진단 로그(logFailure)가 쓰는 파일 — env.sh 와 동일 경로.
 JOBSTACK_FETCH_DIAG_LOG="$_JS_STATE/analytics/fetch-diag.log"
@@ -97,7 +105,7 @@ run_fetch_jobs() { # $1=platform $2=keyword $3=limit $4=career $5=location -> st
   if [ -n "${JOBSTACK_FETCH_JOBS:-}" ]; then
     "$JOBSTACK_FETCH_JOBS" "$@"
   else
-    node "$JS_BIN/fetch-jobs.mjs" "$@"
+    "$NODE_BIN" "$JS_BIN/fetch-jobs.mjs" "$@"
   fi
 }
 
@@ -139,6 +147,21 @@ cmd_run() {
     *) err "--career 는 entry 또는 experienced 만 지원합니다: $CAREER"; return 1 ;;
   esac
 
+  # limit 은 1~100 정수만(PR #17 리뷰 반영 — 비정상 값이 그대로 외부 API count 로 가지 않게 한다)
+  case "$LIMIT" in
+    ''|*[!0-9]*) err "--limit 은 1~100 사이 정수여야 합니다: $LIMIT"; return 1 ;;
+  esac
+  if [ "$LIMIT" -lt 1 ] || [ "$LIMIT" -gt 100 ]; then
+    err "--limit 은 1~100 사이 정수여야 합니다: $LIMIT"; return 1
+  fi
+
+  # node 사전 확인 — 없으면 "새 공고 0건" 이 아니라 환경 오류로 끝낸다(PR #17 리뷰 반영).
+  if [ -z "${JOBSTACK_FETCH_JOBS:-}" ] && ! command -v "$NODE_BIN" >/dev/null 2>&1; then
+    err "node 를 찾을 수 없습니다 (NODE_BIN=$NODE_BIN, PATH=$PATH)."
+    err "cron/launchd 는 PATH 가 축소돼 있습니다 — 'jobstack-cron install' 을 다시 실행해 PATH 를 등록하거나 JOBSTACK_NODE_BIN 에 node 절대경로를 지정하세요."
+    return 1
+  fi
+
   mkdir -p "$_JS_STATE/job-cache" "$_JS_STATE/analytics" 2>/dev/null || true
 
   CRON_WORKDIR="$(mktemp -d "${TMPDIR:-/tmp}/jobstack-cron.XXXXXX")" || {
@@ -162,6 +185,16 @@ sys.exit(0 if isinstance(d, list) else 1)' "$OUT_FILE" 2>/dev/null
       FAIL_LIST="$FAIL_LIST $PLATFORM"
     fi
   done
+
+  # 전 플랫폼 실패 — 새 공고 판정 자체가 불가능하므로 성공처럼 보고하지 않는다(exit 2, PR #17 리뷰 반영).
+  if [ -z "$OK_LIST" ]; then
+    TS="$(TZ=Asia/Seoul date +%Y-%m-%dT%H:%M:%S%z)"
+    FAIL_COUNT="$(printf '%s\n' "$FAIL_LIST" | wc -w | tr -d ' ')"
+    printf '{"ts":"%s","cmd":"run","status":"degraded","platforms_ok":0,"platforms_failed":%s}\n' "$TS" "$FAIL_COUNT" \
+      >>"$_JS_STATE/analytics/cron.log" 2>/dev/null || true
+    err "수집 실패: 전 플랫폼($FAIL_LIST) — 새 공고를 판정할 수 없어 daily 파일을 만들지 않습니다 (analytics/fetch-diag.log 확인, exit 2)."
+    return 2
+  fi
   OK_LIST="${OK_LIST# }"
   FAIL_LIST="${FAIL_LIST# }"
 
@@ -398,12 +431,13 @@ xml_escape() { # $1=원본 문자열 → 이스케이프된 문자열을 stdout 
   printf '%s' "$1" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g' -e 's/"/\&quot;/g'
 }
 
-install_cron() { # $1=hour $2=min $3=self $4=log $5=dry_run
-  hour="$1"; min="$2"; self="$3"; log="$4"; dry="$5"
-  case "$self $log" in
-    *%*) err "경로에 % 가 있어 crontab 에 등록할 수 없습니다 — JOBSTACK_STATE_DIR 를 바꾸세요"; return 1 ;;
+install_cron() { # $1=hour $2=min $3=self $4=log $5=dry_run $6=path
+  hour="$1"; min="$2"; self="$3"; log="$4"; dry="$5"; cron_path="$6"
+  case "$self $log $cron_path" in
+    *%*) err "경로에 % 가 있어 crontab 에 등록할 수 없습니다 — JOBSTACK_STATE_DIR(또는 PATH)를 바꾸세요"; return 1 ;;
   esac
-  NEW_LINE="$min $hour * * * \"$self\" run >> \"$log\" 2>&1  # jobstack-cron"
+  # PATH= 접두는 /bin/sh -c 의 환경 지정 — cron 의 축소된 PATH 에서도 node·python3 를 찾게 한다.
+  NEW_LINE="$min $hour * * * PATH=\"$cron_path\" \"$self\" run >> \"$log\" 2>&1  # jobstack-cron"
   echo "다음 crontab 항목을 등록합니다 (서버 로컬 타임존 기준 — 서버가 KST 가 아니면"
   echo "실제 실행 시각이 달라집니다. 정확한 KST 실행이 필요하면 docs/routines.md 의"
   echo "클라우드 Routines 대안을 검토하세요):"
@@ -421,10 +455,11 @@ install_cron() { # $1=hour $2=min $3=self $4=log $5=dry_run
   echo "설치 완료. 'crontab -l' 로 확인할 수 있습니다."
 }
 
-install_launchd() { # $1=hour $2=min $3=self $4=log $5=dry_run
-  hour="$1"; min="$2"; self="$3"; log="$4"; dry="$5"
+install_launchd() { # $1=hour $2=min $3=self $4=log $5=dry_run $6=path
+  hour="$1"; min="$2"; self="$3"; log="$4"; dry="$5"; cron_path="$6"
   SELF_XML="$(xml_escape "$self")"
   LOG_XML="$(xml_escape "$log")"
+  PATH_XML="$(xml_escape "$cron_path")"
   PLIST="$HOME/Library/LaunchAgents/com.jobstack.cron.plist"
   PLIST_BODY="$(cat <<PLIST_EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -438,6 +473,10 @@ install_launchd() { # $1=hour $2=min $3=self $4=log $5=dry_run
     <string>$SELF_XML</string>
     <string>run</string>
   </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key><string>$PATH_XML</string>
+  </dict>
   <key>StartCalendarInterval</key>
   <dict>
     <key>Hour</key><integer>$hour</integer>
@@ -492,10 +531,20 @@ cmd_install() {
   mkdir -p "$_JS_STATE/analytics" 2>/dev/null || true
   LOG_FILE="$_JS_STATE/analytics/cron.log"
 
+  # 등록 항목에 넣을 PATH — 지금 셸에서 찾은 node·python3 디렉토리를 앞에 둔다(PR #17 리뷰 반영:
+  # cron/launchd 의 축소된 PATH 에서 Homebrew·nvm 의 node 를 못 찾으면 매일 수집이 조용히 실패한다).
+  NODE_FOUND="$(command -v "$NODE_BIN" 2>/dev/null || true)"
+  if [ -z "$NODE_FOUND" ]; then
+    err "경고: node 를 찾을 수 없습니다 (NODE_BIN=$NODE_BIN). 등록은 진행하지만 run 은 node 없이는 exit 1 로 끝납니다 — JOBSTACK_NODE_BIN 에 절대경로를 지정하세요."
+    NODE_FOUND=/usr/local/bin/node
+  fi
+  PY_FOUND="$(command -v python3 2>/dev/null || echo /usr/bin/python3)"
+  CRON_PATH="$(dirname "$NODE_FOUND"):$(dirname "$PY_FOUND"):/usr/local/bin:/usr/bin:/bin"
+
   OS_NAME="$(_cron_os_name)"
   case "$OS_NAME" in
-    Darwin) install_launchd "$HOUR_NUM" "$MIN_NUM" "$SELF" "$LOG_FILE" "$DRY_RUN" ;;
-    *)      install_cron "$HOUR_NUM" "$MIN_NUM" "$SELF" "$LOG_FILE" "$DRY_RUN" ;;
+    Darwin) install_launchd "$HOUR_NUM" "$MIN_NUM" "$SELF" "$LOG_FILE" "$DRY_RUN" "$CRON_PATH" ;;
+    *)      install_cron "$HOUR_NUM" "$MIN_NUM" "$SELF" "$LOG_FILE" "$DRY_RUN" "$CRON_PATH" ;;
   esac
 }
 

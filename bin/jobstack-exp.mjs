@@ -24,6 +24,7 @@
  */
 
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { withLock } from './lib/lockfile.mjs';
 import { dirname, join, resolve } from 'node:path';
 import { homedir } from 'node:os';
 import { randomBytes } from 'node:crypto';
@@ -445,7 +446,7 @@ const { flags, positionals } = parseArgs(rest);
 
 switch (cmd) {
   case 'add':
-    cmdAdd(flags);
+    withLock(EXP_FILE, () => cmdAdd(flags)); // 동시 실행 lost update 방지(PR #17 리뷰 반영)
     break;
   case 'list':
     cmdList(flags);
@@ -454,7 +455,7 @@ switch (cmd) {
     cmdShow(positionals);
     break;
   case 'update':
-    cmdUpdate(positionals, flags);
+    withLock(EXP_FILE, () => cmdUpdate(positionals, flags)); // 동시 실행 lost update 방지(PR #17 리뷰 반영)
     break;
   case 'validate':
     process.exit(cmdValidate(positionals));
