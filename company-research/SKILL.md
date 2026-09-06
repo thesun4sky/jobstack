@@ -23,7 +23,7 @@ effort: high
 metadata:
   preamble-tier: 2
   version: 0.3.0
-  benefits-from: [strategy]
+  benefits-from: [strategy, experience-bank]
 ---
 
 !`bash "${CLAUDE_SKILL_DIR}/scripts/preamble.sh" company-research "${CLAUDE_SESSION_ID}" "${CLAUDE_PLUGIN_DATA:-}"`
@@ -243,6 +243,30 @@ Write로 두 파일을 모두 저장합니다.
 
 ---
 
+### Phase 5.5 -- 경험 카드 연결 (선택, EXPERIENCES_EXISTS=true 일 때만)
+
+리포트를 저장한 뒤, 저장된 경험 카드에 이 기업 기준의 **입사 후 적용**(STAR-R 의 R) 문장을 붙입니다. 규칙은 `${CLAUDE_SKILL_DIR}/references/experience-methods.md` §7 — 저장 직전에 Read 합니다. 카드 생성·수정은 experience-bank 소관이므로 여기서는 `apply` 만 씁니다.
+
+```bash
+. "${JOBSTACK_STATE_DIR:-$HOME/.jobstack}/env.sh"
+"$_JS_BIN/jobstack-exp.mjs" list --json
+```
+
+1. Phase 2 키워드 체크리스트의 O 항목·Phase 3 '이미 팀원처럼' 화두와 카드의 `job_link_tags`·`action`·`change` 가 닿는 카드를 **3장 이하** 고릅니다(닿는 카드가 없으면 이 절을 생략).
+2. 카드마다 §7 규칙 ② 형식으로 R 한 문장을 초안합니다 — `basis` 는 방금 만든 체크리스트·화두 **원문**, `source` 는 `company-cache/{COMPANY}-{TODAY}.md`.
+3. 1회 AskUserQuestion 으로 저장 여부를 확인한 뒤 카드마다 저장합니다.
+
+```bash
+. "${JOBSTACK_STATE_DIR:-$HOME/.jobstack}/env.sh"
+"$_JS_BIN/jobstack-exp.mjs" apply <id> --company "{COMPANY}" --position "{POSITION}" \
+  --plan "[기업의 과제·키워드]에 [카드의 행동·변화]를 적용해 [기대 변화]" \
+  --basis "체크리스트·화두 원문" --source "company-cache/{COMPANY}-{TODAY}.md"
+```
+
+저장한 문장은 리포트 §5 "자소서/면접 활용 가이드" 의 "경험 카드 적용 문장" 항목에도 같은 내용으로 적습니다. 근거가 체크리스트·화두에 없는 문장은 만들지 않습니다.
+
+---
+
 ## 완료 상태 프로토콜
 
 모든 스킬은 완료 시 다음 상태 중 하나를 출력합니다:
@@ -257,7 +281,7 @@ Write로 두 파일을 모두 저장합니다.
 기업분석 완료 후 자연스러운 다음 단계를 추천합니다:
 
 - 프로필이 없었다면 -> "프로필을 먼저 작성하면 다음 분석이 더 정확해집니다."
-- 자소서 작성 예정이라면 -> `/cover_letter` 추천: "키워드 체크리스트를 바로 활용할 수 있습니다."
+- 자소서 작성 예정이라면 -> `/cover_letter` 추천: "키워드 체크리스트를 바로 활용할 수 있습니다." (Phase 5.5 에서 연결한 카드는 `jobstack-exp.mjs list --company` 로 바로 꺼내 씁니다.)
 - 이력서 정비가 필요하면 -> `/resume` 추천: "GAP 분석 기반으로 이력서를 조정할 수 있습니다."
 - 면접 준비가 급하면 -> `/mock_interview` 추천: "'이미 팀원처럼' 브리핑을 면접에 바로 활용할 수 있습니다."
 - 연봉 수준 확인·협상 준비가 필요하면 -> `/salary` 추천: "연봉 데이터는 소스·시점별 편차가 크므로 단일 소스로 단정하지 않습니다."

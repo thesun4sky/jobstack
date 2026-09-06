@@ -91,7 +91,7 @@ cover-letter·tracker·experience-bank) 초안은 스킬당 gate 1·periodic 1·
 ## 실행 방법
 
 ```bash
-# 전체 15케이스 나열만(과금 없음) — claude CLI 가 없어도 동작
+# 전체 16케이스 나열만(과금 없음) — claude CLI 가 없어도 동작
 test/run-evals.sh --dry-run
 
 # gate 계층만 (PR 게이트 후보)
