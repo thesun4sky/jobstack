@@ -1,0 +1,16 @@
+{
+  "name": "jobstack",
+  "owner": { "name": "thesun4sky", "url": "https://github.com/thesun4sky" },
+  "metadata": {
+    "description": "jobstack 플러그인 마켓플레이스 — /plugin marketplace add thesun4sky/jobstack"
+  },
+  "plugins": [
+    {
+      "name": "jobstack",
+      "source": "./",
+      "description": "한국 취업 통합 엑셀러레이터 — 이력서·자소서·기업분석·채용공고·모의면접·지원 추적 16개 스킬",
+      "category": "productivity",
+      "keywords": ["korea", "job-search", "resume", "cover-letter", "interview"]
+    }
+  ]
+}

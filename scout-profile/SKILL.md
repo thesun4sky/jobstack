@@ -1,7 +1,5 @@
 ---
 name: scout-profile
-preamble-tier: 3
-version: 0.1.0
 description: |
   스카우트 프로필 첨삭 스킬. 링크드인/원티드/리멤버 등 채용 플랫폼 프로필 텍스트를
   헤드라인 5초 규칙, 리크루터 검색 키워드 배치, 기능 서술→성과 서술 전환 기준으로
@@ -14,72 +12,27 @@ allowed-tools:
   - Bash
   - Read
   - Write
-  - Edit
-  - Glob
   - AskUserQuestion
-  - WebSearch
-  - WebFetch
-benefits-from: [resume, portfolio, strategy, experience-bank]
+argument-hint: "[플랫폼: 링크드인|원티드|리멤버] [프로필 텍스트]"
+when_to_use: |
+  링크드인·원티드·리멤버 등 채용 플랫폼 프로필을 5초 규칙과 성과 중심으로 최적화할 때 사용한다.
+  헤드라인·한 줄 소개·경력 요약의 3영역을 진단하고, 리크루터 검색 키워드 배치를 개선한다.
+  GitHub나 기술 포트폴리오 최적화는 /portfolio, 서류 간 사실 정합성 확인은 /review 담당이다.
+metadata:
+  preamble-tier: 3
+  version: 0.1.0
+  benefits-from: [resume, portfolio, strategy, experience-bank]
 ---
 
-```bash
-# ─── jobstack 프리앰블 ─────────────────────────
-# 불변식 (test/test-preambles.sh가 검증):
-#   1) ACTIVE_SESSIONS / PROACTIVE / SKILL_NAME 3변수를 반드시 echo (PR#4 회귀 이력)
-#   2) trap EXIT로 세션 파일 정리 + stale PID 정리 루프 (리다이렉트를 for 리스트에 넣지 말 것 — bash 문법 오류)
-#   3) JOBSTACK_STATE_DIR 폴백 유지 (jobclaw per-user 격리가 이 변수를 주입)
-#   4) __SKILL_NAME__ 은 스킬 디렉토리명 리터럴로 치환 (basename 동적 계산 금지 — 심링크 경유 시 오판)
-_JS_STATE="${JOBSTACK_STATE_DIR:-$HOME/.jobstack}"
-mkdir -p "$_JS_STATE/analytics" "$_JS_STATE/profiles" "$_JS_STATE/tracker" \
-         "$_JS_STATE/company-cache" "$_JS_STATE/interview-history" "$_JS_STATE/sessions" "$_JS_STATE/defense-maps" "$_JS_STATE/job-cache"
+!`bash "${CLAUDE_SKILL_DIR}/scripts/preamble.sh" scout-profile "${CLAUDE_SESSION_ID}" "${CLAUDE_PLUGIN_DATA:-}"`
 
-# 세션 추적
-echo "$$" > "$_JS_STATE/sessions/$$"
-trap 'rm -f "$_JS_STATE/sessions/$$"' EXIT
+> 위 실행 컨텍스트가 비어 있거나 `KEY=VALUE` 목록 대신 `!` 명령·정책 차단 문구가 그대로 보이면(`!` 주입이 꺼진 환경), 첫 Bash 명령으로 `bash "${CLAUDE_SKILL_DIR}/scripts/preamble.sh" scout-profile`를 실행해 같은 컨텍스트를 확보하고 `${CLAUDE_SKILL_DIR}/references/guardrails.md`를 Read 하세요. 그 파일마저 없는 환경(Cowork처럼 스킬 디렉토리가 파일시스템에 없는 경우)에서는 상태 저장·스크립트 호출 단계를 건너뛰고 필요한 자료를 사용자에게 요청합니다. `STATE_WRITE_FAILED=true`가 보이면 `JOBSTACK_STATE_DIR` 경로를 사용자에게 확인합니다. 이 스킬의 Bash 스니펫은 첫 줄에 `. "${JOBSTACK_STATE_DIR:-$HOME/.jobstack}/env.sh"`를 두어 `$_JS_STATE`·`$_JS_BIN`·`$TODAY`를 불러옵니다.
 
-# 설정 로딩
-_JS_CONFIG="${CLAUDE_SKILL_DIR}/../bin/jobstack-config"
-if [ -x "$_JS_CONFIG" ]; then
-  PROACTIVE=$("$_JS_CONFIG" get proactive 2>/dev/null || echo "true")
-else
-  PROACTIVE="true"
-fi
+### 공통 가드레일 (references/guardrails.md)
 
-# 프로필 로딩
-PROFILE="$_JS_STATE/profiles/default.yaml"
-if [ -f "$PROFILE" ]; then
-  echo "PROFILE_EXISTS=true"
-  echo "--- 프로필 요약 ---"
-  head -20 "$PROFILE"
-  echo "---"
-else
-  echo "PROFILE_EXISTS=false"
-fi
+!`sed '1{/^# /d;}' "${CLAUDE_SKILL_DIR}/references/guardrails.md"`
 
-# 경험뱅크 존재 확인 (수치·근거 소스)
-if [ -f "$_JS_STATE/profiles/experiences.yaml" ]; then
-  echo "EXPERIENCES_EXISTS=true"
-else
-  echo "EXPERIENCES_EXISTS=false"
-fi
-
-# 활성 세션 수 (죽은 세션 파일 정리 후 집계)
-for _f in "$_JS_STATE/sessions/"*; do
-  [ -f "$_f" ] || continue
-  kill -0 "$(basename "$_f")" 2>/dev/null || rm -f "$_f"
-done
-ACTIVE_SESSIONS=$(ls "$_JS_STATE/sessions/" 2>/dev/null | wc -l | tr -d ' ')
-echo "ACTIVE_SESSIONS=$ACTIVE_SESSIONS"
-echo "PROACTIVE=$PROACTIVE"
-echo "SKILL_NAME=scout-profile"
-
-# 텔레메트리 (entry 이벤트 — docs/telemetry-events.md 참조)
-echo "{\"skill\":\"scout-profile\",\"ts\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"pid\":$$}" \
-  >> "$_JS_STATE/analytics/skill-usage.jsonl" 2>/dev/null || true
-```
-
-> **공통 가드레일**: 작업 시작 전 `${CLAUDE_SKILL_DIR}/../templates/guardrails.md` 를 Read 도구로 읽고 §1~§6 전 규칙을 준수하세요.
-
+!`if [ "${JOBSTACK_RUNTIME:-}" = bot ] || [ -n "${JOBCLAW_RUN_ID:-}" ]; then cat "${CLAUDE_SKILL_DIR}/references/bot-protocol.md"; fi`
 
 # 스카우트 프로필 첨삭
 
@@ -115,7 +68,7 @@ C) 리멤버
 D) 기타 플랫폼
 ```
 
-- **입력 방식**: 파일 경로를 주면 Read로 읽고, 텍스트를 붙여넣으면 그대로 정식 입력으로 인정합니다. URL만 주는 경우 로그인 담벼락으로 본문 확보가 어려우므로 `${CLAUDE_SKILL_DIR}/../templates/guardrails.md` §2에 따라 "프로필 텍스트를 붙여넣어 주시면 바로 진행합니다"로 자료 요청으로 전환합니다(도구 한계를 그대로 노출하지 않습니다).
+- **입력 방식**: 파일 경로를 주면 Read로 읽고, 텍스트를 붙여넣으면 그대로 정식 입력으로 인정합니다. URL만 주는 경우 로그인 담벼락으로 본문 확보가 어려우므로 `${CLAUDE_SKILL_DIR}/references/guardrails.md` §2에 따라 "프로필 텍스트를 붙여넣어 주시면 바로 진행합니다"로 자료 요청으로 전환합니다(도구 한계를 그대로 노출하지 않습니다). Claude in Chrome 확장이 있어 브라우저 도구가 보이면 `${CLAUDE_SKILL_DIR}/references/chrome-path.md` 경로로 로그인된 프로필 탭을 읽어 진단할 수 있습니다 — 반영은 사용자가 직접 붙여넣고, 확장이 없으면 그대로 붙여넣기 경로입니다.
 - **직무 확인**: 프로필 또는 사용자 답변에서 직무를 확정합니다. 미확인이면 1회 질문합니다 — 직무는 이후 키워드 배치 진단의 기준입니다.
 - **근거 소스 로딩**: 프리앰블에서 `PROFILE_EXISTS=true`이면 `$_JS_STATE/profiles/default.yaml`, `EXPERIENCES_EXISTS=true`이면 `$_JS_STATE/profiles/experiences.yaml`을 읽어 **이미 확인된 수치·경험 카드**를 리라이팅의 근거 소스로 씁니다(없는 수치를 만들지 않기 위한 사실 창고).
 
@@ -134,11 +87,11 @@ D) 기타 플랫폼
 
 **② 한 줄 소개 (before→after 수치 유무)**
 - 소개 문장에 정량 근거(범위·빈도·전후 비교·담당 규모)가 있는가?
-- "성실하게 일합니다", "빠르게 성장하고 있습니다" 류 추상 소개는 `${CLAUDE_SKILL_DIR}/../templates/experience-methods.md` §4(추상어→질문 전환표)로 재질문 대상 표시합니다.
+- "성실하게 일합니다", "빠르게 성장하고 있습니다" 류 추상 소개는 `${CLAUDE_SKILL_DIR}/references/experience-methods.md` §4(추상어→질문 전환표)로 재질문 대상 표시합니다.
 
 **③ 경력 요약 (기능 서술→성과 서술 전환)**
 - 각 문장이 "무엇을 했다"(기능)에 머무는지, "무엇이 달라졌다"(성과)까지 가는지 문장 단위로 표시합니다.
-- 전환 필요 문장은 `${CLAUDE_SKILL_DIR}/../templates/experience-methods.md` §5(약한 문장 5유형)·§6(어조 전환 3공식)을 근거로 표시합니다.
+- 전환 필요 문장은 `${CLAUDE_SKILL_DIR}/references/experience-methods.md` §5(약한 문장 5유형)·§6(어조 전환 3공식)을 근거로 표시합니다.
 
 ### 리크루터 검색 키워드 배치 휴리스틱
 
@@ -170,8 +123,8 @@ D) 기타 플랫폼
 진단에서 `⚠️`로 표시된 항목마다 **before→after** 개선안을 제시합니다.
 
 - **원문 → 개선안 대비**로 항목별 리라이팅을 출력합니다. 개선안은 반드시 사용자 본인 언어로 다시 다듬도록 안내합니다.
-- 리라이팅에 **수치·직함이 필요한데 근거가 없으면 창작하지 않습니다.** `${CLAUDE_SKILL_DIR}/../templates/guardrails.md` §1에 따라 `[담당 규모 확인 필요]`, `[직함 확인 필요]` 같은 placeholder로 남기고 **항목당 1회만** 질문합니다. 답을 못 받으면 placeholder를 유지하고 반복 요구하지 않습니다.
-- 수치가 없다고 하면 곧장 추정치를 넣지 말고 `${CLAUDE_SKILL_DIR}/../templates/experience-methods.md` §3(수치 폴백 5기준·대체 4종)을 위에서부터 적용해 정성 근거·역할 범위·작은 검증 가능 숫자를 먼저 찾습니다.
+- 리라이팅에 **수치·직함이 필요한데 근거가 없으면 창작하지 않습니다.** `${CLAUDE_SKILL_DIR}/references/guardrails.md` §1에 따라 `[담당 규모 확인 필요]`, `[직함 확인 필요]` 같은 placeholder로 남기고 **항목당 1회만** 질문합니다. 답을 못 받으면 placeholder를 유지하고 반복 요구하지 않습니다.
+- 수치가 없다고 하면 곧장 추정치를 넣지 말고 `${CLAUDE_SKILL_DIR}/references/experience-methods.md` §3(수치 폴백 5기준·대체 4종)을 위에서부터 적용해 정성 근거·역할 범위·작은 검증 가능 숫자를 먼저 찾습니다.
 - 추상어를 만나면 삭제가 아니라 §4(추상어→질문 전환표)의 질문으로 구체 경험을 캐냅니다.
 - experiences.yaml 카드나 default.yaml에 **이미 확인된 수치**가 있으면 그것을 우선 사용합니다(같은 사실을 다시 묻지 않기).
 
@@ -263,7 +216,8 @@ After:  일 배포 파이프라인을 담당하며 배포 실패율을 낮춰 �
 
 결과 파일이 Markdown으로 저장되면 다음 명령으로 브라우저에서 열 수 있습니다:
 ```bash
-$CLAUDE_SKILL_DIR/../bin/jobstack-view <결과파일.md>
+. "${JOBSTACK_STATE_DIR:-$HOME/.jobstack}/env.sh"
+"$_JS_BIN/jobstack-view" <결과파일.md>
 ```
 스타일링된 HTML로 변환되며, "PDF 저장" 버튼으로 PDF 출력도 가능합니다. 결과물 저장 시 반드시 안내하세요.
 

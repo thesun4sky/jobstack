@@ -23,8 +23,10 @@ BASENAME=$(basename "$INPUT_FILE" .md)
 OUTPUT_DIR=$(dirname "$INPUT_FILE")
 OUTPUT_FILE="$OUTPUT_DIR/${BASENAME}.html"
 
-# Markdown 내용 읽기 (특수문자 이스케이프)
-MD_CONTENT=$(cat "$INPUT_FILE" | sed 's/\\/\\\\/g' | sed 's/`/\\`/g' | sed "s/'/\\\\'/g")
+# marked 렌더러: bin/vendor/marked.umd.js(MIT, 인라인 → 오프라인 동작)가 없으면 버전 고정 CDN
+SCRIPT_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+MARKED_VENDOR="$SCRIPT_DIR/vendor/marked.umd.js"
+MARKED_CDN="https://cdn.jsdelivr.net/npm/marked@18.0.11/lib/marked.umd.js"
 
 # HTML 생성
 cat > "$OUTPUT_FILE" << 'HTMLEOF'
@@ -34,7 +36,7 @@ cat > "$OUTPUT_FILE" << 'HTMLEOF'
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>TITLE_PLACEHOLDER</title>
-<script src="https://cdn.jsdelivr.net/npm/marked/lib/marked.umd.js"></script>
+MARKED_SCRIPT_PLACEHOLDER
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&family=JetBrains+Mono:wght@400;500&display=swap');
 
@@ -308,15 +310,23 @@ cat > "$OUTPUT_FILE" << 'HTMLEOF'
   <div class="actions">
     <button class="secondary" onclick="window.print()">PDF 저장</button>
   </div>
+  <textarea id="markdown-source" hidden>MARKDOWN_PLACEHOLDER</textarea>
   <script>
-    const md = document.getElementById('markdown-source').textContent;
-    document.getElementById('content').innerHTML = marked.parse(md);
-    // 첫 번째 h1을 타이틀로
-    const h1 = document.querySelector('#content h1');
-    if (h1) document.title = h1.textContent + ' | jobstack';
-  </script>
-  <script id="markdown-source" type="text/plain">
-MARKDOWN_PLACEHOLDER
+    (function () {
+      var md = document.getElementById('markdown-source').value;
+      var content = document.getElementById('content');
+      if (window.marked && typeof window.marked.parse === 'function') {
+        content.innerHTML = window.marked.parse(md);
+      } else {
+        // 렌더러를 못 받은 경우(오프라인·CDN 차단): 원문을 그대로 보여준다
+        var pre = document.createElement('pre');
+        pre.style.whiteSpace = 'pre-wrap';
+        pre.textContent = md;
+        content.appendChild(pre);
+      }
+      var h1 = document.querySelector('#content h1');
+      if (h1) document.title = h1.textContent + ' | jobstack';
+    })();
   </script>
 </body>
 </html>
@@ -327,22 +337,37 @@ TITLE=$(head -5 "$INPUT_FILE" | grep '^#' | head -1 | sed 's/^#* *//' || echo "$
 [ -z "$TITLE" ] && TITLE="$BASENAME"
 TIMESTAMP=$(date '+%Y년 %m월 %d일 %H:%M')
 
-python3 << PYEOF
+TITLE="$TITLE" TIMESTAMP="$TIMESTAMP" MARKED_VENDOR="$MARKED_VENDOR" MARKED_CDN="$MARKED_CDN" \
+  INPUT_FILE="$INPUT_FILE" OUTPUT_FILE="$OUTPUT_FILE" python3 << 'PYEOF'
+# 셸 값은 전부 환경변수로 넘긴다 — 경로·제목에 따옴표가 있어도 파이썬 소스가 깨지지 않는다(리뷰 반영)
+import os
 import sys
 
-with open('$INPUT_FILE', 'r') as f:
+with open(os.environ['INPUT_FILE'], 'r') as f:
     md = f.read()
-with open('$OUTPUT_FILE', 'r') as f:
+with open(os.environ['OUTPUT_FILE'], 'r') as f:
     html = f.read()
 
-title = """$TITLE"""
-timestamp = "$TIMESTAMP"
+title = os.environ.get('TITLE', '')
+timestamp = os.environ.get('TIMESTAMP', '')
 
-html = html.replace('TITLE_PLACEHOLDER', title + ' | jobstack')
+import html as _html
+vendor = os.environ.get('MARKED_VENDOR', '')
+cdn = os.environ.get('MARKED_CDN', '')
+try:
+    with open(vendor, 'r', encoding='utf-8') as vf:
+        marked_js = vf.read()
+    script_tag = '<script>' + marked_js.replace('</script', '<\\/script') + '</script>'
+except OSError:
+    script_tag = '<script src="' + cdn + '"></script>'
+
+html = html.replace('TITLE_PLACEHOLDER', _html.escape(title, quote=False) + ' | jobstack')
 html = html.replace('TIMESTAMP_PLACEHOLDER', timestamp)
-html = html.replace('MARKDOWN_PLACEHOLDER', md.replace('</script>', '<' + '/script>'))
+html = html.replace('MARKED_SCRIPT_PLACEHOLDER', script_tag)
+# textarea 안에서는 &lt; &amp; 만 이스케이프하면 </script>·</textarea> 로 블록이 끊기지 않는다
+html = html.replace('MARKDOWN_PLACEHOLDER', _html.escape(md, quote=False))
 
-with open('$OUTPUT_FILE', 'w') as f:
+with open(os.environ['OUTPUT_FILE'], 'w') as f:
     f.write(html)
 PYEOF
 

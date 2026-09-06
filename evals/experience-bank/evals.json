@@ -1,0 +1,69 @@
+{
+  "skill": "experience-bank",
+  "cases": [
+    {
+      "id": "expbank-gate-single-card",
+      "tier": "gate",
+      "prompt": "경험 하나 카드로 정리해줘. ABC 스타트업 백엔드 인턴이었고, 문제는 API 응답 속도가 느렸던 것, 제 역할은 캐싱 레이어 설계 담당, 행동은 Redis 캐싱을 도입한 것, 결과는 평균 응답시간이 800ms에서 150ms로 줄어든 것, 직무 태그는 백엔드로 해주세요.",
+      "files": [],
+      "setup": [],
+      "expectations": {
+        "must_contain": ["저장"],
+        "must_not_contain": ["다각적", "포괄적", "심층적", "혁신적", "체계적", "합격 보장", "무조건 통과", "전문가가 직접 첨삭", "AI 대체 불가"],
+        "must_call": ["jobstack-exp.mjs add --title --problem --role --action --change"],
+        "must_read": ["references/experience-card-schema.md"],
+        "max_turns": 8
+      },
+      "grader": "deterministic",
+      "note": "6단계(이름·문제·역할·행동·변화·직무연결) 정보를 프롬프트에 모두 선제 제공해 인터뷰 왕복 없이 Phase 4 저장까지 단일 호출로 도달하는지 확인하는 게이트 케이스."
+    },
+    {
+      "id": "expbank-periodic-numberless-fallback",
+      "tier": "periodic",
+      "prompt": "동아리에서 후배 멘토링을 했던 경험을 카드로 만들고 싶은데, 수치는 딱히 없어요.",
+      "files": [],
+      "setup": [],
+      "expectations": {
+        "must_contain": ["확인 필요"],
+        "must_not_contain": ["다각적", "포괄적", "심층적", "혁신적", "체계적", "합격 보장", "무조건 통과", "전문가가 직접 첨삭", "AI 대체 불가"],
+        "must_call": [],
+        "must_read": ["references/experience-methods.md"],
+        "max_turns": 10
+      },
+      "grader": "llm",
+      "note": "숫자가 없다고 답했을 때 §3 수치 폴백 5기준(전후 변화→역할 범위 분리→정성 근거→작은 검증 가능 숫자→면접 설명 가능성)을 순서대로 시도하는지, 근거가 끝내 안 나오면 숫자를 지어내지 않고 [수치 확인 필요] placeholder로 남기는지를 LLM으로 판단한다. 대화가 코칭 위주라 저장 단계까지 반드시 도달하지 않아도 되므로 must_call은 비워 둔다."
+    },
+    {
+      "id": "expbank-e2e-ai-usage-chain",
+      "tier": "e2e",
+      "prompt": "졸업 프로젝트에서 ChatGPT로 초기 아키텍처 설계 초안을 잡고 제가 직접 검증해서 API 구조를 확정한 경험이 있어요. 문제는 설계 방향을 처음부터 못 잡아서 시간이 오래 걸릴 뻔한 것, 역할은 아키텍처 설계 담당, 행동은 AI가 준 초안을 직접 검증하고 수정한 것, 결과는 설계 소요 시간이 2주에서 3일로 줄어든 것입니다. AI 도구는 ChatGPT, 과업은 초기 아키텍처 초안 작성, 효과는 설계 시간이 2주에서 3일로 준 것으로 기록해주세요. 카드로 만들어서 저장하고, 검증하고, 목록도 보여주세요.",
+      "files": [],
+      "setup": [],
+      "expectations": {
+        "must_contain": ["[PASS]"],
+        "must_not_contain": ["다각적", "포괄적", "심층적", "혁신적", "체계적", "합격 보장", "무조건 통과", "전문가가 직접 첨삭", "AI 대체 불가"],
+        "must_call": [
+          "jobstack-exp.mjs add --ai-usage-tool --ai-usage-task --ai-usage-effect",
+          "jobstack-exp.mjs validate",
+          "jobstack-exp.mjs list"
+        ],
+        "must_read": [],
+        "max_turns": 14
+      },
+      "grader": "deterministic",
+      "note": "add(3개 --ai-usage-* 옵션을 함께)→validate→list 체이닝을 한 세션에서 확인한다. 셋 중 하나만 넘기면 스크립트가 거부하는 계약(SKILL.md Phase 4)을 지키려면 세 옵션이 모두 같은 add 호출에 있어야 한다 — must_call 단어 매칭이 이를 간접 검증한다."
+    }
+  ],
+  "should_trigger": [
+    {"query": "제 경험 정리해서 카드로 만들어줘", "expect": true},
+    {"query": "자소서 소재로 쓸 경험이 뭐가 있을지 모르겠어요", "expect": true},
+    {"query": "인턴 경험 하나 카드화하고 싶어요", "expect": true},
+    {"query": "저장된 경험 카드 목록이랑 부족한 영역 좀 보여줘", "expect": true},
+    {"query": "이 경험으로 자소서 초안까지 써줘", "expect": false},
+    {"query": "이 경험 NCS 능력단위에 매핑해줘", "expect": false},
+    {"query": "이력서에 이 경력 어떻게 넣을지 첨삭해줘", "expect": false},
+    {"query": "면접에서 이 경험 어떻게 답변할지 연습하고 싶어", "expect": false},
+    {"query": "지원 현황 업데이트해줘", "expect": false},
+    {"query": "이 경험 기반으로 기업 적합도 분석해줘", "expect": false}
+  ]
+}

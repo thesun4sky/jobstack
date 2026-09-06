@@ -1,7 +1,5 @@
 ---
 name: ncs
-preamble-tier: 2
-version: 0.2.0
 description: |
   NCS(국가직무능력표준) 역량 매핑 스킬. 직무능력 분석, 경험→역량 변환.
   "NCS 분석", "역량 매핑", "NCS 기반" 등의 요청 시 활용.
@@ -12,54 +10,22 @@ allowed-tools:
   - AskUserQuestion
   - WebSearch
   - WebFetch
+argument-hint: "[직무기술서 | 기관명] [직무]"
+when_to_use: |
+  공기업·공공기관 채용에서 필요한 NCS 능력단위를 분석하고, 개인 경험을 역량으로 변환할 때 사용한다.
+  민간 기업 지원이면 이 스킬이 필요 없고, experience-bank에서 경험 카드를 만들었다면 더 빠르게 진행된다.
+metadata:
+  preamble-tier: 2
+  version: 0.2.0
 ---
 
-```bash
-# ─── jobstack 프리앰블 ─────────────────────────
-_JS_STATE="${JOBSTACK_STATE_DIR:-$HOME/.jobstack}"
-mkdir -p "$_JS_STATE/analytics" "$_JS_STATE/profiles" "$_JS_STATE/tracker" \
-         "$_JS_STATE/company-cache" "$_JS_STATE/interview-history" "$_JS_STATE/sessions" "$_JS_STATE/defense-maps" "$_JS_STATE/job-cache"
+!`bash "${CLAUDE_SKILL_DIR}/scripts/preamble.sh" ncs "${CLAUDE_SESSION_ID}" "${CLAUDE_PLUGIN_DATA:-}"`
 
-# 세션 추적
-echo "$$" > "$_JS_STATE/sessions/$$"
-trap 'rm -f "$_JS_STATE/sessions/$$"' EXIT
+> 위 실행 컨텍스트가 비어 있거나 `KEY=VALUE` 목록 대신 `!` 명령·정책 차단 문구가 그대로 보이면(`!` 주입이 꺼진 환경), 첫 Bash 명령으로 `bash "${CLAUDE_SKILL_DIR}/scripts/preamble.sh" ncs`를 실행해 같은 컨텍스트를 확보하고 `${CLAUDE_SKILL_DIR}/references/guardrails.md`를 Read 하세요. 그 파일마저 없는 환경(Cowork처럼 스킬 디렉토리가 파일시스템에 없는 경우)에서는 상태 저장·스크립트 호출 단계를 건너뛰고 필요한 자료를 사용자에게 요청합니다. `STATE_WRITE_FAILED=true`가 보이면 `JOBSTACK_STATE_DIR` 경로를 사용자에게 확인합니다. 이 스킬의 Bash 스니펫은 첫 줄에 `. "${JOBSTACK_STATE_DIR:-$HOME/.jobstack}/env.sh"`를 두어 `$_JS_STATE`·`$_JS_BIN`·`$TODAY`를 불러옵니다.
 
-# 설정 로딩
-_JS_CONFIG="${CLAUDE_SKILL_DIR}/../bin/jobstack-config"
-if [ -x "$_JS_CONFIG" ]; then
-  PROACTIVE=$("$_JS_CONFIG" get proactive 2>/dev/null || echo "true")
-else
-  PROACTIVE="true"
-fi
+### 공통 가드레일 (references/guardrails.md)
 
-# 프로필 로딩
-PROFILE="$_JS_STATE/profiles/default.yaml"
-if [ -f "$PROFILE" ]; then
-  echo "PROFILE_EXISTS=true"
-  echo "--- 프로필 요약 ---"
-  head -20 "$PROFILE"
-  echo "---"
-else
-  echo "PROFILE_EXISTS=false"
-fi
-
-# 활성 세션 수
-for _f in "$_JS_STATE/sessions/"*; do
-  [ -f "$_f" ] || continue
-  kill -0 "$(basename "$_f")" 2>/dev/null || rm -f "$_f"
-done
-ACTIVE_SESSIONS=$(ls "$_JS_STATE/sessions/" 2>/dev/null | wc -l | tr -d ' ')
-echo "ACTIVE_SESSIONS=$ACTIVE_SESSIONS"
-echo "PROACTIVE=$PROACTIVE"
-echo "SKILL_NAME=ncs"
-
-# 텔레메트리
-echo "{\"skill\":\"ncs\",\"ts\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"pid\":$$}" \
-  >> "$_JS_STATE/analytics/skill-usage.jsonl" 2>/dev/null || true
-```
-
-> **공통 가드레일**: 작업 시작 전 `${CLAUDE_SKILL_DIR}/../templates/guardrails.md` 를 Read 도구로 읽고 §1~§6 전 규칙을 준수하세요.
-
+!`sed '1{/^# /d;}' "${CLAUDE_SKILL_DIR}/references/guardrails.md"`
 
 # ncs — NCS 역량 매핑
 
@@ -117,20 +83,15 @@ WebSearch로 ncs.go.kr에서 해당 직무의 능력단위를 검색합니다.
 | 데이터 입출력 구현 | 논리 데이터 저장소 확인, 물리 데이터 저장소 설계 | 3 |
 | 통합 구현 | 연계 데이터 구성, 연계 메커니즘 구현 | 4 |
 
-### Phase 3: 직업기초능력 10개 영역 매핑
+### Phase 3: 능력 체계 매핑
 
-NCS 직업기초능력 10개 영역을 분석합니다:
+지원 기관 공고가 구 체계(직업기초능력 10영역)인지 신 체계(직업공통능력 7영역, AI 활용능력 신설)인지 먼저 판정합니다. 영역 목록·하위능력·판정 규칙은 `${CLAUDE_SKILL_DIR}/references/ncs-competencies.md` 가 단일 소스이므로 Read 해 다음 순서로 적용합니다(본문에 영역을 나열하지 않습니다):
 
-1. **의사소통능력** — 문서이해/작성, 경청, 의사표현
-2. **수리능력** — 기초연산, 통계, 도표 분석
-3. **문제해결능력** — 사고력, 문제처리
-4. **자기개발능력** — 자아인식, 자기관리, 경력개발
-5. **자원관리능력** — 시간/예산/물적/인적 자원 관리
-6. **대인관계능력** — 팀워크, 리더십, 갈등관리, 고객서비스
-7. **정보능력** — 정보수집, 정보분석, 정보관리, 컴퓨터 활용
-8. **기술능력** — 기술이해, 기술선택, 기술적용
-9. **조직이해능력** — 경영이해, 조직체제이해, 업무이해
-10. **직업윤리** — 근로윤리, 공동체윤리
+1. 그 문서의 "어느 체계를 쓸지 판정하는 규칙"대로 공고 문구를 확인해 구/신 체계를 판정합니다.
+2. 판정된 체계의 영역으로 사용자 경험을 매핑합니다.
+3. 산출물에는 **사용한 체계**와 **판정 근거**(공고 문구 또는 URL·기준일)를 적습니다.
+
+> 신 체계는 `[2차]` 근거(보도 확인 수준)입니다 — 실행 시 ncs.go.kr 원문에서 하위능력 명칭을 확인합니다.
 
 각 영역에 대한 사용자의 현재 수준을 아래 기준으로 평가합니다:
 
@@ -141,9 +102,11 @@ NCS 직업기초능력 10개 영역을 분석합니다:
 | C | 간접 경험(수업·자격증)만 있음 |
 | D | 근거 없음 |
 
-Phase 3에서는 사용자 자기신고 기반 **잠정 평가**만 합니다. Phase 4에서 경험 근거를 수집한 뒤 등급을 **확정**합니다. C·D 영역은 자소서 소재로 쓰지 않고 B 이상 영역을 선별해 문항에 배치합니다. 10개 영역 전부를 서술하려는 시도는 키워드 몰아넣기와 같은 실패이므로 하지 않습니다 — 직무기술서에 명시된 핵심 영역(통상 3~5개)에 집중합니다.
+Phase 3에서는 사용자 자기신고 기반 **잠정 평가**만 합니다. Phase 4에서 경험 근거를 수집한 뒤 등급을 **확정**합니다. C·D 영역은 자소서 소재로 쓰지 않고 B 이상 영역을 선별해 문항에 배치합니다. 전 영역을 서술하려는 시도는 키워드 몰아넣기와 같은 실패이므로 하지 않습니다 — 직무기술서에 명시된 핵심 영역(통상 3~5개)에 집중합니다.
 
 ### Phase 4: 경험→역량 변환 매트릭스
+
+**경험 카드 우선 사용**: 실행 컨텍스트의 `EXPERIENCES_EXISTS=true`이면 `$_JS_STATE/profiles/experiences.yaml`을 직접 Read하지 않고 `"$_JS_BIN/jobstack-exp.mjs" list`로 카드 목록을 확인한 뒤 `"$_JS_BIN/jobstack-exp.mjs" show <id>`로 매트릭스에 쓸 카드를 열어 경험 열을 채우고, 부족한 소재만 사용자에게 질문합니다. 카드의 문제·역할·행동·결과 4분리와 수치를 능력단위 수행 근거로 그대로 씁니다.
 
 사용자의 경험을 NCS 역량 단위로 변환합니다.
 
@@ -153,9 +116,9 @@ Phase 3에서는 사용자 자기신고 기반 **잠정 평가**만 합니다. P
 - 인턴/알바 경험 → 직업기초능력 근거
 - 자격증 → 자격증으로 검증 가능한 범위의 지식 근거 (자격증만으로 실제 수행 경험을 부여하지 않음)
 
-경험 1건을 소재 카드로 구조화할 때는 `${CLAUDE_SKILL_DIR}/../templates/experience-methods.md` §1(경험 전환 6단계: 경험 이름 → 당시 문제 → 역할 → 바꾼 행동 → 검증 가능한 변화 → 직무 연결)을 적용합니다. 6단계 중 하나라도 비면 그 경험은 아직 소재가 아니므로 질문으로 채웁니다.
+경험 1건을 소재 카드로 구조화할 때는 `${CLAUDE_SKILL_DIR}/references/experience-methods.md` §1(경험 전환 6단계: 경험 이름 → 당시 문제 → 역할 → 바꾼 행동 → 검증 가능한 변화 → 직무 연결)을 적용합니다. 6단계 중 하나라도 비면 그 경험은 아직 소재가 아니므로 질문으로 채웁니다.
 
-**신입 빈출 경험 → 직업기초능력 매핑:**
+**신입 빈출 경험 → 직업기초능력 매핑 (구 체계 명칭 예시):**
 
 | 경험 | 직업기초능력 |
 |------|-------------|
@@ -164,7 +127,7 @@ Phase 3에서는 사용자 자기신고 기반 **잠정 평가**만 합니다. P
 | 팀 프로젝트 | 대인관계능력, 문제해결능력 |
 | 수업 과제·조사 | 정보능력 |
 
-**변환 예시:**
+**변환 예시 (구 체계 명칭 예시):**
 
 | 경험 | NCS 능력단위 | 변환 서술 |
 |------|-------------|----------|
@@ -172,9 +135,11 @@ Phase 3에서는 사용자 자기신고 기반 **잠정 평가**만 합니다. P
 | 팀 프로젝트 리드 | 대인관계능력-팀워크 | "4인 팀에서 일정 관리 및 코드 리뷰 주도, 2주 단위 스프린트 운영" |
 | 정보처리기사 | 요구사항 확인 (Lv.3) | "정보처리기사 필기·실기 통과 — SW 개발 생명주기 단계별 용어·산출물 등 시험 범위 내 지식 검증" |
 
+위 두 표의 능력 명칭은 구 체계 기준 예시입니다. Phase 3에서 신 체계로 판정했다면 `${CLAUDE_SKILL_DIR}/references/ncs-competencies.md`의 구→신 매핑 표로 대응 영역을 바꿔 씁니다.
+
 **수치가 없을 때:**
 
-NCS 타겟은 학생·신입이 다수라 성과 수치가 없는 경우가 기본값입니다. 없는 수치를 지어내지 말고(아래 가드레일 섹션 참조), `${CLAUDE_SKILL_DIR}/../templates/experience-methods.md` §3(수치 폴백 5기준 + 대체 4종)으로 유도합니다.
+NCS 타겟은 학생·신입이 다수라 성과 수치가 없는 경우가 기본값입니다. 없는 수치를 지어내지 말고(아래 가드레일 섹션 참조), `${CLAUDE_SKILL_DIR}/references/experience-methods.md` §3(수치 폴백 5기준 + 대체 4종)으로 유도합니다.
 
 폴백 5기준(위에서부터 순서대로 적용): ①전후 변화 ②역할 범위 분리 ③정성 근거(피드백·계속 쓰인 양식) ④작은 검증 가능 숫자(예: "3주간 12건 문의 유형 정리") ⑤면접에서 설명 가능한가.
 
@@ -214,7 +179,7 @@ NCS 역량을 자소서에 녹이는 방법을 안내합니다.
 
 ## 가드레일
 
-작업 전 `${CLAUDE_SKILL_DIR}/../templates/guardrails.md` 의 §1~§6을 준수합니다. NCS 매핑·자소서 가이드에서 특히 다음을 지킵니다.
+작업 전 `${CLAUDE_SKILL_DIR}/references/guardrails.md` 의 §1~§6을 준수합니다. NCS 매핑·자소서 가이드에서 특히 다음을 지킵니다.
 
 **생성형 AI 작성 제한 고지**: 일부 공공기관은 자소서의 생성형 AI 작성을 공고에서 제한합니다. NCS 가이드는 대필이 아니라 **본인 경험을 재작성하는 구조 제안**임을 사용자에게 알리고, 최종 문장은 사용자 본인 표현으로 다듬도록 안내합니다. 지원 기관의 AI 활용 규정은 본문에 단정하지 말고 실행 시 해당 기관 공고 원문 또는 WebSearch로 확인합니다(규정 위반 시 불이익 정도는 기관마다 달라 하드코딩하지 않습니다).
 
@@ -237,7 +202,8 @@ NCS 역량을 자소서에 녹이는 방법을 안내합니다.
 
 NCS 매핑 매트릭스가 생성되면 다음 명령으로 브라우저에서 열 수 있습니다:
 ```bash
-$CLAUDE_SKILL_DIR/../bin/jobstack-view <결과파일.md>
+. "${JOBSTACK_STATE_DIR:-$HOME/.jobstack}/env.sh"
+"$_JS_BIN/jobstack-view" <결과파일.md>
 ```
 매핑 매트릭스는 표 중심 산출물이라 HTML 뷰어에서 보기 편합니다 — 결과물 생성 시 사용자에게 뷰어 사용을 안내하세요.
 
@@ -253,21 +219,3 @@ $CLAUDE_SKILL_DIR/../bin/jobstack-view <결과파일.md>
 - NCS 매핑 완료 → `/cover_letter` (NCS 기반 자소서 작성)
 - NCS 매핑 완료 → `/mock_interview` (NCS 기반 면접 준비)
 - NCS 매핑 완료 → `/resume` (NCS 역량 기반 이력서 보강)
-
-## 시각화 이미지 생성
-
-NCS 능력단위 분해·역량 수준 진단 결과를 제시하는 답변에서는 반드시 응답 맨 끝에 아래 마커를 추가한다:
-
-```
-[IMAGE_PROMPT: <영어 프롬프트>]
-```
-
-**트리거 조건 (필수):**
-- NCS 능력단위 분해/매핑, 직무 역량 수준 진단, 자가진단 결과 → **반드시** 추가
-- 역량 갭 다이어그램, 수준별 로드맵 → 추가
-- 단순 단답, 용어 1개 설명, 오류 메시지 → 추가하지 않음
-
-이 마커를 빠뜨리지 말 것 — 위 조건에 해당하면 응답의 가장 마지막 줄에 반드시 포함한다.
-
-**프롬프트 스타일:** professional diagram/infographic 스타일. 실제 직무·능력단위·수준을 반영한다.
-예: `An NCS competency map infographic for 백엔드 개발 직무: 능력단위(competency units) breakdown with 수준(level 1–8) badges, a radar chart of 핵심 역량 vs 현재 수준, and gap highlights. Clean professional diagram, blue/teal palette, Korean labels.`

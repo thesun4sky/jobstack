@@ -1,0 +1,565 @@
+#!/usr/bin/env python3
+"""
+jobstack-learn — 운영 학습 로그 기록·집계 도구 (검토 보고서 U-20 초안, v1.0 후보).
+
+스킬이 실행 중 마주친 "운영상 배운 것"(예: 어느 플랫폼 셀렉터가 깨졌는지, 어떤 자료 요청이
+반복되는지)을 메타만 남겨 학습 로그(JSONL)에 append 하고, auto 대시보드가 소비할 상위 N건
+요약을 만든다. bin/jobstack-fetch-diag 의 집계 스크립트 스타일(서브커맨드 수동 파싱, 표준
+라이브러리만 사용, KST 표시·UTC 저장, --json 옵션)을 그대로 따른다.
+
+**문서 내용·회사명·개인정보는 절대 기록하지 않는다** — docs/telemetry-events.md 의 PII 3등급
+정책(서비스 사용자 데이터는 익명·집계만)과 동일 원칙을 이 로그에도 적용한다. 이 스크립트는
+이벤트 어휘(kind 6종)가 문서에 정식 등록된 뒤에만 스킬 본문에서 호출해야 한다 — 초안은
+docs/telemetry-events.md "운영 학습 로그" 절 참조(정식 등록됨).
+
+로그 한 줄의 형식(고정, JSON — 필드 순서는 예시일 뿐 강제하지 않음):
+  {"ts":"2026-09-01T10:15:00Z","skill":"job-search","kind":"selector_broken",
+   "key":"saramin.item_recruit","note":"목록 셀렉터 응답 0건","session":"abc123"}
+note·session 은 선택 필드(없으면 생략). 같은 (skill, kind, key) 가 24시간 안에 이미 있으면
+기존 줄을 고쳐 쓰지 않고(append-only 원칙 — skill-usage.jsonl 과 동일) 새 줄을 그대로 추가하되
+"dup":true 를 붙인다. count 는 저장하지 않는다 — top/validate 가 줄 수를 세어 그대로 합산하므로
+dup 여부와 무관하게 자동으로 맞는 건수가 나온다.
+
+dup 판정(읽기)과 기록(쓰기) 구간은 파일 잠금(`fcntl.flock`, 있는 플랫폼에서만)으로 감싸 동시
+add 실행 시의 경합을 줄인다 — fcntl 이 없는 플랫폼이나 잠금을 지원하지 않는 파일시스템(NFS 등)
+에서는 잠금 없이 그대로 진행하므로 극히 드문 경합이 남을 수 있다(한계, 완전한 상호 배제는 아님).
+
+kind 어휘 6종(닫힌 집합 — docs/telemetry-events.md "운영 학습 로그" 절 참조. 새 값이 필요하면 그 문서에
+먼저 정식 등록한 뒤에 쓴다):
+  selector_broken · source_blocked · data_requested · tool_missing · format_mismatch · other
+
+사용법:
+  jobstack-learn add --skill <name> --kind <kind> --key <식별자>
+                     [--note <60자 이내>] [--session <id>] [--file <경로>]
+  jobstack-learn top [--n 3] [--since 7d|24h|30d] [--json] [--file <경로>]
+  jobstack-learn list [--skill <name>] [--kind <kind>] [--json] [--file <경로>]
+  jobstack-learn validate [--file <경로>]
+
+로그 경로 해석 순서(둘 다 생략 가능):
+  1) --file (모든 서브커맨드 공통 — 테스트·수동 점검용)
+  2) $JOBSTACK_LEARN_LOG
+  3) $JOBSTACK_STATE_DIR/analytics/learnings.jsonl
+  4) ~/.jobstack/analytics/learnings.jsonl
+
+PII 휴리스틱(정규식, key·note 공통 검사 — add 는 거부, validate 는 기존 줄 재검사):
+  이메일 · 한국 전화번호(010-1234-5678 등) · URL 쿼리(?key=value, &id=1) ·
+  "라벨: 성+이름" 형태(예: "담당자: 김민수") · 흔한 예시용 한글 이름(홍길동 등).
+  key 는 charset 자체를 [a-z0-9_.-] 로 제한하므로(예: saramin.item_recruit) 위 패턴이 애초에
+  들어갈 수 없다 — key 쪽 PII 검사는 validate 가 과거/수기 작성 줄을 재검사할 때를 위한
+  이중 방어다. **휴리스틱은 완전하지 않다**: 접미사·라벨·콜론 없이 홀로 등장하는 한글 이름,
+  또는 "고객님"·"담당자 확인"처럼 이름이 아닌 일반 어휘와의 오탐 가능성을 함께 낮추려고
+  일부러 신호를 좁게 잡았다 — 즉 놓치는 이름이 있을 수 있다. 그러니 이 검사를 최종 방어선으로
+  믿지 말고, 애초에 key/note 에는 사람 이름·회사명·문서 인용을 쓰지 않는 것이 원칙이다
+  (운영 메타: 무엇이 깨졌는지·무엇이 반복 요청됐는지만).
+
+종료코드:
+  0  정상 (top 은 기록 없음도 0·빈 출력 — 대시보드에 그대로 임베드하기 위함)
+  1  PII 휴리스틱 거부(add) 또는 검증 문제 발견(validate)
+  2  인자·형식 오류 (필수값 누락, kind 어휘 밖, key 형식 오류, note 60자 초과, 파일 오류 등)
+"""
+import json
+import os
+import re
+import sys
+from datetime import datetime, timedelta, timezone
+
+try:
+    import fcntl  # POSIX 전용 — 없는 플랫폼(Windows 등)에서는 잠금 없이 진행한다.
+except ImportError:
+    fcntl = None
+
+KST = timezone(timedelta(hours=9))
+UTC = timezone.utc
+
+KIND_CHOICES = (
+    'selector_broken', 'source_blocked', 'data_requested',
+    'tool_missing', 'format_mismatch', 'other',
+)
+NOTE_MAX = 60
+SESSION_MAX = 128
+KEY_RE = re.compile(r'^[a-z0-9][a-z0-9_.\-]{1,79}$')
+SKILL_RE = re.compile(r'^[a-z][a-z0-9\-]{0,39}$')
+DUP_WINDOW = timedelta(hours=24)
+
+# ── PII 휴리스틱 정규식 ──────────────────────────────────────────────────
+# 흔한 한국 성씨(빈도 상위) — "라벨: 성+이름" 판정의 시작 문자 게이트로만 쓴다.
+_SURNAMES = ('김이박최정강조윤장임한오서신권황안송전홍유고문양손배백허남심노하곽성차주우구민')
+_EMAIL_RE = re.compile(r'[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}')
+# 한국 휴대폰(010/011/016~019)·지역번호(02, 031~069) 전화번호. 하이픈 유무 모두 허용.
+_PHONE_RE = re.compile(r'(?<!\d)(?:01[016789]|02|0[3-9]\d)-?\d{3,4}-?\d{4}(?!\d)')
+# ?key=value, &id=1 같은 URL 쿼리 토큰 (URL 전체가 아니라 쿼리 신호만 — 플랫폼명 언급은 허용).
+_URLQ_RE = re.compile(r'[?&][A-Za-z0-9_%.\-]+=')
+# "이름:", "담당자:" 등 라벨 뒤에 콜론과 함께 오는 성+이름(2~4음절). 콜론을 요구해 "담당자 확인
+# 필요" 같은 일반 문장과의 오탐을 줄인다.
+_NAME_LABEL_RE = re.compile(
+    r'(?:이름|성명|성함|담당자|지원자|작성자)\s*[:：]\s*[' + _SURNAMES + r'][가-힣]{1,3}(?![가-힣])'
+)
+# 한국 문서·튜토리얼에서 예시로 흔히 쓰이는 이름(맥락 무관하게 이름으로 확정 취급).
+_NAME_PLACEHOLDERS = ('홍길동', '김철수', '이영희', '박영희', '김영희')
+_NAME_PLACEHOLDER_RE = re.compile('|'.join(re.escape(n) for n in _NAME_PLACEHOLDERS))
+
+_PII_CHECKS = (
+    ('이메일', _EMAIL_RE),
+    ('전화번호', _PHONE_RE),
+    ('URL 쿼리', _URLQ_RE),
+    ('한글 이름 추정', _NAME_LABEL_RE),
+    ('한글 이름 추정', _NAME_PLACEHOLDER_RE),
+)
+
+
+class _ArgError(Exception):
+    """인자·형식 오류 — main() 이 stderr 안내 + exit 2 로 변환한다."""
+
+
+def _find_pii(label, value):
+    """value 에서 PII 로 보이는 패턴을 찾으면 사람이 읽을 안내 문장을, 없으면 None 을 반환."""
+    if not value:
+        return None
+    for name, pat in _PII_CHECKS:
+        if pat.search(value):
+            return f'{label} 에 {name} 패턴이 있어 보입니다'
+    return None
+
+
+# ── 로그 경로 해석 (jobstack-fetch-diag _default_log_path 와 동일한 우선순위 방식) ──────
+def _default_log_path():
+    env = os.environ.get('JOBSTACK_LEARN_LOG')
+    if env:
+        return env
+    state = os.environ.get('JOBSTACK_STATE_DIR')
+    if state:
+        return os.path.join(state, 'analytics', 'learnings.jsonl')
+    return os.path.join(os.path.expanduser('~'), '.jobstack', 'analytics', 'learnings.jsonl')
+
+
+def _now_ts():
+    return datetime.now(UTC).strftime('%Y-%m-%dT%H:%M:%SZ')
+
+
+def _parse_ts(raw):
+    if not isinstance(raw, str) or not raw:
+        return None
+    try:
+        d = datetime.fromisoformat(raw.replace('Z', '+00:00'))
+    except ValueError:
+        return None
+    if d.tzinfo is None:
+        d = d.replace(tzinfo=UTC)
+    return d
+
+
+def _fmt_date_kst(d):
+    return d.astimezone(KST).strftime('%Y-%m-%d')
+
+
+def _read_records(path):
+    """(record 리스트, 파싱 불가 줄 수). 관대한 읽기 — 깨진 줄은 건너뛰고 집계에서 뺀다."""
+    if not os.path.exists(path):
+        return [], 0
+    records, bad = [], 0
+    with open(path, 'r', encoding='utf-8', errors='replace') as f:
+        for raw in f:
+            line = raw.strip()
+            if not line:
+                continue
+            try:
+                obj = json.loads(line)
+            except json.JSONDecodeError:
+                bad += 1
+                continue
+            if not isinstance(obj, dict):
+                bad += 1
+                continue
+            records.append(obj)
+    return records, bad
+
+
+# ── add ──────────────────────────────────────────────────────────────────
+def _parse_add_args(args):
+    skill = kind = key = note = session = logfile = None
+    i = 0
+    while i < len(args):
+        a = args[i]
+        if a == '--skill':
+            i += 1
+            if i >= len(args):
+                raise _ArgError('jobstack-learn: --skill 값 누락')
+            skill = args[i]
+        elif a == '--kind':
+            i += 1
+            if i >= len(args):
+                raise _ArgError('jobstack-learn: --kind 값 누락')
+            kind = args[i]
+        elif a == '--key':
+            i += 1
+            if i >= len(args):
+                raise _ArgError('jobstack-learn: --key 값 누락')
+            key = args[i]
+        elif a == '--note':
+            i += 1
+            if i >= len(args):
+                raise _ArgError('jobstack-learn: --note 값 누락')
+            note = args[i]
+        elif a == '--session':
+            i += 1
+            if i >= len(args):
+                raise _ArgError('jobstack-learn: --session 값 누락')
+            session = args[i]
+        elif a == '--file':
+            i += 1
+            if i >= len(args):
+                raise _ArgError('jobstack-learn: --file 값 누락')
+            logfile = args[i]
+        else:
+            raise _ArgError(f'jobstack-learn: 알 수 없는 인자 {a}')
+        i += 1
+    if not skill or not kind or not key:
+        raise _ArgError('jobstack-learn add: --skill --kind --key 는 필수입니다')
+    return skill, kind, key, note, session, logfile
+
+
+def cmd_add(args):
+    skill, kind, key, note, session, logfile = _parse_add_args(args)
+
+    if not SKILL_RE.match(skill):
+        raise _ArgError(
+            f'jobstack-learn: --skill 형식 오류 "{skill}" (영문 소문자로 시작, 소문자·숫자·하이픈, 40자 이내)'
+        )
+    if kind not in KIND_CHOICES:
+        raise _ArgError(
+            f'jobstack-learn: --kind 는 다음 중 하나여야 합니다: {", ".join(KIND_CHOICES)}'
+        )
+    if not KEY_RE.match(key):
+        raise _ArgError(
+            f'jobstack-learn: --key 형식 오류 "{key}" (예: saramin.item_recruit — 소문자/숫자/. _ - , 2~80자)'
+        )
+    if note is not None and len(note) > NOTE_MAX:
+        raise _ArgError(f'jobstack-learn: --note 는 {NOTE_MAX}자 이내여야 합니다 (현재 {len(note)}자)')
+    if session is not None and len(session) > SESSION_MAX:
+        raise _ArgError(f'jobstack-learn: --session 은 {SESSION_MAX}자 이내여야 합니다')
+
+    pii = _find_pii('--key', key) or _find_pii('--note', note)
+    if pii:
+        sys.stderr.write(
+            'jobstack-learn: PII 휴리스틱에 걸려 기록을 거부합니다 — ' + pii + '\n'
+            '  key/note 에는 이메일·전화번호·URL 쿼리·이름으로 보이는 값을 쓸 수 없습니다.\n'
+            '  운영 메타(어떤 셀렉터·자료가 문제였는지)만 남기고 문서 내용·개인정보는 기록하지 마세요.\n'
+        )
+        return 1
+
+    path = logfile or _default_log_path()
+    parent = os.path.dirname(path) or '.'
+    try:
+        os.makedirs(parent, exist_ok=True)
+    except OSError as err:
+        sys.stderr.write(f'jobstack-learn: 상태 디렉터리를 만들 수 없습니다: {err}\n')
+        return 2
+
+    now = datetime.now(UTC)
+    record = {'ts': _now_ts(), 'skill': skill, 'kind': kind, 'key': key}
+    if note:
+        record['note'] = note
+    if session:
+        record['session'] = session
+
+    # dup 판정(읽기) → 기록(추가) 구간을 파일 잠금으로 감싼다 — 동시에 여러 add 가 실행돼도
+    # 같은 (skill, kind, key) 를 동시에 "중복 아님"으로 오판할 확률을 줄이는 정도의 방어다
+    # (fcntl 이 없으면 잠금 없이 그대로 진행 — 위 docstring 한계 참조).
+    try:
+        with open(path, 'a', encoding='utf-8') as f:
+            if fcntl is not None:
+                fcntl.flock(f, fcntl.LOCK_EX)
+            try:
+                dup = False
+                existing, _bad = _read_records(path)
+                for rec in existing:
+                    if rec.get('skill') == skill and rec.get('kind') == kind and rec.get('key') == key:
+                        ts = _parse_ts(rec.get('ts'))
+                        if ts is not None and (now - ts) < DUP_WINDOW:
+                            dup = True
+                            break
+                if dup:
+                    record['dup'] = True
+                f.write(json.dumps(record, ensure_ascii=False) + '\n')
+            finally:
+                if fcntl is not None:
+                    fcntl.flock(f, fcntl.LOCK_UN)
+    except OSError as err:
+        sys.stderr.write(f'jobstack-learn: 기록 실패: {err}\n')
+        return 2
+
+    tag = ' (dup — 24시간 내 반복)' if dup else ''
+    print(f'기록됨: [{kind}] {key}{tag}')
+    return 0
+
+
+# ── top ──────────────────────────────────────────────────────────────────
+def _parse_since(value):
+    m = re.fullmatch(r'(\d+)([dh])', value.strip()) if value else None
+    if not m:
+        raise _ArgError(f'jobstack-learn: --since 형식 오류 "{value}" (예: 7d, 24h, 30d)')
+    amount = int(m.group(1))
+    return timedelta(days=amount) if m.group(2) == 'd' else timedelta(hours=amount)
+
+
+def _parse_top_args(args):
+    n = 3
+    since = None
+    as_json = False
+    logfile = None
+    i = 0
+    while i < len(args):
+        a = args[i]
+        if a == '--n':
+            i += 1
+            if i >= len(args):
+                raise _ArgError('jobstack-learn: --n 값 누락')
+            try:
+                n = int(args[i])
+            except ValueError:
+                raise _ArgError(f'jobstack-learn: --n 값이 정수가 아님: {args[i]}')
+            if n <= 0:
+                raise _ArgError('jobstack-learn: --n 값은 1 이상이어야 함')
+        elif a == '--since':
+            i += 1
+            if i >= len(args):
+                raise _ArgError('jobstack-learn: --since 값 누락')
+            since = args[i]
+        elif a == '--json':
+            as_json = True
+        elif a == '--file':
+            i += 1
+            if i >= len(args):
+                raise _ArgError('jobstack-learn: --file 값 누락')
+            logfile = args[i]
+        else:
+            raise _ArgError(f'jobstack-learn: 알 수 없는 인자 {a}')
+        i += 1
+    return n, since, as_json, logfile
+
+
+def cmd_top(args):
+    n, since_str, as_json, logfile = _parse_top_args(args)
+    path = logfile or _default_log_path()
+    cutoff = datetime.now(UTC) - _parse_since(since_str) if since_str else None
+
+    records, _bad = _read_records(path)
+    groups = {}
+    for rec in records:
+        kind, key, skill = rec.get('kind'), rec.get('key'), rec.get('skill')
+        ts = _parse_ts(rec.get('ts'))
+        if kind not in KIND_CHOICES or not key or not skill or ts is None:
+            continue  # 스키마를 벗어난 줄은 집계에서 조용히 제외 (validate 가 별도로 잡는다)
+        if cutoff is not None and ts < cutoff:
+            continue
+        g = groups.setdefault((kind, key), {'count': 0, 'last_ts': ts, 'skills': set()})
+        g['count'] += 1
+        if ts > g['last_ts']:
+            g['last_ts'] = ts
+        g['skills'].add(skill)
+
+    rows = sorted(
+        groups.items(),
+        key=lambda kv: (-kv[1]['count'], -kv[1]['last_ts'].timestamp(), kv[0][0], kv[0][1]),
+    )[:n]
+
+    if not rows:
+        return 0  # 기록 없음 → 빈 출력 (auto 대시보드에 조건 없이 그대로 임베드하기 위함)
+
+    if as_json:
+        print(json.dumps([
+            {
+                'kind': kind, 'key': key, 'count': v['count'],
+                'last_ts': v['last_ts'].strftime('%Y-%m-%dT%H:%M:%SZ'),
+                'skills': sorted(v['skills']),
+            }
+            for (kind, key), v in rows
+        ], ensure_ascii=False, indent=2))
+        return 0
+
+    for (kind, key), v in rows:
+        skills = ', '.join(sorted(v['skills']))
+        print(f'- [{kind}] {key} ×{v["count"]} (최근 {_fmt_date_kst(v["last_ts"])}, {skills})')
+    return 0
+
+
+# ── list ─────────────────────────────────────────────────────────────────
+def _parse_list_args(args):
+    skill = kind = None
+    as_json = False
+    logfile = None
+    i = 0
+    while i < len(args):
+        a = args[i]
+        if a == '--skill':
+            i += 1
+            if i >= len(args):
+                raise _ArgError('jobstack-learn: --skill 값 누락')
+            skill = args[i]
+        elif a == '--kind':
+            i += 1
+            if i >= len(args):
+                raise _ArgError('jobstack-learn: --kind 값 누락')
+            kind = args[i]
+        elif a == '--json':
+            as_json = True
+        elif a == '--file':
+            i += 1
+            if i >= len(args):
+                raise _ArgError('jobstack-learn: --file 값 누락')
+            logfile = args[i]
+        else:
+            raise _ArgError(f'jobstack-learn: 알 수 없는 인자 {a}')
+        i += 1
+    return skill, kind, as_json, logfile
+
+
+def cmd_list(args):
+    skill, kind, as_json, logfile = _parse_list_args(args)
+    path = logfile or _default_log_path()
+    records, _bad = _read_records(path)
+
+    rows = [
+        r for r in records
+        if (not skill or r.get('skill') == skill) and (not kind or r.get('kind') == kind)
+    ]
+
+    if not rows:
+        print('기록 없음')
+        return 0
+
+    if as_json:
+        print(json.dumps(rows, ensure_ascii=False, indent=2))
+        return 0
+
+    for rec in rows:
+        ts = _parse_ts(rec.get('ts'))
+        date = _fmt_date_kst(ts) if ts else (rec.get('ts') or '(ts 없음)')
+        line = f'{date}  {rec.get("skill", "?")}  [{rec.get("kind", "?")}] {rec.get("key", "?")}'
+        if rec.get('note'):
+            line += f'  — {rec["note"]}'
+        if rec.get('dup'):
+            line += '  (dup)'
+        print(line)
+    return 0
+
+
+# ── validate ─────────────────────────────────────────────────────────────
+def _validate_record(idx, obj):
+    problems = []
+    if not isinstance(obj, dict):
+        return [f'{idx}행: JSON 객체가 아님']
+
+    for field in ('ts', 'skill', 'kind', 'key'):
+        if not obj.get(field):
+            problems.append(f'{idx}행: 필수 필드 "{field}" 누락')
+
+    if obj.get('ts') is not None and _parse_ts(obj.get('ts')) is None:
+        problems.append(f'{idx}행: ts 형식 오류 "{obj.get("ts")}"')
+
+    kind = obj.get('kind')
+    if kind is not None and kind not in KIND_CHOICES:
+        problems.append(f'{idx}행: kind 어휘 밖 "{kind}" (허용: {", ".join(KIND_CHOICES)})')
+
+    key = obj.get('key')
+    if isinstance(key, str) and not KEY_RE.match(key):
+        problems.append(f'{idx}행: key 형식 오류 "{key}"')
+    elif key is not None and not isinstance(key, str):
+        problems.append(f'{idx}행: key 는 문자열이어야 함')
+
+    note = obj.get('note')
+    if note is not None:
+        if not isinstance(note, str):
+            problems.append(f'{idx}행: note 는 문자열이어야 함')
+        elif len(note) > NOTE_MAX:
+            problems.append(f'{idx}행: note {NOTE_MAX}자 초과 ({len(note)}자)')
+
+    session = obj.get('session')
+    if session is not None and (not isinstance(session, str) or len(session) > SESSION_MAX):
+        problems.append(f'{idx}행: session 형식 오류 (문자열, {SESSION_MAX}자 이내)')
+
+    if 'dup' in obj and obj.get('dup') is not True:
+        problems.append(f'{idx}행: dup 필드는 true 만 허용(불필요하면 필드를 생략)')
+
+    pii = _find_pii('key', key if isinstance(key, str) else None) \
+        or _find_pii('note', note if isinstance(note, str) else None)
+    if pii:
+        problems.append(f'{idx}행: PII 휴리스틱 위반 — {pii}')
+
+    return problems
+
+
+def cmd_validate(args):
+    logfile = None
+    i = 0
+    while i < len(args):
+        a = args[i]
+        if a == '--file':
+            i += 1
+            if i >= len(args):
+                raise _ArgError('jobstack-learn: --file 값 누락')
+            logfile = args[i]
+        else:
+            raise _ArgError(f'jobstack-learn: 알 수 없는 인자 {a}')
+        i += 1
+
+    path = logfile or _default_log_path()
+    if not os.path.exists(path):
+        print('기록 없음 — 검증할 파일이 없습니다')
+        return 0
+
+    problems = []
+    total = 0
+    with open(path, 'r', encoding='utf-8', errors='replace') as f:
+        for idx, raw in enumerate(f, start=1):
+            line = raw.strip()
+            if not line:
+                continue
+            total += 1
+            try:
+                obj = json.loads(line)
+            except json.JSONDecodeError as err:
+                problems.append(f'{idx}행: JSON 파싱 실패 ({err})')
+                continue
+            problems.extend(_validate_record(idx, obj))
+
+    print(f'검증: {total}줄 중 문제 {len(problems)}건')
+    for p in problems:
+        print(f'  {p}')
+
+    if problems:
+        return 1
+    print('[OK] 스키마·PII 휴리스틱 문제 없음')
+    return 0
+
+
+# ── 진입점 ───────────────────────────────────────────────────────────────
+def main(argv):
+    if not argv:
+        sys.stderr.write(
+            'Usage: jobstack-learn add|top|list|validate [options]\n'
+            '  add --skill <name> --kind <kind> --key <key> [--note <60자 이내>] [--session <id>]\n'
+            '  top [--n 3] [--since 7d|24h|30d] [--json]\n'
+            '  list [--skill <name>] [--kind <kind>] [--json]\n'
+            '  validate\n'
+        )
+        return 2
+    cmd, rest = argv[0], argv[1:]
+    try:
+        if cmd == 'add':
+            return cmd_add(rest)
+        if cmd == 'top':
+            return cmd_top(rest)
+        if cmd == 'list':
+            return cmd_list(rest)
+        if cmd == 'validate':
+            return cmd_validate(rest)
+    except _ArgError as err:
+        sys.stderr.write(str(err) + '\n')
+        return 2
+    sys.stderr.write(f'jobstack-learn: 알 수 없는 명령 "{cmd}" (add|top|list|validate)\n')
+    return 2
+
+
+if __name__ == '__main__':
+    sys.exit(main(sys.argv[1:]))

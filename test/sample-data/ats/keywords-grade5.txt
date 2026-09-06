@@ -1,0 +1,6 @@
+# 필수
+Kotlin
+Docker
+GraphQL
+Terraform
+Jenkins

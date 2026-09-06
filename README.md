@@ -98,6 +98,20 @@ cd jobstack
 
 설치 후 Claude Code에서 `/auto`를 입력하면 자동으로 시작됩니다.
 
+플러그인으로 설치하려면(Claude Code 2.1 이상, 저장소가 곧 마켓플레이스):
+
+```
+/plugin marketplace add thesun4sky/jobstack
+/plugin install jobstack@jobstack
+```
+
+플러그인 설치에서는 스킬을 `/jobstack:auto`처럼 네임스페이스로 호출하고, `claude plugin update jobstack`으로 갱신합니다. 플러그인 네임스페이스 안의 이름은 스킬 디렉토리 이름 그대로 하이픈입니다(예: `/jobstack:job-search`, `/jobstack:cover-letter`). 로컬 심링크 설치는 `install.sh` 가 언더스코어 alias(`/job_search`)도 함께 만들고 Telegram 봇도 언더스코어 표기를 쓰므로, 이 문서의 추천 명령은 언더스코어로 적습니다([templates/BOT-COMMAND-STYLE.md](templates/BOT-COMMAND-STYLE.md)). Node 의존성은 첫 `/jobstack:job-search` 실행 시 플러그인 데이터 디렉토리(`${CLAUDE_PLUGIN_DATA}`)에 설치돼 플러그인 갱신 후에도 유지됩니다.
+
+- 스킬은 Claude Code 표준 위치 `~/.claude/skills/`에 심링크됩니다 (v0.3까지 쓰던 `~/.claude/commands/` 심링크는 설치 시 자동 정리). 저장소를 `git pull`하면 바로 반영됩니다.
+- 옵션: `./install.sh --with-insane-search` (차단 사이트 수집 어댑터, Python 3.10+), `./install.sh --prefix` (스킬명에 `jobstack-` 접두어)
+- 매일 자동으로 새 공고·마감 임박·정체 지원 건을 확인하려면 `bin/jobstack-cron install`(로컬 cron/launchd, `~/.jobstack/job-cache/daily-YYYY-MM-DD.md` 생성). 컴퓨터를 꺼두는 시간이 길면 클라우드 Routines 가이드 [docs/routines.md](docs/routines.md).
+- claude.ai / Cowork 에서 쓰려면 `bin/package-skill.sh all` 로 스킬별 zip 을 만들어 업로드합니다 — 상태 저장·수집 스크립트가 없는 축소 모드로 동작합니다([docs/cowork.md](docs/cowork.md)).
+
 ---
 
 ## 결과물 뷰어
@@ -222,7 +236,7 @@ jobstack은 4년간 60건 이상의 자소서 첨삭에서 추출된 실전 인�
 
 ## E2E 통합 테스트
 
-실제 샘플 데이터(이력서 + 자소서 + 채용공고)로 전체 8단계 플로우를 돌린 결과입니다.
+현재 동작의 근거는 헤드리스 스킬 eval 실측입니다 — `test/run-evals.sh` 로 15케이스(gate·periodic·e2e)를 돌린 결과와 모델 비교표는 [docs/E2E-TEST-REPORT.md](docs/E2E-TEST-REPORT.md) 상단에 있습니다(gate 5/5). 아래는 v0.3 시점에 샘플 데이터(이력서 + 자소서 + 채용공고)로 전체 8단계 플로우를 돌린 서사 기록입니다.
 
 > **페르소나**: 김민수 (신입 백엔드 개발자, 서울과기대 컴공, 인턴 6개월)
 > **목표**: 네이버 서버 플랫폼 개발자
@@ -285,11 +299,18 @@ flowchart LR
 
 [gstack](https://github.com/garrytan/gstack)의 아키텍처를 차용했습니다.
 
-- **100% Markdown 스킬** — 코드 없이 프롬프트만으로 동작
+- **Markdown 스킬 + 얇은 스크립트** — 코칭 로직은 프롬프트(SKILL.md), 수집·변환·판정처럼 결정적인 일은 `bin/`의 bash·Node·Python 스크립트가 맡습니다
 - **YAML 프론트매터** — 스킬 메타데이터 정의
+- **동적 주입 프리앰블** — 스킬 로드 시점에 `bin/jobstack-preamble`가 실행 컨텍스트(프로필·기준일·런타임)와 공유 가드레일을 프롬프트에 넣습니다 ([templates/preamble.md](templates/preamble.md))
 - **파일 기반 상태관리** — `~/.jobstack/`에 YAML/JSONL
 - **로컬 사용 기록** — 스킬 사용 이벤트가 `~/.jobstack/analytics/`에 로컬 파일로만 기록됩니다 (네트워크 전송 없음, 문서 내용·개인정보 미포함 — [규격](docs/telemetry-events.md))
-- **Zero 의존성** — bash만 있으면 설치/실행 가능
+- **결정적 스크립트 계층** — 지원 현황(`jobstack-tracker`)·경험 카드(`jobstack-exp.mjs`)·방어맵(`jobstack-defense-map.mjs`)·키워드 매칭률(`jobstack-ats-match`)·회고 집계(`jobstack-retro-stats`)는 스크립트가 저장·계산하고 스킬은 해석·코칭만 합니다 (같은 입력 → 같은 결과)
+- **진행적 공개** — SKILL.md 는 300줄 이하의 흐름·게이트만 담고, 모드별·플랫폼별·트랙별 자료는 `references/`에서 필요한 시점에만 읽습니다
+- **병렬 리서치 서브에이전트** — `agents/researcher.md`가 기업분석·연봉·전략의 웹 조사를 소스별로 나눠 맡고 출처 URL·기준일이 붙은 JSON만 돌려줍니다
+- **스킬 eval** — `evals/<skill>/evals.json` 케이스를 `test/run-evals.sh`가 `claude -p` 헤드리스로 실행해 산출물·스크립트 호출·참조 읽기를 판정합니다(결정적 gate / LLM 채점 periodic / e2e 3계층, [docs/evals.md](docs/evals.md))
+- **운영 학습 로그** — 수집 셀렉터 깨짐·차단·반복 자료 요청 같은 운영 메타만 `~/.jobstack/analytics/learnings.jsonl`에 남기고 `/auto` 대시보드가 상위 3건을 보여줍니다(문서 내용·개인정보 미기록)
+- **모델·effort 라우팅** — 명령 감지 위주인 tracker 는 `model: sonnet`·`effort: low`, 문서 첨삭·면접·기업분석 스킬은 `effort: high` 를 프론트매터로 선언합니다
+- **의존성** — 기본 기능은 bash + python3. 선택: `job_search` 수집은 Node 22+ (`cd bin && npm install` — Playwright·cheerio·docx·yaml, 첫 실행 시 자동), 사람인은 브라우저 없이 동작하고 사람인 오픈API 키(`jobstack-config set saramin_api_key …`)가 있으면 API 를 먼저 씁니다. 차단 사이트 수집은 `--with-insane-search`(Python 3.10+, curl_cffi). .docx 내보내기는 pandoc 3.6+ 또는 Node `docx` 폴백. 한글 `.hwpx`는 추가 설치 없이, `.hwp`는 kordoc/rhwp 가 설치돼 있을 때 변환(`npx kordoc` 자동 실행은 기본 꺼짐 — `JOBSTACK_ALLOW_NPX=1` 로 명시 허용하면 `kordoc@4.12.3` 고정 버전으로만 호출)
 - **스킬 체이닝** — `benefits-from`으로 스킬 간 의존성 정의
 
 ```
@@ -301,9 +322,13 @@ jobstack/
 ├── cover-letter/           # 자소서
 ├── mock-interview/         # 모의면접
 ├── ...
-├── bin/jobstack-config     # 설정 관리
-├── templates/              # 공유 템플릿
-└── install.sh              # 설치 스크립트
+├── <skill>/references/     # 스킬별 참조 자료 (생성 복제본 + 스킬 소유)
+├── agents/researcher.md    # 리서치 서브에이전트
+├── bin/                    # 결정적 스크립트 (tracker·exp·defense-map·ats-match·fetch-jobs·export·cron·learn …)
+├── evals/                  # 스킬 eval 케이스 (test/run-evals.sh)
+├── .claude-plugin/         # 플러그인·마켓플레이스 매니페스트
+├── templates/, docs/       # 공유 템플릿·계약 문서 (references/ 의 원본)
+└── install.sh              # 심링크 설치 스크립트
 ```
 
 ---

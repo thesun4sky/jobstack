@@ -1,7 +1,5 @@
 ---
 name: strategy
-preamble-tier: 1
-version: 0.2.0
 description: |
   취업전략 수립 스킬. 개인 역량 진단, 목표 기업 설정, 준비 로드맵 생성.
   "취업 전략", "어디서부터 시작", "취업 준비 계획" 등의 요청 시 활용.
@@ -11,54 +9,28 @@ allowed-tools:
   - Write
   - AskUserQuestion
   - WebSearch
+  - Agent
+  - Task
+argument-hint: "[목표 직무] [희망 기업군]"
+when_to_use: |
+  취업을 준비하는 초기 단계에서 개인 역량을 진단하고, 지원 직무·기업을 설정해 준비 로드맵을 세울 때 사용한다.
+  구체적 서류 작성이나 경험 정리는 다른 스킬들이 담당하며, 이 스킬은 전체 방향과 우선순위를 잡는 데 중점이다.
+  지원·면접 현황 추적은 tracker 스킬 담당이다.
+effort: high
+metadata:
+  preamble-tier: 1
+  version: 0.2.0
 ---
 
-```bash
-# ─── jobstack 프리앰블 ─────────────────────────
-_JS_STATE="${JOBSTACK_STATE_DIR:-$HOME/.jobstack}"
-mkdir -p "$_JS_STATE/analytics" "$_JS_STATE/profiles" "$_JS_STATE/tracker" \
-         "$_JS_STATE/company-cache" "$_JS_STATE/interview-history" "$_JS_STATE/sessions" "$_JS_STATE/defense-maps" "$_JS_STATE/job-cache"
+!`bash "${CLAUDE_SKILL_DIR}/scripts/preamble.sh" strategy "${CLAUDE_SESSION_ID}" "${CLAUDE_PLUGIN_DATA:-}"`
 
-# 세션 추적
-echo "$$" > "$_JS_STATE/sessions/$$"
-trap 'rm -f "$_JS_STATE/sessions/$$"' EXIT
+> 위 실행 컨텍스트가 비어 있거나 `KEY=VALUE` 목록 대신 `!` 명령·정책 차단 문구가 그대로 보이면(`!` 주입이 꺼진 환경), 첫 Bash 명령으로 `bash "${CLAUDE_SKILL_DIR}/scripts/preamble.sh" strategy`를 실행해 같은 컨텍스트를 확보하고 `${CLAUDE_SKILL_DIR}/references/guardrails.md`를 Read 하세요. 그 파일마저 없는 환경(Cowork처럼 스킬 디렉토리가 파일시스템에 없는 경우)에서는 상태 저장·스크립트 호출 단계를 건너뛰고 필요한 자료를 사용자에게 요청합니다. `STATE_WRITE_FAILED=true`가 보이면 `JOBSTACK_STATE_DIR` 경로를 사용자에게 확인합니다. 이 스킬의 Bash 스니펫은 첫 줄에 `. "${JOBSTACK_STATE_DIR:-$HOME/.jobstack}/env.sh"`를 두어 `$_JS_STATE`·`$_JS_BIN`·`$TODAY`를 불러옵니다.
 
-# 설정 로딩
-_JS_CONFIG="${CLAUDE_SKILL_DIR}/../bin/jobstack-config"
-if [ -x "$_JS_CONFIG" ]; then
-  PROACTIVE=$("$_JS_CONFIG" get proactive 2>/dev/null || echo "true")
-else
-  PROACTIVE="true"
-fi
+### 공통 가드레일 (references/guardrails.md)
 
-# 프로필 로딩
-PROFILE="$_JS_STATE/profiles/default.yaml"
-if [ -f "$PROFILE" ]; then
-  echo "PROFILE_EXISTS=true"
-  echo "--- 프로필 요약 ---"
-  head -30 "$PROFILE"
-  echo "---"
-else
-  echo "PROFILE_EXISTS=false"
-fi
+!`sed '1{/^# /d;}' "${CLAUDE_SKILL_DIR}/references/guardrails.md"`
 
-# 활성 세션 수
-for _f in "$_JS_STATE/sessions/"*; do
-  [ -f "$_f" ] || continue
-  kill -0 "$(basename "$_f")" 2>/dev/null || rm -f "$_f"
-done
-ACTIVE_SESSIONS=$(ls "$_JS_STATE/sessions/" 2>/dev/null | wc -l | tr -d ' ')
-echo "ACTIVE_SESSIONS=$ACTIVE_SESSIONS"
-echo "PROACTIVE=$PROACTIVE"
-echo "SKILL_NAME=strategy"
-
-# 텔레메트리
-echo "{\"skill\":\"strategy\",\"ts\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"pid\":$$}" \
-  >> "$_JS_STATE/analytics/skill-usage.jsonl" 2>/dev/null || true
-```
-
-> **공통 가드레일**: 작업 시작 전 `${CLAUDE_SKILL_DIR}/../templates/guardrails.md` 를 Read 도구로 읽고 §1~§6 전 규칙을 준수하세요.
-
+!`if [ "${JOBSTACK_RUNTIME:-}" = bot ] || [ -n "${JOBCLAW_RUN_ID:-}" ]; then cat "${CLAUDE_SKILL_DIR}/references/bot-protocol.md"; fi`
 
 # 취업전략 수립
 
@@ -140,6 +112,8 @@ updated_at: 2026-03-29
 ## Phase 2: 시장 분석
 
 WebSearch로 사용자의 목표 직무/산업 현황을 조사합니다.
+
+> **병렬 리서치**: Agent 도구를 쓸 수 있으면 직무 수요·산업 동향·전형 방식·요구 역량 조사를 `researcher` 서브에이전트(저장소 `agents/researcher.md`)에 항목별로 맡겨 병렬로 모으고, `items[].url`·`date`가 붙은 사실만 합성합니다. Agent 호출은 **한 응답에 소스 수만큼 함께 발행하고 결과를 기다리는 방식**(`run_in_background` 끄기)으로 실행합니다 — 하나씩 부르면 순차 실행이 되고, 백그라운드로 띄우면 헤드리스 실행에서 결과가 오기 전에 턴이 끝납니다. `found: false`·`blocked: true`는 "(출처 미확보)"로, `partial: true`는 "(일부 확인)"으로 남기고, Agent 도구가 없으면 WebSearch 순차 조사로 진행합니다.
 
 **검색 항목:** (연도는 실행 시점 KST 기준 현재 연도로 동적 치환, 하드코딩 금지)
 - "[직무명] 채용 동향 [현재 연도]"
@@ -229,7 +203,7 @@ target.industries에 공공기관·공기업이 포함되면:
 
 1. NCS 기반 전형을 전제로 로드맵에 자소서 NCS 보강을 조기 배치하고(공기업 NCS 보강은 /cover_letter에서 진행), 블라인드 적용 여부·지역인재 요건·인턴 유형(체험형 vs 채용연계형)은 WebSearch로 해당 기관 공고를 확인합니다.
 2. 기관별 자소서 맞춤이 필수입니다 (재활용 방지).
-3. Phase 4 로드맵 재료로 정부 취업지원제도(국민취업지원제도, 국민내일배움카드/KDT)를 안내하되, 지원 금액·자격 요건은 변동되므로 work24.go.kr에서 WebSearch로 확인합니다.
+3. Phase 4 로드맵 재료로 정부 취업지원제도(국민취업지원제도, 국민내일배움카드/KDT)를 안내하되, 지원 금액·자격 요건은 변동되므로 work24.go.kr에서 WebSearch로 확인합니다. 항목 목록과 확인 규칙은 `${CLAUDE_SKILL_DIR}/references/policy-checklist.md`를 따릅니다.
 
 ---
 
@@ -266,7 +240,8 @@ target.industries에 공공기관·공기업이 포함되면:
 
 저장 후 브라우저에서 결과를 확인할 수 있도록 안내합니다:
 ```bash
-$CLAUDE_SKILL_DIR/../bin/jobstack-view strategy-roadmap.md
+. "${JOBSTACK_STATE_DIR:-$HOME/.jobstack}/env.sh"
+"$_JS_BIN/jobstack-view" strategy-roadmap.md
 ```
 
 ---
@@ -312,21 +287,3 @@ $CLAUDE_SKILL_DIR/../bin/jobstack-view strategy-roadmap.md
 - **우려사항 있는 완료 (DONE_WITH_CONCERNS)** — 완료했으나 사용자가 알아야 할 사항 존재. 우려사항 명시.
 - **차단됨 (BLOCKED)** — 진행 불가. 차단 요인과 시도한 내용 기술. **채용공고·최신 뉴스 등 시간 민감 데이터는 BLOCKED 시 훈련 데이터(training data)로 절대 대체하지 않습니다.** 해당 섹션을 스킵하고 `DONE_WITH_CONCERNS`로 완료 처리합니다.
 - **추가 정보 필요 (NEEDS_CONTEXT)** — 계속하기 위한 정보 부족. 필요한 내용 정확히 기술.
-
-## 시각화 이미지 생성
-
-전략 분석 완료 답변에서는 반드시 응답 맨 끝에 아래 마커를 추가한다:
-
-```
-[IMAGE_PROMPT: <영어 프롬프트>]
-```
-
-**트리거 조건 (필수):**
-- 취업 로드맵 타임라인, 역량 갭 분석, 목표 기업 맵 → **반드시** 추가
-- 단계별 전략 계획 (2단계 이상) → 추가
-- 짧은 단답, 오류 → 추가하지 않음.
-
-이 마커를 빠뜨리지 말 것 — 위 조건에 해당하면 응답의 가장 마지막 줄에 반드시 포함한다.
-
-**프롬프트 스타일:** professional infographic/diagram 스타일. 실제 목표 직무·기업·단계를 반영한다.
-예: `A clean job-search strategy roadmap infographic: a 3-stage timeline (역량 강화 → 지원 → 면접) with milestones, a competency gap chart, and target companies grouped by tier. Dark theme, Korean labels, green/yellow accents.`

@@ -1,0 +1,154 @@
+#!/usr/bin/env python3
+"""jobstack-ats-match — 공고 키워드 ↔ 이력서/자소서 키워드 커버리지의 결정적 산출 (U-09).
+
+resume Phase 4(ATS 매칭률)·cover-letter Phase 9(반영률)·company-research Phase 4(역량매칭도)가
+"관측 가능한 개수 기반"(#122 결정성 규칙)으로 점수를 내도록, 키워드 목록과 문서를 받아
+포함 여부·매칭률·등급을 계산한다. 키워드 추출(공고 → 목록)은 모델이 하고, 계산은 여기서 한다.
+
+사용법:
+  jobstack-ats-match --keywords <키워드파일|-> --doc <문서.md> [--json]
+
+키워드 파일 형식 (한 줄에 하나):
+  # 필수            ← 이후 줄의 구분 (기본값 '필수'). '# 우대', '# 기타' 도 가능
+  Python
+  Spring Boot | Spring | 스프링    ← '|' 뒤는 동의어(별칭). 하나라도 있으면 포함
+  AWS
+  # 우대
+  Kubernetes | k8s
+
+판정 규칙 (결정적):
+  - 대소문자 무시. 영문·숫자로만 된 토큰은 단어 경계 기준(예: 'Go' 가 'Google' 에 매칭되지 않음).
+    '.'·'+'·'#' 를 포함하는 기술명(C++, C#, Node.js)은 문자 그대로 비교.
+  - 한글/혼합 토큰은 공백·하이픈을 제거한 뒤 부분 문자열로 비교(예: '데이터 분석' = '데이터분석').
+  - 매칭률 = 포함 키워드 수 / 전체 키워드 수 (구분별로도 산출). 등급: A ≥ 80%, B 60~79%, C < 60%
+    (resume Phase 4·job-search Phase 4 등급 기준과 동일).
+종료 코드: 0 정상 · 1 입력 오류
+  필수 인자(--keywords/--doc) 누락 등 인자 자체의 오류는 argparse 기본값대로 exit 2 를 낸다.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import sys
+
+
+def norm_ko(s: str) -> str:
+    return re.sub(r'[\s\-_/]', '', s.lower())
+
+
+def is_ascii_token(s: str) -> bool:
+    return all(ord(c) < 128 for c in s)
+
+
+def parse_keywords(text: str) -> list[dict]:
+    items = []
+    group = '필수'
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        if line.startswith('#'):
+            g = line.lstrip('#').strip()
+            group = g or group
+            continue
+        parts = [p.strip() for p in line.split('|') if p.strip()]
+        if not parts:
+            continue
+        items.append({'keyword': parts[0], 'aliases': parts[1:], 'group': group})
+    return items
+
+
+def find_token(token: str, doc: str, doc_lower: str, doc_ko: str, lines: list[str]) -> int | None:
+    """포함되면 첫 등장 줄 번호(1-base), 아니면 None."""
+    t = token.strip()
+    if not t:
+        return None
+    if is_ascii_token(t):
+        if re.fullmatch(r'[A-Za-z0-9]+', t):
+            pat = re.compile(r'(?<![A-Za-z0-9])' + re.escape(t.lower()) + r'(?![A-Za-z0-9])')
+        else:
+            pat = re.compile(re.escape(t.lower()))
+        m = pat.search(doc_lower)
+        if not m:
+            return None
+        return doc_lower.count('\n', 0, m.start()) + 1
+    key = norm_ko(t)
+    if not key:
+        return None
+    for i, line in enumerate(lines, 1):
+        if key in norm_ko(line):
+            return i
+    return None
+
+
+def main(argv=None) -> int:
+    p = argparse.ArgumentParser(prog='jobstack-ats-match', description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument('--keywords', required=True, help='키워드 파일 경로 또는 - (stdin)')
+    p.add_argument('--doc', required=True, help='이력서/자소서 텍스트 파일')
+    p.add_argument('--json', action='store_true')
+    a = p.parse_args(argv)
+
+    try:
+        kw_text = sys.stdin.read() if a.keywords == '-' else open(a.keywords, encoding='utf-8').read()
+        doc = open(a.doc, encoding='utf-8').read()
+    except OSError as e:
+        print(f'[오류] 파일을 읽을 수 없습니다: {e}', file=sys.stderr)
+        return 1
+    items = parse_keywords(kw_text)
+    if not items:
+        print('[오류] 키워드가 없습니다', file=sys.stderr)
+        return 1
+
+    doc_lower = doc.lower()
+    doc_ko = norm_ko(doc)
+    lines = doc.split('\n')
+    results = []
+    for it in items:
+        hit_line = None
+        hit_by = None
+        for cand in [it['keyword']] + it['aliases']:
+            ln = find_token(cand, doc, doc_lower, doc_ko, lines)
+            if ln is not None:
+                hit_line, hit_by = ln, cand
+                break
+        results.append(dict(it, matched=hit_line is not None, line=hit_line, matched_by=hit_by))
+
+    groups: dict[str, dict] = {}
+    for r in results:
+        g = groups.setdefault(r['group'], {'total': 0, 'matched': 0})
+        g['total'] += 1
+        g['matched'] += 1 if r['matched'] else 0
+    total = len(results)
+    matched = sum(1 for r in results if r['matched'])
+    rate = round(matched / total * 100)
+    grade = 'A' if rate >= 80 else ('B' if rate >= 60 else 'C')
+    for g in groups.values():
+        g['rate'] = round(g['matched'] / g['total'] * 100) if g['total'] else None
+
+    if a.json:
+        print(json.dumps({'total': total, 'matched': matched, 'rate': rate, 'grade': grade, 'groups': groups,
+                          'items': results}, ensure_ascii=False, indent=2))
+        return 0
+
+    bar = '━' * 44
+    print('[ATS 키워드 매칭 분석]')
+    print(bar)
+    print(f'{"키워드":24s} {"구분":4s} {"포함":4s} 위치')
+    print(bar)
+    for r in results:
+        mark = '✅' if r['matched'] else '❌'
+        where = f'{r["line"]}행' + (f' ({r["matched_by"]})' if r['matched_by'] and r['matched_by'] != r['keyword'] else '') if r['matched'] else '-'
+        print(f'{r["keyword"][:24]:24s} {r["group"][:4]:4s} {mark:4s} {where}')
+    print(bar)
+    for name, g in groups.items():
+        print(f'{name}: {g["matched"]}/{g["total"]} ({g["rate"]}%)')
+    print(f'매칭률: {matched}/{total} ({rate}%) → 등급 {grade} (A ≥ 80% / B 60~79% / C < 60%)')
+    missing = [r['keyword'] for r in results if not r['matched']]
+    if missing:
+        print('미반영: ' + ', '.join(missing))
+    return 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())

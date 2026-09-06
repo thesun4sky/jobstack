@@ -1,0 +1,94 @@
+name: ci
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Node 의존성 (bin/ — playwright·cheerio·docx·yaml, 브라우저 바이너리 제외)
+        run: cd bin && PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm install --no-audit --no-fund
+
+      - name: 컨벤션·표기·경로 린트
+        run: |
+          bash test/lint-conventions.sh
+          bash test/test-command-style.sh
+          bash test/test-no-home-paths.sh
+          bash test/test-skill-refs.sh
+          bash test/test-skill-size.sh --frontmatter
+          bash test/test-script-layer.sh
+          bash test/test-plugin-manifest.sh
+
+      - name: 프리앰블 격리 실행
+        run: bash test/test-preambles.sh
+
+      - name: 골든 테스트 (결정적 케이스)
+        run: bash test/run-golden.sh
+
+      - name: Node 단위 테스트 (수집 계층)
+        run: |
+          node test/test-fetch-diag.mjs
+          node test/test-wanted-verify.mjs
+          node test/test-is-fetch-adapter.mjs
+          node test/test-is-fetch-ssrf.mjs
+          node test/test-saramin-parser.mjs
+          node test/test-saramin-api.mjs
+          node test/test-md2docx.mjs
+
+      - name: 결정적 스크립트 테스트 (tracker·exp·defense-map·ats-match·retro-stats·hwpx·export·is-fetch·fetch-diag·saramin)
+        run: |
+          bash test/test-tracker.sh
+          bash test/test-exp.sh
+          bash test/test-defense-map.sh
+          bash test/test-ats-match.sh
+          bash test/test-retro-stats.sh
+          bash test/test-hwpx.sh
+          bash test/test-export.sh
+          bash test/test-is-fetch-classify.sh
+          bash test/test-fetch-diag-summary.sh
+          bash test/test-fetch-jobs-saramin.sh
+          bash test/test-cron.sh
+          bash test/test-learn.sh
+          bash test/test-package-skill.sh
+
+      - name: 통합 테스트 (격리된 HOME)
+        run: |
+          export HOME="$(mktemp -d)"
+          export JOBSTACK_STATE_DIR="$HOME/.jobstack"
+          export JOBSTACK_NPM_AUTO_INSTALL=0
+          bash test/run-integration-test.sh
+
+  macos-smoke:
+    # PR #17 리뷰 반영 — 주요 사용자 환경(macOS: /bin/bash 3.2, /tmp → /private/tmp 심링크, launchd)에서
+    # 경로 정규화·docx 폴백·cron 등록·상태 파일 잠금을 최소 검증한다. 테스트는 시스템 bash 3.2 로 돌린다.
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Node 의존성 (bin/ — 브라우저 바이너리 제외)
+        run: cd bin && PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm install --no-audit --no-fund
+
+      - name: macOS smoke (preamble·export·md2docx·cron·tracker·exp·hwpx)
+        run: |
+          /bin/bash --version | head -1
+          /bin/bash test/test-preambles.sh
+          /bin/bash test/test-export.sh
+          node test/test-md2docx.mjs
+          /bin/bash test/test-cron.sh
+          /bin/bash test/test-tracker.sh
+          /bin/bash test/test-exp.sh
+          /bin/bash test/test-hwpx.sh

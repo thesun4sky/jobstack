@@ -1,7 +1,5 @@
 ---
 name: company-research
-preamble-tier: 2
-version: 0.3.0
 description: |
   기업 분석 스킬. 7가지 키워드 소스 분석, 적합도 스코어링, "이미 팀원처럼" 준비.
   "기업 분석", "회사 조사", "삼성전자 알아봐줘" 등의 요청 시 활용.
@@ -12,74 +10,31 @@ allowed-tools:
   - AskUserQuestion
   - WebSearch
   - WebFetch
-benefits-from: [strategy]
+  - Agent
+  - Task
+argument-hint: "<회사명> [직무]"
+when_to_use: |
+  채용공고 URL·JD 원문이 있거나 기업명과 직무를 알고 있고, 지원 여부 판단이나 자소서·면접 준비를 위해
+  단일 기업을 분석할 때 사용한다. 오늘 날짜 캐시가 있으면 재사용 여부부터 확인한다.
+  아직 지원할 채용공고 자체를 찾는 단계라면 `/job_search`, 여러 기업 중 지원 우선순위를 정하는
+  단계라면 `/strategy`, 연봉 수준 확인·협상 준비가 목적이라면 `/salary`를 사용한다 — 이 스킬은
+  연봉 데이터를 수집하지 않는다.
+effort: high
+metadata:
+  preamble-tier: 2
+  version: 0.3.0
+  benefits-from: [strategy]
 ---
 
-```bash
-# ─── jobstack 프리앰블 ─────────────────────────
-_JS_STATE="${JOBSTACK_STATE_DIR:-$HOME/.jobstack}"
-mkdir -p "$_JS_STATE/analytics" "$_JS_STATE/profiles" "$_JS_STATE/tracker" \
-         "$_JS_STATE/company-cache" "$_JS_STATE/interview-history" "$_JS_STATE/sessions" "$_JS_STATE/defense-maps" "$_JS_STATE/job-cache"
+!`bash "${CLAUDE_SKILL_DIR}/scripts/preamble.sh" company-research "${CLAUDE_SESSION_ID}" "${CLAUDE_PLUGIN_DATA:-}"`
 
-# 세션 추적
-echo "$$" > "$_JS_STATE/sessions/$$"
-trap 'rm -f "$_JS_STATE/sessions/$$"' EXIT
+> 위 실행 컨텍스트가 비어 있거나 `KEY=VALUE` 목록 대신 `!` 명령·정책 차단 문구가 그대로 보이면(`!` 주입이 꺼진 환경), 첫 Bash 명령으로 `bash "${CLAUDE_SKILL_DIR}/scripts/preamble.sh" company-research`를 실행해 같은 컨텍스트를 확보하고 `${CLAUDE_SKILL_DIR}/references/guardrails.md`를 Read 하세요. 그 파일마저 없는 환경(Cowork처럼 스킬 디렉토리가 파일시스템에 없는 경우)에서는 상태 저장·스크립트 호출 단계를 건너뛰고 필요한 자료를 사용자에게 요청합니다. `STATE_WRITE_FAILED=true`가 보이면 `JOBSTACK_STATE_DIR` 경로를 사용자에게 확인합니다. 이 스킬의 Bash 스니펫은 첫 줄에 `. "${JOBSTACK_STATE_DIR:-$HOME/.jobstack}/env.sh"`를 두어 `$_JS_STATE`·`$_JS_BIN`·`$TODAY`를 불러옵니다.
 
-# 설정 로딩
-_JS_CONFIG="${CLAUDE_SKILL_DIR}/../bin/jobstack-config"
-if [ -x "$_JS_CONFIG" ]; then
-  PROACTIVE=$("$_JS_CONFIG" get proactive 2>/dev/null || echo "true")
-else
-  PROACTIVE="true"
-fi
+### 공통 가드레일 (references/guardrails.md)
 
-# 프로필 로딩
-PROFILE="$_JS_STATE/profiles/default.yaml"
-if [ -f "$PROFILE" ]; then
-  echo "PROFILE_EXISTS=true"
-  echo "--- 프로필 요약 ---"
-  head -20 "$PROFILE"
-  echo "---"
-else
-  echo "PROFILE_EXISTS=false"
-fi
+!`sed '1{/^# /d;}' "${CLAUDE_SKILL_DIR}/references/guardrails.md"`
 
-# 활성 세션 수
-for _f in "$_JS_STATE/sessions/"*; do
-  [ -f "$_f" ] || continue
-  kill -0 "$(basename "$_f")" 2>/dev/null || rm -f "$_f"
-done
-ACTIVE_SESSIONS=$(ls "$_JS_STATE/sessions/" 2>/dev/null | wc -l | tr -d ' ')
-echo "ACTIVE_SESSIONS=$ACTIVE_SESSIONS"
-echo "PROACTIVE=$PROACTIVE"
-echo "SKILL_NAME=company-research"
-
-# 오늘 날짜 (KST 기준) — 채용공고 마감일 필터링에 반드시 사용
-TODAY=$(TZ=Asia/Seoul date +%Y-%m-%d 2>/dev/null || date +%Y-%m-%d)
-echo "TODAY=$TODAY"
-
-# ─── jobstack bin 경로 해석 (원티드 verify·is-fetch 폴백에 사용) ─────────────
-# prod 컨테이너는 SKILL.md만 ~/.claude/commands/company-research/로 복사하고 bin은
-# /app/skills/jobstack/bin에만 있어 CLAUDE_SKILL_DIR/../bin이 실제 위치와 다르다.
-# → 스크립트 존재를 검증하고 틀리면 알려진 절대경로로 fallback(job-search와 동일 관례).
-if [ -n "$CLAUDE_SKILL_DIR" ]; then
-  _JS_BIN="${CLAUDE_SKILL_DIR}/../bin"
-fi
-if [ ! -f "${_JS_BIN:-}/fetch-jobs.mjs" ]; then
-  for _try in "/app/skills/jobstack/bin" "$HOME/.claude/skills/jobstack/bin" "/var/jobclaw/skills/jobstack/bin"; do
-    [ -f "$_try/fetch-jobs.mjs" ] && { _JS_BIN="$_try"; break; }
-  done
-fi
-_JS_BROWSER_SCRIPT="${_JS_BIN:-}/fetch-jobs.mjs"
-echo "JS_BIN=${_JS_BIN:-unresolved}"
-
-# 텔레메트리
-echo "{\"skill\":\"company-research\",\"ts\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"pid\":$$}" \
-  >> "$_JS_STATE/analytics/skill-usage.jsonl" 2>/dev/null || true
-```
-
-> **공통 가드레일**: 작업 시작 전 `${CLAUDE_SKILL_DIR}/../templates/guardrails.md` 를 Read 도구로 읽고 §1~§6 전 규칙을 준수하세요.
-
+!`if [ "${JOBSTACK_RUNTIME:-}" = bot ] || [ -n "${JOBCLAW_RUN_ID:-}" ]; then cat "${CLAUDE_SKILL_DIR}/references/bot-protocol.md"; fi`
 
 ---
 
@@ -160,22 +115,13 @@ echo "{\"skill\":\"company-research\",\"ts\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",
 > - **원티드 공고(`wanted.co.kr/wd/{id}`)는 HTML/스니펫으로 진행 여부를 판정하지 않습니다** — 페이지가 마감
 >   배너를 JS로 렌더링해 항상 "진행 중"처럼 보입니다(2026-07-19 prod 오판 사고). 포함 전 반드시
 >   `node "$_JS_BROWSER_SCRIPT" verify "<url>"...`로 전수 판정하고 `active`만 포함합니다.
->   (`$_JS_BROWSER_SCRIPT`는 preamble에서 실제 bin 위치로 해석됨 — 원시 `${CLAUDE_SKILL_DIR}/../bin`은
->   prod에서 경로가 어긋나 verify가 실패한다. verify 실행이 불가하면 **원티드 공고는 포함하지 않습니다**(fail-closed).)
+>   (`$_JS_BROWSER_SCRIPT`는 preamble이 env.sh에 적은 실제 bin 경로 — 스킬 디렉토리 기준 상대 경로로
+>   bin을 조합하면 prod에서 경로가 어긋나 verify가 실패한다. verify 실행이 불가하면 **원티드 공고는 포함하지 않습니다**(fail-closed).)
 > - 마감일 확인이 불가한 공고는 "마감일 미확인"으로 표시하고 사용자에게 원본 URL 직접 확인을 안내합니다
 > - **훈련 데이터(training data)에 있는 채용공고 정보는 절대 사용하지 않습니다** — 채용공고는 반드시 실시간 WebSearch/WebFetch로 획득한 내용만 사용합니다
 > - **기업 사실 수치도 채용공고와 동일 강도로 출처 강제(#121)**: 매출·영업이익·직원수·복리후생·기술스택·잡플래닛/블라인드 평점 등 구체적 수치는 **실시간 조회로 확보한 값만** 단정합니다. 훈련 데이터 기억으로 채우지 말고, 확보하지 못한 수치는 **"(출처 미확보)"**로 표기하고 구체 숫자 단정을 하지 마세요. 결과물의 각 수치 뒤에는 가능하면 출처(URL/매체)를 인라인 표기합니다.
 > - **정합성**: "마감일 미확인" 공고는 "진행 중 N건"으로 카운트하지 마세요(미확인 = 진행 여부 불명).
 >
-> ⚠️ **WebSearch/WebFetch 차단 시 처리 규칙**
->
-> 도구 실패(차단, 타임아웃, 오류)가 발생하면:
-> - **1차 재시도 — is-fetch 어댑터**: 차단된 URL 을 `python3 "$_JS_BIN/is-fetch.py" "<URL>"` 로 다시 확보합니다(curl_cffi TLS 임퍼소네이션). **URL 은 반드시 큰따옴표로 감쌉니다** — `&`·`?` 가 든 URL이 셸에서 쪼개지거나 명령이 주입되는 것을 막습니다. `$_JS_BIN` 은 preamble에서 실제 bin 위치로 해석됨(원시 `${CLAUDE_SKILL_DIR}/../bin`은 prod에서 어긋남). **stdout JSON 의 `verdict` 가 `strong_ok` 이고 `html` 이 있을 때만** 그 본문으로 분석을 이어갑니다. `too_small`(짧은 차단/로그인/빈 결과 페이지일 수 있음)·`challenge`·`error` 이거나 exit 3(어댑터 미설치)이면 재시도를 접고 아래 폴백으로 넘어갑니다 — **`too_small` HTML 을 정상 자료로 분석하지 않습니다**(잘못된 기업 분석 방지).
-> - 위 재시도로도 확보 실패 시: 채용공고(항목 3) 섹션을 **완전히 스킵**합니다 — 훈련 데이터로 대체 절대 금지
-> - 나머지 항목(기업 개요, 재무, CEO 메시지, 뉴스, 평판)은 수집 가능한 만큼 진행
-> - 완료 시 `DONE_WITH_CONCERNS`로 표시합니다. 실패 원인을 1줄로 명시하되, **반드시 다음 행동을 병기**합니다: "채용공고 본문·CEO 신년사·인재상 페이지 내용을 붙여넣어 주시면 분석을 완성합니다."
-> - **원칙**: 도구 한계를 막다른 안내로 끝내지 않는다 — 원인 1줄 + 필요 자료 요청을 항상 함께 제시한다. (자세한 전환 규칙은 `${CLAUDE_SKILL_DIR}/../templates/guardrails.md` §2 참조)
-> - 사용자가 붙여넣은 자료(공고 본문·CEO 신년사·잡플래닛 리뷰 텍스트 등)는 각 Phase의 **정식 입력 소스로 인정**하고 해당 단계를 진행합니다.
 
 **공공기관·공기업 분기 규칙:**
 
@@ -185,34 +131,11 @@ echo "{\"skill\":\"company-research\",\"ts\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",
 3. **지역인재 채용 목표제** 적용 여부를 확인합니다.
 4. NCS 필기 상세 대비가 필요하면 `/cover_letter`의 공기업 자소서 보강으로 연결합니다(NCS 직업기초능력 기반 문항 대비).
 
-**검색 대상:**
+> 소스별 수집 절차(검색 대상 7항목·검색어 패턴 예시·WebFetch 사용법)와 WebSearch/WebFetch 차단 시 폴백 절차: `${CLAUDE_SKILL_DIR}/references/sources.md` — Phase 1 수집을 시작하기 직전에 Read 한다.
 
-1. **기업 개요**: 업종, 설립연도, 대표이사, 본사 위치, 주요 사업 영역
-2. **재무 지표**: 최근 연도 매출, 영업이익, 직원 수 (공시 기준). 추가로 **부채비율, 영업이익률, 매출증가율(3년 추이), 유동비율, ROE** 5지표를 수집합니다 — 재무 건전성 판별표에 사용합니다.
-3. **채용공고**: 해당 직무의 채용공고 원문. 자격요건, 우대사항, 업무내용 전문 확보
-   - ⚠️ 마감일이 `$TODAY` 이전인 공고는 절대 포함 금지
-   - 마감일이 명시된 공고만 분석 대상으로 사용. 마감일 불명확한 경우 "마감일 미확인" 표시
-4. **CEO 메시지**: 최근 신년사, 주주서한, 언론 인터뷰 (경영 방향성 파악)
-5. **최근 뉴스**: 최근 3-6개월 주요 뉴스 5건 이상
-6. **기업 평판**: 잡플래닛/블라인드 등에서의 직원 평판, 면접 후기
-   - **PII 가드레일**: 리뷰를 인용할 때 작성자 닉네임·프로필 등 식별정보는 리포트·캐시에 기록하지 않습니다 — 집계 요약(불만 Top 3, 키워드 빈도)과 익명 인용만 사용합니다. (상세 규칙은 `${CLAUDE_SKILL_DIR}/../templates/guardrails.md` §1 참조)
-7. **전형 방식**: 아래 5개 항목을 실행 시 WebSearch로 확인합니다 — 연도·도입 기업명·전형명은 이 문서에 하드코딩하지 않고 검색으로 확인한 값만 사용합니다.
-   - ① AI 서류평가 도입 여부 — 도입이 확인되면 표절·AI 작성 검사 대비를 안내합니다.
-   - ② AI역량검사·화상면접 툴 사용 여부 — 도입이 확인되면 무료 연습 경로를 검색해 안내합니다.
-   - ③ 컬처핏 면접 단계 유무.
-   - ④ 대기업이면 그룹 공통 전형(적성검사 명칭, 인턴십 연계 여부)을 검색으로 확인합니다.
-   - ⑤ 해당 기업이 수시/공채 중 어느 방식인지 1줄만 확인합니다 — 채용 캘린더·공고 모니터링은 `/job_search` 로 안내(핸드오프)합니다.
+> **병렬 리서치**: Agent 도구를 쓸 수 있으면 소스 7항목을 `researcher` 서브에이전트(저장소 `agents/researcher.md`)에 소스 하나씩 맡겨 병렬로 조사하고, 돌아온 JSON(`items[].url`·`date`, `numbers`, `deadline_verified`, `blocked`)을 이 스킬이 합성합니다. Agent 호출은 **한 응답에 소스 수만큼 함께 발행하고 결과를 기다리는 방식**(`run_in_background` 끄기)으로 실행합니다 — 하나씩 부르면 순차 실행이 되고, 백그라운드로 띄우면 헤드리스 실행에서 결과가 오기 전에 턴이 끝납니다. `found: false`·`blocked: true`인 소스는 훈련 데이터로 채우지 말고 "(출처 미확보)"로 남기며 `partial: true`(예산 초과로 일부만 확인)는 "(일부 확인)"으로 표시하고, 원티드 공고는 `deadline_verified: false`로 오므로 위 verify 규칙을 그대로 적용합니다. Agent 도구가 없는 환경(봇 러너 등)에서는 references/sources.md의 순차 절차로 진행합니다.
 
-**검색어 패턴 예시:**
-- `"{COMPANY} 채용공고 {POSITION} {CURRENT_YEAR}"` — `$TODAY`에서 연도 추출
-- `"{COMPANY} CEO 신년사 {CURRENT_YEAR}"` / `"{COMPANY} 주주서한"`
-- `"{COMPANY} 매출 영업이익 직원수"`
-- `"{COMPANY} 잡플래닛 리뷰"` / `"{COMPANY} 면접 후기"`
-- `"{COMPANY} {POSITION} 팀 뉴스"`
-- `"{COMPANY} AI역량검사"` / `"{COMPANY} 채용 전형 절차"`
-- 재무: `"{업종} 평균 영업이익률"` (임계값 해석용 동종업계 평균 확인)
-
-WebFetch를 사용하여 채용공고 페이지, 기업 IR 페이지 등 주요 페이지의 상세 내용을 확보합니다.
+> **Chrome 경로(선택)**: Claude in Chrome 확장이 있으면 잡플래닛·블라인드의 로그인 필요 리뷰 상세를 `${CLAUDE_SKILL_DIR}/references/chrome-path.md` 규칙(읽기만, 익명 집계, 출처 "브라우저 열람")으로 읽습니다. 확장이 없으면 검색 스니펫·사용자 제공 텍스트로 진행합니다.
 
 **Phase 1 결과물:**
 사용자에게 기업 개요 요약을 간단히 보고합니다 (5줄 이내).
@@ -223,32 +146,7 @@ WebFetch를 사용하여 채용공고 페이지, 기업 IR 페이지 등 주요 
 
 Phase 1에서 수집한 정보를 기반으로, 7가지 소스별 키워드를 추출합니다.
 
-| # | 소스 | 추출 방법 | 키워드 유형 |
-|---|------|-----------|-------------|
-| 1 | **채용공고** | 자격요건/우대사항 원문에서 직접 추출 | 기술 스택, 경력 요건, 자격증, 어학 |
-| 2 | **CEO 신년사/주주서한** | 반복 등장 단어, 강조 표현 추출 | 경영 키워드 (디지털전환, ESG, 글로벌 등) |
-| 3 | **직무정보** | 업무 내용 / R&R 분석 | 핵심 업무, 필수 역량 |
-| 4 | **비전** | 홈페이지 비전/미션 페이지 | 중장기 전략 키워드 |
-| 5 | **회사소개** | About 페이지, 핵심가치 | 조직문화 키워드 (수평적, 도전, 협업 등) |
-| 6 | **인재상** | 채용 페이지 인재상 섹션 | 인물상 키워드 (주도적, 소통, 전문성 등) |
-| 7 | **최신기사** | 최근 6개월 뉴스 | 트렌드, 사업 방향, 리스크 |
-
-**출력 형식 -- 키워드 체크리스트 테이블:**
-
-```
-## 키워드 체크리스트
-
-| 소스 | 키워드 | 내 매칭 | 활용 전략 |
-|------|--------|---------|-----------|
-| 채용공고 | Python, AWS, CI/CD | O/모호/X | 자소서 2번 항목에 배치 |
-| CEO신년사 | AI 전환, 글로벌 확장 | O/모호/X | 지원동기에 연결 |
-| ... | ... | ... | ... |
-```
-
-- **키워드 추출 원칙**: 소스당 반복 키워드 3~5개를 추출하고, 그중 핵심 3개를 '경험을 해석하는 기준'으로 표시합니다.
-- "내 매칭" 열: 프로필이 존재하면 자동 매칭합니다. 프로필이 없으면 빈칸으로 두고 사용자에게 직접 체크를 요청합니다. 판정은 **O / 모호 / X 3단계**로 합니다(경험 근거가 있으면 O, 근거가 약하거나 간접적이면 모호, 없으면 X).
-- "활용 전략" 열: 각 키워드를 자소서/면접 어디에 어떻게 녹일지 한 줄 전략을 제안합니다. **키워드는 구체적 경험 근거 뒤에 배치**하도록 제안합니다. 한 문단에 키워드를 몰아넣는 전략은 제안하지 않습니다(자소서≠SEO — ATS의 자연어 처리 진화로 keyword stuffing은 무력화됨).
-- **반영률 기준**: 이 체크리스트는 `/cover_letter`의 반영률 게이트(목표 85%+, 70% 미만 시 우려사항 있는 완료) 기준으로 소비됩니다 — 별도 정량 목표를 이 스킬에서 신설하지 않습니다.
+> 7가지 소스별 추출 방법 표와 키워드 체크리스트 출력 템플릿: `${CLAUDE_SKILL_DIR}/references/keyword-checklist.md` — Phase 2 체크리스트를 작성하기 직전에 Read 한다.
 
 **Phase 2 결과물:**
 완성된 키워드 체크리스트 테이블을 사용자에게 보여줍니다.
@@ -264,47 +162,9 @@ Phase 1에서 수집한 정보를 기반으로, 7가지 소스별 키워드를 �
 - 웹 서비스가 있는 경우 -> 웹 분석 경로
 - B2B / 플랫폼인 경우 -> 산업 분석 경로
 
-> **리뷰 PII 가드레일**: 아래 세 경로에서 리뷰를 인용할 때 작성자 닉네임·프로필 등 식별정보는 리포트·캐시에 기록하지 않습니다 — 집계 요약과 익명 인용만 사용합니다. (`${CLAUDE_SKILL_DIR}/../templates/guardrails.md` §1)
+> **리뷰 PII 가드레일**: 아래 세 경로에서 리뷰를 인용할 때 작성자 닉네임·프로필 등 식별정보는 리포트·캐시에 기록하지 않습니다 — 집계 요약과 익명 인용만 사용합니다. (`${CLAUDE_SKILL_DIR}/references/guardrails.md` §1)
 
-**앱 분석 경로 (WebSearch + WebFetch):**
-1. 앱 스토어 리뷰 분석 (최근 3개월, 별점 1-3점 위주)
-2. 업데이트 히스토리 시간순 정리 (최근 6개월)
-3. 경쟁 앱 대비 차별점/약점 + **비교군 2~3사(지원 후보군 관점 — 경쟁 제품 분석과 목적 구분)**
-4. 사용자 불만 Top 3 -> 해당 팀이 풀어야 할 과제로 재구성
-
-**웹 분석 경로:**
-1. 최근 기능 변경 이력 (릴리즈 노트, 블로그)
-2. 사용자 피드백 (커뮤니티, SNS)
-3. 기술 블로그 분석 (팀의 기술적 고민 파악)
-4. 경쟁사 대비 분석 + **비교군 2~3사(지원 후보군 관점 — 경쟁 제품 분석과 목적 구분)**
-
-**산업 분석 경로:**
-1. 해당 산업/시장 최근 트렌드
-2. 주요 고객군 및 Pain Point
-3. 기업의 시장 포지셔닝
-4. **경쟁 환경 분석 + 지원 후보군 확장 관점 비교군 2~3사** — 대상 기업의 상대적 위치를 규모·기술·평판 1줄씩 정리합니다. 비교군 기업명은 실행 시 검색으로 식별하며 이 문서에 하드코딩하지 않습니다.
-
-**Phase 3 결과물:**
-
-```
-## "이미 팀원처럼" 브리핑
-
-### 제품/서비스 현황
-- [제품명]: [한 줄 설명]
-- 최근 주요 변경: [업데이트 요약]
-
-### 업계 내 위치
-- 비교군 2~3사 대비 대상 기업의 상대적 위치 (규모·기술·평판 3~4줄)
-
-### 팀이 풀고 있는 과제 (추정)
-1. [과제 1]: [근거 -- 리뷰/뉴스/업데이트에서 추론]
-2. [과제 2]: [근거]
-3. [과제 3]: [근거]
-
-### 면접에서 활용할 수 있는 화두
-- "[구체적 제품 기능]의 [구체적 사용자 피드백]을 개선하려면..."
-- "최근 [업데이트 내용]을 보면서 [본인의 관련 경험]이 떠올랐습니다..."
-```
+> 앱/웹/산업 경로별 분석 절차와 "이미 팀원처럼" 브리핑 출력 템플릿: `${CLAUDE_SKILL_DIR}/references/team-briefing.md` — 분석 대상 판별 직후, 브리핑을 작성하기 직전에 Read 한다.
 
 ---
 
@@ -318,11 +178,7 @@ Phase 1에서 수집한 정보를 기반으로, 7가지 소스별 키워드를 �
 
 **스코어링 기준:**
 
-| 항목 | 배점 | 평가 기준 |
-|------|------|-----------|
-| **직무적합도** | 0-100 | 채용공고 자격요건 vs 내 경험/기술 매칭률 |
-| **역량매칭도** | 0-100 | 7가지 키워드 체크리스트에서 O 비율 |
-| **기업문화적합도** | 0-100 | 인재상, 핵심가치 vs 내 성향/경험 매칭 |
+> 3개 항목 배점 기준표: `${CLAUDE_SKILL_DIR}/references/fit-scoring.md` — Phase 4 스코어 산출 직전에 Read 한다.
 
 > **결정성 규칙(#122)**: 점수는 **정량 기준에 앵커링**해 세션·턴마다 변동하지 않게 합니다.
 > - 역량매칭도 = (체크리스트 O 개수 / 전체 개수) × 100 처럼 **관측 가능한 개수 기반**으로 산출. 이때 '모호' 항목은 **0.5로 가중**해 분자에 반영하고(O=1, 모호=0.5, X=0), 분모는 O·모호·X 전체 개수로 둡니다.
@@ -334,14 +190,7 @@ Phase 1에서 수집한 정보를 기반으로, 7가지 소스별 키워드를 �
 
 각 항목에서 매칭되지 않는 부분을 식별하고, 보완 전략을 제시합니다.
 
-```
-## GAP 분석
-
-| GAP 항목 | 현재 수준 | 요구 수준 | 보완 전략 |
-|----------|-----------|-----------|-----------|
-| AWS 경험 | 개인 프로젝트 수준 | 실무 운영 경험 | 자소서에서 "개인 프로젝트에서 EC2/S3 활용 경험"으로 언급 + "실무 적용 의지" 강조 |
-| ... | ... | ... | ... |
-```
+> GAP 분석 출력 템플릿: `${CLAUDE_SKILL_DIR}/references/fit-scoring.md` — GAP 표를 작성하기 직전에 Read 한다.
 
 **주의:** 스코어는 참고용입니다. 점수가 낮다고 "지원하지 마세요"라고 말하지 않되, 판단을 회피하지도 않습니다 — 낮은 판단에는 반드시 보완 전략과 재도전 조건을 함께 제시합니다. 최종 지원 판단(권장/조건부/신중)은 아래 **Phase 4.5**에서 단일하게 내립니다(여기서는 점수·GAP만 산출).
 
@@ -382,73 +231,13 @@ Phase 1에서 수집한 정보를 기반으로, 7가지 소스별 키워드를 �
 
 **리포트 구조:**
 
-```markdown
-# {COMPANY} - {POSITION} 기업분석 리포트
-
-> 생성일: {TODAY} | jobstack company-research v0.3.0
-
-## 1. 기업 개요
-[Phase 1 결과]
-
-### 재무 건전성
-| 지표 | 값 | 일반 기준 | 판정 | 출처 |
-|------|-----|-----------|------|------|
-| 부채비율 | ... | ... | O/△/X | [URL] |
-| 영업이익률 | ... | ... | O/△/X | [URL] |
-| 매출증가율(3년) | ... | ... | O/△/X | [URL] |
-| 유동비율 | ... | ... | O/△/X | [URL] |
-| ROE | ... | ... | O/△/X | [URL] |
-
-> ⚠️ 임계값은 일반 기준입니다 — 업종별 편차가 크므로 반드시 동종업계 평균 대비로 해석합니다(업종 평균은 실행 시 `"{업종} 평균 영업이익률"` 등으로 검색해 확인). 미확보 지표는 '(출처 미확보)'로 표기하고 판정에서 제외합니다.
->
-> 종합 판정 1줄: [...]
->
-> **비상장·중소기업 폴백**: 5지표 중 3개 이상 미확보 시 판별표를 생략하고 "재무 판별 불가(비공시) — 잡플래닛 리뷰·최근 뉴스로 대체 판단" 1줄로 대체합니다.
-
-## 2. 키워드 체크리스트
-[Phase 2 결과 -- 전체 테이블]
-
-## 3. "이미 팀원처럼" 브리핑
-[Phase 3 결과 -- '업계 내 위치' 소섹션 포함]
-
-## 4. 적합도 스코어링
-[Phase 4 결과 -- 스코어 + GAP 분석]
-
-> 공고 원문 미확보 시 이 섹션은 생략되고 사유('공고 본문 필요')가 표기됩니다.
-
-## 5. 자소서/면접 활용 가이드
-- 지원동기에 녹일 키워드: [목록]
-- 직무역량에 강조할 포인트: [목록]
-- 면접에서 던질 역질문: [3개]
-- 미끼 포인트 제안: [자소서에 배치할 미끼 3개]
-
-### 전형 대비 체크
-- AI 서류평가 / AI역량검사·화상면접 / 컬처핏 / 그룹 공통전형 / 수시·공채 여부 (Phase 1 항목 7 검색 확인 결과)
-- 공공기관은 자소서 재활용이 감점 요인 — 기관별 맞춤이 필요합니다.
-
-## 6. 지원 판단
-[Phase 4.5 결과 -- 5기준 트레이드오프 표 + 3단계 판단]
-
-## 출처
-- [URL 1]: [설명]
-- [URL 2]: [설명]
-- ...
-```
+> 리포트 전체 저장 양식(1~6절 + 출처): `${CLAUDE_SKILL_DIR}/references/report-template.md` — Phase 5 저장 직전에 Read 한다.
 
 **캐시 파일 요약 블록 (재사용용):**
 
 `$_JS_STATE/company-cache/{COMPANY}-{TODAY}.md` 파일 **최상단**에 아래 요약 블록을 먼저 쓰고, 그 아래에 위 전체 리포트 본문을 이어 붙입니다. 요약 블록은 후속 스킬(mock-interview 등)이 파일 앞부분만 읽어 개인화 컨텍스트로 주입하는 용도이며, **전체 1500자 이내**로 유지합니다.
 
-```markdown
-<!-- jobstack:summary v1 -->
-- 정규화키: {COMPANY의 공백 제거·소문자}   (느슨 매칭용)
-- 회사명: {COMPANY}
-- 직무: {POSITION}
-- 핵심 키워드: {5~10개}
-- '이미 팀원처럼' 화두: {3개}
-- 적합도 종합: {1줄}
-<!-- /jobstack:summary -->
-```
+> 캐시 파일 상단 요약 블록 형식: `${CLAUDE_SKILL_DIR}/references/report-template.md` — 캐시 파일 최상단에 쓰기 직전에 Read 한다.
 
 Write로 두 파일을 모두 저장합니다.
 
@@ -473,21 +262,3 @@ Write로 두 파일을 모두 저장합니다.
 - 면접 준비가 급하면 -> `/mock_interview` 추천: "'이미 팀원처럼' 브리핑을 면접에 바로 활용할 수 있습니다."
 - 연봉 수준 확인·협상 준비가 필요하면 -> `/salary` 추천: "연봉 데이터는 소스·시점별 편차가 크므로 단일 소스로 단정하지 않습니다."
 - 비교군 기업도 분석하려면 -> `/company_research` 재호출로 후보군을 나란히 비교할 수 있습니다.
-
-## 시각화 이미지 생성
-
-기업 분석 완료 답변에서는 반드시 응답 맨 끝에 아래 마커를 추가한다:
-
-```
-[IMAGE_PROMPT: <영어 프롬프트>]
-```
-
-**트리거 조건 (필수):**
-- 기업 종합 분석 결과 (핵심 가치/문화/기술스택/채용 포지션 포함) → **반드시** 추가
-- 직무 요구 역량 다이어그램, 복수 기업 비교 → 추가
-- 단순 단답, 오류 메시지 → 추가하지 않음
-
-이 마커를 빠뜨리지 말 것 — 위 조건에 해당하면 응답의 가장 마지막 줄에 반드시 포함한다.
-
-**프롬프트 스타일:** professional infographic/diagram 스타일. 실제 기업명·핵심 정보를 반영한다.
-예: `A professional company overview infographic for Kakao Corp: key values (connection, innovation, growth), tech stack (Go, Python, Kubernetes), team culture (flexible, hybrid), key products. Clean modern design, blue/yellow brand colors.`

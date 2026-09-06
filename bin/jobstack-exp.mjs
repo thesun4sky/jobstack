@@ -1,0 +1,466 @@
+#!/usr/bin/env node
+/**
+ * jobstack-exp.mjs — 경험뱅크 카드(experiences.yaml)의 결정적 조작 (U-09).
+ *
+ * experience-bank 스킬이 카드를 손으로 append/edit 하던 작업을 이 스크립트가 맡는다.
+ * 같은 입력이면 같은 출력이 나온다. 판정(수치 O/△/X)·스키마 검증만 결정적으로 수행하고,
+ * 소재 발굴·코칭(6단계·4분리·수치 폴백)은 experience-bank 스킬의 몫이다.
+ *
+ * 사용법:
+ *   jobstack-exp add --title T --problem P --role R --action A --change C
+ *                     [--numbers N] [--tags a,b] [--json '{...}']
+ *                     [--ai-usage-tool X --ai-usage-task Y --ai-usage-effect Z]
+ *   jobstack-exp list [--json]
+ *   jobstack-exp show <id>
+ *   jobstack-exp update <id> [--title T] [--problem P] [--role R] [--action A]
+ *                     [--change C] [--numbers N] [--tags a,b]
+ *                     [--ai-usage-tool X] [--ai-usage-task Y] [--ai-usage-effect Z]
+ *   jobstack-exp validate [file]
+ *
+ * 환경: JOBSTACK_STATE_DIR (기본 ~/.jobstack) → profiles/experiences.yaml
+ * 종료 코드: 0 정상 · 1 오류 · 3 의존성 없음(yaml 패키지 미설치)
+ *
+ * 스키마 정의: docs/experience-card-schema.md
+ */
+
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { withLock } from './lib/lockfile.mjs';
+import { dirname, join, resolve } from 'node:path';
+import { homedir } from 'node:os';
+import { randomBytes } from 'node:crypto';
+
+let YAML;
+try {
+  YAML = await import('yaml');
+} catch {
+  process.stderr.write('jobstack-exp: `yaml` 패키지가 없습니다 — bin/ 에서 `npm install` 후 재시도하세요\n');
+  process.exit(3);
+}
+const { parseDocument, parse, stringify } = YAML;
+
+const STATE_DIR = process.env.JOBSTACK_STATE_DIR || join(homedir(), '.jobstack');
+const EXP_FILE = join(STATE_DIR, 'profiles', 'experiences.yaml');
+
+const REQUIRED_FIELDS = ['id', 'title', 'problem', 'role', 'action', 'change', 'created_at'];
+const ID_RE = /^exp-\d{8}-\d{2}$/;
+const ISO_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/;
+const UPDATE_SIMPLE_FIELDS = ['title', 'problem', 'role', 'action', 'change', 'numbers'];
+
+// ── KST/UTC 날짜 헬퍼 (가드레일 §4: 날짜가 실리는 출력은 항상 기준일을 KST로 확정) ──────
+function kstNow() {
+  return new Date(Date.now() + 9 * 3600 * 1000);
+}
+function pad2(n) {
+  return String(n).padStart(2, '0');
+}
+function kstDateCompact(d = kstNow()) {
+  return `${d.getUTCFullYear()}${pad2(d.getUTCMonth() + 1)}${pad2(d.getUTCDate())}`;
+}
+function kstDateDash(d = kstNow()) {
+  return `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}-${pad2(d.getUTCDate())}`;
+}
+function nowUtcIsoZ() {
+  return new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
+}
+
+function die(msg, code = 1) {
+  process.stderr.write(`jobstack-exp: ${msg}\n`);
+  process.exit(code);
+}
+
+function usage() {
+  return `사용법:
+  jobstack-exp add --title T --problem P --role R --action A --change C
+                    [--numbers N] [--tags a,b] [--json '{...}']
+                    [--ai-usage-tool X --ai-usage-task Y --ai-usage-effect Z]
+  jobstack-exp list [--json]
+  jobstack-exp show <id>
+  jobstack-exp update <id> [--title T] [--problem P] [--role R] [--action A]
+                    [--change C] [--numbers N] [--tags a,b]
+                    [--ai-usage-tool X] [--ai-usage-task Y] [--ai-usage-effect Z]
+  jobstack-exp validate [file]
+
+환경: JOBSTACK_STATE_DIR (기본 ~/.jobstack) → profiles/experiences.yaml
+종료 코드: 0 정상 · 1 오류 · 3 의존성 없음(yaml 패키지 미설치)
+스키마: docs/experience-card-schema.md
+`;
+}
+
+// ── 인자 파싱 — "--flag value" 는 값으로, "--flag --other"/말미의 "--flag" 는 불리언으로 ──
+function parseArgs(argv) {
+  const flags = {};
+  const positionals = [];
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (a.startsWith('--')) {
+      const key = a.slice(2);
+      const next = argv[i + 1];
+      if (next !== undefined && !next.startsWith('--')) {
+        flags[key] = next;
+        i++;
+      } else {
+        flags[key] = true;
+      }
+    } else {
+      positionals.push(a);
+    }
+  }
+  return { flags, positionals };
+}
+
+// ── 원자적 쓰기 — 임시 파일 + rename, 상태 디렉토리 안쪽에만 ────────────────────────
+function atomicWrite(filePath, content) {
+  const dir = dirname(filePath);
+  mkdirSync(dir, { recursive: true });
+  const tmp = join(dir, `.${Date.now()}.${randomBytes(4).toString('hex')}.tmp`);
+  writeFileSync(tmp, content, 'utf8');
+  renameSync(tmp, filePath);
+}
+
+function readRaw(filePath) {
+  if (!existsSync(filePath)) return null;
+  return readFileSync(filePath, 'utf8');
+}
+
+// ── 기존 카드 로드 (파싱만 — 재덤프 금지) ───────────────────────────────────────
+function loadExisting() {
+  const raw = readRaw(EXP_FILE);
+  if (raw === null || raw.trim() === '') return { raw: raw ?? '', cards: [] };
+  let parsed;
+  try {
+    parsed = parse(raw);
+  } catch (e) {
+    die(`${EXP_FILE} YAML 파싱 실패 — ${e.message}`);
+  }
+  if (parsed === null || parsed === undefined) return { raw, cards: [] };
+  if (!Array.isArray(parsed)) die(`${EXP_FILE}: 최상위가 리스트가 아닙니다`);
+  return { raw, cards: parsed };
+}
+
+function nextId(cards, dateCompact) {
+  let max = 0;
+  const re = new RegExp(`^exp-${dateCompact}-(\\d+)$`);
+  for (const c of cards) {
+    const m = re.exec(String(c?.id ?? ''));
+    if (m) max = Math.max(max, parseInt(m[1], 10));
+  }
+  return `exp-${dateCompact}-${pad2(max + 1)}`;
+}
+
+// ── add ─────────────────────────────────────────────────────────────────────
+function cmdAdd(flags) {
+  let fromJson = {};
+  if (typeof flags.json === 'string') {
+    try {
+      fromJson = JSON.parse(flags.json);
+    } catch (e) {
+      die(`--json 파싱 실패: ${e.message}`);
+    }
+    if (fromJson === null || typeof fromJson !== 'object' || Array.isArray(fromJson)) {
+      die('--json 값은 객체여야 합니다');
+    }
+  }
+  // 개별 플래그가 --json 블록보다 우선(둘 다 병행 가능)
+  const pick = (key) => (typeof flags[key] === 'string' ? flags[key] : fromJson[key]);
+
+  const title = pick('title');
+  const problem = pick('problem');
+  const role = pick('role');
+  const action = pick('action');
+  const change = pick('change');
+  const numbers = pick('numbers') ?? '';
+
+  const missing = [];
+  if (!title) missing.push('--title');
+  if (!problem) missing.push('--problem');
+  if (!role) missing.push('--role');
+  if (!action) missing.push('--action');
+  if (!change) missing.push('--change');
+  if (missing.length) die(`필수 인자 누락: ${missing.join(', ')}`);
+
+  // job_link_tags: --tags "a,b" 가 --json 의 tags/job_link_tags 보다 우선
+  let tags = fromJson.job_link_tags ?? fromJson.tags ?? [];
+  if (typeof flags.tags === 'string') {
+    tags = flags.tags.split(',').map((s) => s.trim()).filter(Boolean);
+  }
+  if (!Array.isArray(tags)) die('tags 는 배열(또는 --tags a,b 콤마 목록)이어야 합니다');
+  tags = tags.map((t) => String(t));
+
+  // ai_usage — 세 플래그는 함께 지정(부분 입력은 즉시 스키마 위반이 되므로 add 단계에서 막는다)
+  const aiTool = pick('ai-usage-tool');
+  const aiTask = pick('ai-usage-task');
+  const aiEffect = pick('ai-usage-effect');
+  let aiUsage = fromJson.ai_usage ?? null;
+  if (aiTool || aiTask || aiEffect) {
+    if (!(aiTool && aiTask && aiEffect)) {
+      die('--ai-usage-tool / --ai-usage-task / --ai-usage-effect 는 함께 지정해야 합니다');
+    }
+    aiUsage = { tool: String(aiTool), task: String(aiTask), effect: String(aiEffect) };
+  }
+  if (aiUsage !== null && (typeof aiUsage !== 'object' || Array.isArray(aiUsage))) {
+    die('ai_usage 는 null 또는 {tool, task, effect} 객체여야 합니다');
+  }
+
+  const { raw, cards } = loadExisting();
+  const dateCompact = kstDateCompact();
+  const id = nextId(cards, dateCompact);
+
+  const card = {
+    id,
+    title: String(title),
+    problem: String(problem),
+    role: String(role),
+    action: String(action),
+    change: String(change),
+    numbers: String(numbers),
+    job_link_tags: tags,
+    ai_usage: aiUsage,
+    created_at: nowUtcIsoZ(),
+  };
+
+  const block = stringify([card]); // "- id: ...\n  ...\n" — 새 카드 1장짜리 블록 시퀀스
+  let base = raw || '';
+  if (base && !base.endsWith('\n')) base += '\n';
+  const newContent = base + block;
+
+  // append 후 전체 파싱 검증 — 실패하면 아무것도 쓰지 않고 종료(롤백 = 디스크 미변경 보장)
+  let reparsed;
+  try {
+    reparsed = parse(newContent);
+  } catch (e) {
+    die(`append 검증 실패(롤백, 원본 파일 미변경) — ${e.message}`);
+  }
+  if (!Array.isArray(reparsed)) {
+    die('append 검증 실패(롤백, 원본 파일 미변경) — 결과가 리스트가 아닙니다');
+  }
+
+  atomicWrite(EXP_FILE, newContent);
+  process.stdout.write(`추가됨: ${id}\n경로: ${EXP_FILE}\n`);
+}
+
+// ── list ────────────────────────────────────────────────────────────────────
+function verdictOf(card) {
+  const n = card?.numbers;
+  if (n === undefined || n === null || String(n).trim() === '') return 'X';
+  if (String(n).includes('[수치 확인 필요]')) return '△';
+  return 'O';
+}
+
+function cmdList(flags) {
+  const { cards } = loadExisting();
+  const today = kstDateDash();
+  const verdicts = cards.map(verdictOf);
+  const needsNumbers = verdicts.filter((v) => v !== 'O').length;
+
+  if (flags.json) {
+    const out = {
+      today_kst: today,
+      total: cards.length,
+      needs_numbers: needsNumbers,
+      cards: cards.map((c, i) => ({
+        ...c,
+        numbers_verdict: verdicts[i],
+        ai_usage_present: !!c?.ai_usage,
+      })),
+    };
+    process.stdout.write(JSON.stringify(out, null, 2) + '\n');
+    return;
+  }
+
+  const bar = '━'.repeat(56);
+  console.log(`경험뱅크 요약  (기준일: ${today})`);
+  console.log(bar);
+  console.log(`${'id'.padEnd(16)} ${'제목'.padEnd(24)} 수치   AI   직무 태그`);
+  cards.forEach((c, i) => {
+    const id = String(c?.id ?? '').padEnd(16);
+    const title = String(c?.title ?? '').padEnd(24);
+    const verdict = verdicts[i].padEnd(4);
+    const ai = (c?.ai_usage ? 'O' : '-').padEnd(3);
+    const tags = Array.isArray(c?.job_link_tags) ? c.job_link_tags.join(', ') : '';
+    console.log(`${id} ${title} ${verdict}   ${ai} ${tags}`);
+  });
+  console.log(bar);
+  console.log(`카드 ${cards.length}장 · 수치 보강 필요 ${needsNumbers}장`);
+}
+
+// ── show ────────────────────────────────────────────────────────────────────
+function cmdShow(positionals) {
+  const id = positionals[0];
+  if (!id) die('id 를 지정하세요 (jobstack-exp show <id>)');
+  const { cards } = loadExisting();
+  const card = cards.find((c) => c?.id === id);
+  if (!card) die(`${id} 카드를 찾을 수 없습니다`);
+  process.stdout.write(stringify(card));
+}
+
+// ── update ──────────────────────────────────────────────────────────────────
+function cmdUpdate(positionals, flags) {
+  const id = positionals[0];
+  if (!id) die('id 를 지정하세요 (jobstack-exp update <id> --field value ...)');
+
+  const raw = readRaw(EXP_FILE);
+  if (raw === null || raw.trim() === '') die(`${id} 카드를 찾을 수 없습니다 (경험뱅크 파일 없음)`);
+
+  let doc;
+  try {
+    doc = parseDocument(raw);
+  } catch (e) {
+    die(`${EXP_FILE} YAML 파싱 실패 — ${e.message}`);
+  }
+  const seq = doc.contents;
+  if (!YAML.isSeq(seq)) die(`${EXP_FILE}: 최상위가 리스트가 아닙니다`);
+  const item = seq.items.find((it) => YAML.isMap(it) && it.get('id') === id);
+  if (!item) die(`${id} 카드를 찾을 수 없습니다`);
+
+  let touched = false;
+  for (const f of UPDATE_SIMPLE_FIELDS) {
+    if (typeof flags[f] === 'string') {
+      item.set(f, flags[f]);
+      touched = true;
+    }
+  }
+  if (typeof flags.tags === 'string') {
+    const tags = flags.tags.split(',').map((s) => s.trim()).filter(Boolean);
+    item.set('job_link_tags', tags);
+    touched = true;
+  }
+
+  const aiTool = flags['ai-usage-tool'];
+  const aiTask = flags['ai-usage-task'];
+  const aiEffect = flags['ai-usage-effect'];
+  if (typeof aiTool === 'string' || typeof aiTask === 'string' || typeof aiEffect === 'string') {
+    const rawAi = item.get('ai_usage', true);
+    const aiMap = YAML.isMap(rawAi) ? rawAi : doc.createNode({ tool: null, task: null, effect: null });
+    if (!YAML.isMap(rawAi)) item.set('ai_usage', aiMap);
+    if (typeof aiTool === 'string') aiMap.set('tool', aiTool);
+    if (typeof aiTask === 'string') aiMap.set('task', aiTask);
+    if (typeof aiEffect === 'string') aiMap.set('effect', aiEffect);
+    // add 와 동일한 제약 — 갱신 후 tool/task/effect 중 하나라도 비면 스키마 위반이므로 막는다.
+    // 카드에 이미 완전한 ai_usage 가 있었다면 나머지 필드가 그대로 남아 갱신 후에도 세 값이
+    // 모두 채워져 있으므로, 그 경우의 "일부 필드만 갱신"은 허용된다(리뷰 반영).
+    const finalTool = aiMap.get('tool');
+    const finalTask = aiMap.get('task');
+    const finalEffect = aiMap.get('effect');
+    const complete = typeof finalTool === 'string' && finalTool
+      && typeof finalTask === 'string' && finalTask
+      && typeof finalEffect === 'string' && finalEffect;
+    if (!complete) {
+      die('--ai-usage-tool / --ai-usage-task / --ai-usage-effect 갱신 후 세 값이 모두 채워져 있어야 합니다'
+        + ' (기존에 완전한 ai_usage 가 있는 카드라면 일부 필드만 갱신 가능)');
+    }
+    touched = true;
+  }
+
+  if (!touched) {
+    die('수정할 필드를 최소 1개 지정하세요 (--title/--problem/--role/--action/--change/--numbers/--tags/--ai-usage-tool/--ai-usage-task/--ai-usage-effect)');
+  }
+
+  atomicWrite(EXP_FILE, doc.toString());
+  process.stdout.write(`수정됨: ${id}\n경로: ${EXP_FILE}\n`);
+}
+
+// ── validate ────────────────────────────────────────────────────────────────
+function cmdValidate(positionals) {
+  const fileArg = positionals[0];
+  const file = fileArg ? resolve(fileArg) : EXP_FILE;
+  const raw = readRaw(file);
+  if (raw === null || raw.trim() === '') {
+    console.log('[PASS] 카드 0장');
+    return 0;
+  }
+
+  let parsed;
+  try {
+    parsed = parse(raw);
+  } catch (e) {
+    console.log(`[FAIL] ${file}: YAML 파싱 실패 — ${e.message}`);
+    return 1;
+  }
+  if (parsed === null || parsed === undefined) {
+    console.log('[PASS] 카드 0장');
+    return 0;
+  }
+  if (!Array.isArray(parsed)) {
+    console.log(`[FAIL] ${file}: 최상위가 리스트가 아닙니다`);
+    return 1;
+  }
+
+  const errors = [];
+  const seenIds = new Set();
+  parsed.forEach((card, idx) => {
+    const hasId = card && typeof card === 'object' && typeof card.id === 'string' && card.id;
+    const label = hasId ? card.id : `#${idx + 1}(id 없음)`;
+    if (card === null || typeof card !== 'object' || Array.isArray(card)) {
+      errors.push(`${label}: 카드가 객체가 아닙니다`);
+      return;
+    }
+    for (const f of REQUIRED_FIELDS) {
+      const v = card[f];
+      if (v === undefined || v === null || v === '') errors.push(`${label}: 필수 필드 누락 (${f})`);
+    }
+    if (hasId) {
+      if (!ID_RE.test(card.id)) errors.push(`${label}: id 형식 오류 (exp-YYYYMMDD-NN 아님)`);
+      if (seenIds.has(card.id)) errors.push(`${label}: id 중복`);
+      seenIds.add(card.id);
+    }
+    if (typeof card.created_at === 'string' && card.created_at) {
+      if (!ISO_RE.test(card.created_at) || Number.isNaN(Date.parse(card.created_at))) {
+        errors.push(`${label}: created_at 형식 오류 (ISO 8601 아님)`);
+      }
+    }
+    if (card.job_link_tags !== undefined && card.job_link_tags !== null) {
+      const ok = Array.isArray(card.job_link_tags) && card.job_link_tags.every((t) => typeof t === 'string');
+      if (!ok) errors.push(`${label}: job_link_tags 는 문자열 배열이어야 합니다`);
+    }
+    if (card.numbers !== undefined && card.numbers !== null && typeof card.numbers !== 'string') {
+      errors.push(`${label}: numbers 는 문자열이어야 합니다`);
+    }
+    if (card.ai_usage !== undefined && card.ai_usage !== null) {
+      const au = card.ai_usage;
+      const ok = typeof au === 'object' && !Array.isArray(au)
+        && typeof au.tool === 'string' && typeof au.task === 'string' && typeof au.effect === 'string';
+      if (!ok) errors.push(`${label}: ai_usage 는 null 또는 {tool, task, effect} 문자열 객체여야 합니다`);
+    }
+  });
+
+  if (errors.length) {
+    for (const e of errors) console.log(`[FAIL] ${e}`);
+    return 1;
+  }
+  console.log(`[PASS] 카드 ${parsed.length}장`);
+  return 0;
+}
+
+// ── main ────────────────────────────────────────────────────────────────────
+const argvAll = process.argv.slice(2);
+if (argvAll.includes('--help') || argvAll.includes('-h')) {
+  process.stdout.write(usage());
+  process.exit(0);
+}
+const [cmd, ...rest] = argvAll;
+if (!cmd) {
+  process.stderr.write(usage());
+  process.exit(1);
+}
+const { flags, positionals } = parseArgs(rest);
+
+switch (cmd) {
+  case 'add':
+    withLock(EXP_FILE, () => cmdAdd(flags)); // 동시 실행 lost update 방지(PR #17 리뷰 반영)
+    break;
+  case 'list':
+    cmdList(flags);
+    break;
+  case 'show':
+    cmdShow(positionals);
+    break;
+  case 'update':
+    withLock(EXP_FILE, () => cmdUpdate(positionals, flags)); // 동시 실행 lost update 방지(PR #17 리뷰 반영)
+    break;
+  case 'validate':
+    process.exit(cmdValidate(positionals));
+    break;
+  default:
+    process.stderr.write(`알 수 없는 명령: ${cmd}\n\n${usage()}`);
+    process.exit(1);
+}

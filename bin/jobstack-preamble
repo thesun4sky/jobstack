@@ -1,0 +1,195 @@
+#!/usr/bin/env bash
+# jobstack-preamble — 스킬 실행 컨텍스트 생성기 (v0.4.0, 검토 보고서 U-04)
+#
+# SKILL.md 상단의 동적 주입 라인
+#   !`bash "${CLAUDE_SKILL_DIR}/scripts/preamble.sh" <skill> "${CLAUDE_SESSION_ID}"`
+# 이 스킬 로드 시점에 이 스크립트를 실행하고 stdout 을 프롬프트에 그대로 삽입한다.
+# 16개 스킬에 복사돼 드리프트하던 인라인 bash 프리앰블(39~72줄)을 이 한 파일로 대체한다.
+#
+# 용법: jobstack-preamble <skill> [session_id] [plugin_data_dir]
+#
+# 불변식 (test/test-preambles.sh 가 검증):
+#   1) PROACTIVE / ACTIVE_SESSIONS / SKILL_NAME / JOBSTACK_RUNTIME / JS_BIN / JS_STATE 를 KEY=VALUE 로 출력
+#   2) 상태 디렉토리 8종 생성, $JS_STATE/env.sh 작성, 텔레메트리 entry 1줄 append
+#   3) JOBSTACK_STATE_DIR 폴백 유지 (봇 러너가 per-user 격리를 이 변수로 주입)
+#   4) 어떤 실패도 exit 0 — 프리앰블 실패가 스킬 로드를 막지 않는다
+#
+# 동적 주입(`!`)은 스킬 로드 시점의 별도 셸에서 실행되므로 여기서 정의한 변수는
+# 이후 Bash 도구 호출에 남지 않는다. 그래서 변수는 env.sh 파일로 내보내고,
+# 스킬의 Bash 스니펫은 첫 줄에 `. "$JS_STATE/env.sh"` 를 둔다.
+set -u
+# $HOME 미설정(env -i 등)에서도 "항상 exit 0" 계약을 지킨다(리뷰 반영).
+: "${HOME:=/tmp}"
+# 상태 트리에는 프로필·경험뱅크 같은 개인정보가 들어간다 — 이 스크립트가 만드는
+# 파일·디렉토리는 소유자만 읽게 한다(리뷰 반영). 기존 디렉토리 권한은 바꾸지 않는다.
+umask 077
+
+SKILL="${1:-unknown}"
+SKILL="${SKILL//[^A-Za-z0-9_-]/}"
+[ -n "$SKILL" ] || SKILL="unknown"
+SESSION="${2:-}"
+PLUGIN_DATA="${3:-}"
+
+HERE="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+JS_BIN="$HERE"
+_JS_STATE="${JOBSTACK_STATE_DIR:-$HOME/.jobstack}"
+
+# 1. 상태 디렉토리 — 처음 만들 때만 700 으로 잠근다
+if [ ! -d "$_JS_STATE" ]; then mkdir -p "$_JS_STATE" 2>/dev/null && chmod 700 "$_JS_STATE" 2>/dev/null || true; fi
+mkdir -p "$_JS_STATE/analytics" "$_JS_STATE/profiles" "$_JS_STATE/tracker" \
+         "$_JS_STATE/company-cache" "$_JS_STATE/interview-history" "$_JS_STATE/sessions" \
+         "$_JS_STATE/defense-maps" "$_JS_STATE/job-cache" 2>/dev/null || true
+
+# 2. 런타임 판정 — 봇(jobclaw)은 JOBCLAW_RUN_ID 를 주입한다. JOBSTACK_RUNTIME 으로 강제 가능.
+if [ -n "${JOBSTACK_RUNTIME:-}" ]; then
+  RUNTIME="$JOBSTACK_RUNTIME"
+elif [ -n "${JOBCLAW_RUN_ID:-}" ]; then
+  RUNTIME="bot"
+else
+  RUNTIME="cli"
+fi
+case "$RUNTIME" in cli|bot) ;; *) RUNTIME="cli" ;; esac
+
+# 3. 세션 추적 — PID 파일 대신 세션 ID 파일(mtime 기준, 12시간 지나면 정리)
+SESSION_KEY="${SESSION:-pid-$$}"
+SESSION_KEY="${SESSION_KEY//[^A-Za-z0-9_.-]/_}"
+touch "$_JS_STATE/sessions/$SESSION_KEY" 2>/dev/null || true
+find "$_JS_STATE/sessions" -maxdepth 1 -type f -mmin +720 -delete 2>/dev/null || true
+ACTIVE_SESSIONS=$(find "$_JS_STATE/sessions" -maxdepth 1 -type f 2>/dev/null | wc -l | tr -d ' ')
+
+# 4. 설정 (미설정 키는 exit 1 → 기본값 true)
+if [ -x "$JS_BIN/jobstack-config" ]; then
+  PROACTIVE=$("$JS_BIN/jobstack-config" get proactive 2>/dev/null || echo "true")
+else
+  PROACTIVE="true"
+fi
+case "$PROACTIVE" in true|false) ;; *) PROACTIVE="true" ;; esac
+
+# 5. 기준일 (KST) — CURRENT_YEAR 는 salary 등 검색 키워드용
+TODAY=$(TZ=Asia/Seoul date +%Y-%m-%d)
+CURRENT_YEAR="${TODAY%%-*}"
+
+# 6. 프로필·경험 카드
+PROFILE="$_JS_STATE/profiles/default.yaml"
+if [ -f "$PROFILE" ]; then PROFILE_EXISTS=true; else PROFILE_EXISTS=false; fi
+EXPERIENCES="$_JS_STATE/profiles/experiences.yaml"
+if [ -f "$EXPERIENCES" ]; then
+  EXPERIENCES_EXISTS=true
+  EXPERIENCE_COUNT=$(grep -c '^- id:' "$EXPERIENCES" 2>/dev/null || echo 0)
+else
+  EXPERIENCES_EXISTS=false
+  EXPERIENCE_COUNT=0
+fi
+
+# 7. 스킬별 확장 — 수집 도구 가용성(job-search / company-research / salary), 트래커 요약(tracker)
+BROWSER_SCRAPER_AVAILABLE=""
+IS_FETCH_AVAILABLE=""
+TRACKER_FILE=""
+ENTRY_COUNT=0
+case "$SKILL" in
+  tracker)
+    # 구 인라인 프리앰블과 같은 정보(파일 사전 생성·건수·최근 5건)를 유지한다(리뷰 반영)
+    TRACKER_FILE="$_JS_STATE/tracker/applications.jsonl"
+    [ -f "$TRACKER_FILE" ] || : > "$TRACKER_FILE" 2>/dev/null || true
+    ENTRY_COUNT=$(wc -l < "$TRACKER_FILE" 2>/dev/null | tr -d ' ')
+    ENTRY_COUNT="${ENTRY_COUNT:-0}"
+    ;;
+  job-search|company-research|salary)
+    if [ -f "$JS_BIN/fetch-jobs.mjs" ]; then
+      # job-search 만 첫 사용 시 playwright 를 설치한다(브라우저 바이너리는 받지 않음).
+      # JOBSTACK_NPM_AUTO_INSTALL=0 으로 끌 수 있다.
+      # 플러그인 설치(U-07): node_modules 는 플러그인 캐시가 아니라 ${CLAUDE_PLUGIN_DATA}/node 에 두고
+      # bin/node_modules 를 심링크로 연결한다 — `claude plugin update` 로 캐시가 교체돼도 의존성이 남는다.
+      NPM_DIR="$JS_BIN"
+      if [ -n "$PLUGIN_DATA" ]; then
+        NPM_DIR="$PLUGIN_DATA/node"
+        mkdir -p "$NPM_DIR" 2>/dev/null && cp -f "$JS_BIN/package.json" "$NPM_DIR/package.json" 2>/dev/null || true
+        if [ ! -e "$JS_BIN/node_modules" ] && [ -d "$NPM_DIR/node_modules" ]; then
+          ln -s "$NPM_DIR/node_modules" "$JS_BIN/node_modules" 2>/dev/null || true
+        fi
+      fi
+      if [ "$SKILL" = job-search ] && [ ! -d "$JS_BIN/node_modules/playwright" ] \
+         && [ "${JOBSTACK_NPM_AUTO_INSTALL:-1}" = 1 ] && command -v npm >/dev/null 2>&1; then
+        if command -v timeout >/dev/null 2>&1; then
+          (cd "$NPM_DIR" && PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD="${PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD:-0}" timeout 120 npm install --silent --no-audit --no-fund >/dev/null 2>&1) || true
+        else
+          (cd "$NPM_DIR" && npm install --silent --no-audit --no-fund >/dev/null 2>&1) || true
+        fi
+        if [ -n "$PLUGIN_DATA" ] && [ ! -e "$JS_BIN/node_modules" ] && [ -d "$NPM_DIR/node_modules" ]; then
+          ln -s "$NPM_DIR/node_modules" "$JS_BIN/node_modules" 2>/dev/null || true
+        fi
+      fi
+      if [ -d "$JS_BIN/node_modules/playwright" ]; then BROWSER_SCRAPER_AVAILABLE=true; else BROWSER_SCRAPER_AVAILABLE=false; fi
+    else
+      BROWSER_SCRAPER_AVAILABLE=false
+    fi
+    if [ -x "$JS_BIN/.is-venv/bin/python" ]; then IS_FETCH_AVAILABLE=true; else IS_FETCH_AVAILABLE=false; fi
+    ;;
+esac
+
+# 8. env.sh — 이후 Bash 스니펫이 source 하는 변수 파일 (원자적 교체)
+ENV_FILE="$_JS_STATE/env.sh"
+{
+  echo "# generated by jobstack-preamble $TODAY — Bash 스니펫 첫 줄에서 source 한다"
+  printf '_JS_STATE=%q\n' "$_JS_STATE"
+  printf '_JS_BIN=%q\n' "$JS_BIN"
+  printf '_JS_BROWSER_SCRIPT=%q\n' "$JS_BIN/fetch-jobs.mjs"
+  printf 'JOBSTACK_FETCH_DIAG_LOG=%q; export JOBSTACK_FETCH_DIAG_LOG\n' "$_JS_STATE/analytics/fetch-diag.log"
+  printf 'TODAY=%q\n' "$TODAY"
+  printf 'CURRENT_YEAR=%q\n' "$CURRENT_YEAR"
+  printf 'JOBSTACK_RUNTIME=%q\n' "$RUNTIME"
+  if [ -n "$PLUGIN_DATA" ]; then printf 'JOBSTACK_PLUGIN_DATA=%q\n' "$PLUGIN_DATA"; fi
+} > "$ENV_FILE.tmp.$$" 2>/dev/null && mv -f "$ENV_FILE.tmp.$$" "$ENV_FILE" 2>/dev/null || rm -f "$ENV_FILE.tmp.$$" 2>/dev/null || true
+
+# 8b. 쓰기 실패 감지 — 실패를 삼키되(항상 exit 0) 컨텍스트에 명시적 마커를 남긴다(리뷰 반영)
+STATE_WRITE_FAILED=false
+if [ ! -d "$_JS_STATE/analytics" ] || [ ! -f "$ENV_FILE" ]; then STATE_WRITE_FAILED=true; fi
+
+# 9. 텔레메트리 entry (docs/telemetry-events.md — 메타만, PII 없음)
+TS=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+if [ -n "$SESSION" ]; then
+  printf '{"skill":"%s","ts":"%s","pid":%s,"session":"%s"}\n' "$SKILL" "$TS" "$$" "$SESSION_KEY" \
+    >> "$_JS_STATE/analytics/skill-usage.jsonl" 2>/dev/null || true
+else
+  printf '{"skill":"%s","ts":"%s","pid":%s}\n' "$SKILL" "$TS" "$$" \
+    >> "$_JS_STATE/analytics/skill-usage.jsonl" 2>/dev/null || true
+fi
+
+# 10. 프롬프트에 삽입되는 실행 컨텍스트
+echo '<!-- jobstack-preamble v1 -->'
+echo '### 실행 컨텍스트'
+echo '```text'
+echo "SKILL_NAME=$SKILL"
+echo "JOBSTACK_RUNTIME=$RUNTIME"
+echo "TODAY_KST=$TODAY"
+echo "CURRENT_YEAR=$CURRENT_YEAR"
+echo "PROACTIVE=$PROACTIVE"
+echo "ACTIVE_SESSIONS=$ACTIVE_SESSIONS"
+echo "PROFILE_EXISTS=$PROFILE_EXISTS"
+echo "EXPERIENCES_EXISTS=$EXPERIENCES_EXISTS"
+[ "$EXPERIENCES_EXISTS" = true ] && echo "EXPERIENCE_COUNT=$EXPERIENCE_COUNT"
+echo "JS_STATE=$_JS_STATE"
+echo "JS_BIN=$JS_BIN"
+echo "ENV_FILE=$ENV_FILE"
+echo "STATE_WRITE_FAILED=$STATE_WRITE_FAILED"
+[ -n "$BROWSER_SCRAPER_AVAILABLE" ] && echo "BROWSER_SCRAPER_AVAILABLE=$BROWSER_SCRAPER_AVAILABLE"
+[ -n "$IS_FETCH_AVAILABLE" ] && echo "IS_FETCH_AVAILABLE=$IS_FETCH_AVAILABLE"
+[ -n "$TRACKER_FILE" ] && { echo "TRACKER_FILE=$TRACKER_FILE"; echo "ENTRY_COUNT=$ENTRY_COUNT"; }
+echo '```'
+if [ -n "$TRACKER_FILE" ] && [ "$ENTRY_COUNT" -gt 0 ] 2>/dev/null; then
+  echo '최근 지원 5건 (`tracker/applications.jsonl` 마지막 줄부터):'
+  echo '```jsonl'
+  tail -5 "$TRACKER_FILE" 2>/dev/null || true
+  echo '```'
+fi
+if [ "$STATE_WRITE_FAILED" = true ]; then
+  echo "주의: 상태 디렉토리(\`$_JS_STATE\`)에 쓸 수 없어 env.sh 가 없습니다. Bash 스니펫의 env.sh 소싱이 실패하므로 JOBSTACK_STATE_DIR 경로를 사용자에게 확인하고, 그 전까지 상태 저장 단계는 건너뜁니다."
+fi
+if [ "$PROFILE_EXISTS" = true ]; then
+  echo '프로필 요약 (`profiles/default.yaml` 상위 20줄):'
+  echo '```yaml'
+  head -20 "$PROFILE" 2>/dev/null || true
+  echo '```'
+fi
+echo "Bash 규칙: 이 스킬의 Bash 스니펫은 첫 줄에 \`. \"$ENV_FILE\"\` 를 두어 \`\$_JS_STATE\`·\`\$_JS_BIN\`·\`\$TODAY\`·\`\$CURRENT_YEAR\`·\`\$JOBSTACK_RUNTIME\` 를 불러옵니다."
+exit 0

@@ -1,7 +1,5 @@
 ---
 name: auto
-preamble-tier: 1
-version: 0.2.0
 description: |
   자동 감지 + 가이드 스킬. 현재 폴더의 파일을 분석하여 취업 준비 단계를 자동 판단.
   "취업 준비 도와줘", "시작", "뭐부터 하면 되나요" 등의 요청 시 활용.
@@ -14,52 +12,25 @@ allowed-tools:
   - Grep
   - AskUserQuestion
   - WebSearch
+argument-hint: "[파일 경로 | 붙여넣은 텍스트]"
+when_to_use: |
+  무엇부터 시작해야 할지 모르거나, 이력서·자소서·채용공고 파일만 폴더에 던져두고 다음 단계를 물을 때 사용한다.
+  파일이나 붙여넣은 텍스트를 스캔해 현재 준비 단계를 진단하고 다음 액션을 제안하는 진입점 스킬이다.
+  기업분석·모의면접·연봉 협상처럼 필요한 스킬이 이미 명확하면 이 스킬 대신 해당 스킬을 바로 사용한다.
+metadata:
+  preamble-tier: 1
+  version: 0.2.0
 ---
 
-```bash
-# ─── jobstack 프리앰블 ─────────────────────────
-_JS_STATE="${JOBSTACK_STATE_DIR:-$HOME/.jobstack}"
-mkdir -p "$_JS_STATE/analytics" "$_JS_STATE/profiles" "$_JS_STATE/tracker" \
-         "$_JS_STATE/company-cache" "$_JS_STATE/interview-history" "$_JS_STATE/sessions" "$_JS_STATE/defense-maps" "$_JS_STATE/job-cache"
+!`bash "${CLAUDE_SKILL_DIR}/scripts/preamble.sh" auto "${CLAUDE_SESSION_ID}" "${CLAUDE_PLUGIN_DATA:-}"`
 
-# 세션 추적
-echo "$$" > "$_JS_STATE/sessions/$$"
-trap 'rm -f "$_JS_STATE/sessions/$$"' EXIT
+> 위 실행 컨텍스트가 비어 있거나 `KEY=VALUE` 목록 대신 `!` 명령·정책 차단 문구가 그대로 보이면(`!` 주입이 꺼진 환경), 첫 Bash 명령으로 `bash "${CLAUDE_SKILL_DIR}/scripts/preamble.sh" auto`를 실행해 같은 컨텍스트를 확보하고 `${CLAUDE_SKILL_DIR}/references/guardrails.md`를 Read 하세요. 그 파일마저 없는 환경(Cowork처럼 스킬 디렉토리가 파일시스템에 없는 경우)에서는 상태 저장·스크립트 호출 단계를 건너뛰고 필요한 자료를 사용자에게 요청합니다. `STATE_WRITE_FAILED=true`가 보이면 `JOBSTACK_STATE_DIR` 경로를 사용자에게 확인합니다. 이 스킬의 Bash 스니펫은 첫 줄에 `. "${JOBSTACK_STATE_DIR:-$HOME/.jobstack}/env.sh"`를 두어 `$_JS_STATE`·`$_JS_BIN`·`$TODAY`를 불러옵니다.
 
-# 설정 로딩
-_JS_CONFIG="${CLAUDE_SKILL_DIR}/../bin/jobstack-config"
-if [ -x "$_JS_CONFIG" ]; then
-  PROACTIVE=$("$_JS_CONFIG" get proactive 2>/dev/null || echo "true")
-else
-  PROACTIVE="true"
-fi
+### 공통 가드레일 (references/guardrails.md)
 
-# 프로필 로딩
-PROFILE="$_JS_STATE/profiles/default.yaml"
-if [ -f "$PROFILE" ]; then
-  echo "PROFILE_EXISTS=true"
-  head -20 "$PROFILE"
-else
-  echo "PROFILE_EXISTS=false"
-fi
+!`sed '1{/^# /d;}' "${CLAUDE_SKILL_DIR}/references/guardrails.md"`
 
-# 활성 세션 수
-for _f in "$_JS_STATE/sessions/"*; do
-  [ -f "$_f" ] || continue
-  kill -0 "$(basename "$_f")" 2>/dev/null || rm -f "$_f"
-done
-ACTIVE_SESSIONS=$(ls "$_JS_STATE/sessions/" 2>/dev/null | wc -l | tr -d ' ')
-echo "ACTIVE_SESSIONS=$ACTIVE_SESSIONS"
-echo "PROACTIVE=$PROACTIVE"
-echo "SKILL_NAME=auto"
-
-# 텔레메트리
-echo "{\"skill\":\"auto\",\"ts\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"pid\":$$}" \
-  >> "$_JS_STATE/analytics/skill-usage.jsonl" 2>/dev/null || true
-```
-
-> **공통 가드레일**: 작업 시작 전 `${CLAUDE_SKILL_DIR}/../templates/guardrails.md` 를 Read 도구로 읽고 §1~§6 전 규칙을 준수하세요.
-
+!`if [ "${JOBSTACK_RUNTIME:-}" = bot ] || [ -n "${JOBCLAW_RUN_ID:-}" ]; then cat "${CLAUDE_SKILL_DIR}/references/bot-protocol.md"; fi`
 
 # jobstack auto — 자동 감지 + 단계별 가이드
 
@@ -69,7 +40,7 @@ echo "{\"skill\":\"auto\",\"ts\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"pid\":$$}"
 
 ## Phase 1: 환경 스캔
 
-현재 작업 폴더의 파일을 Glob으로 스캔합니다.
+현재 작업 폴더의 파일을 Glob으로 스캔합니다(Glob 도구가 없는 환경이면 Bash `find . -maxdepth 3 -type f`로 대체 — 하위 폴더까지 포함).
 
 **스캔 대상 패턴:**
 - `**/*.pdf`, `**/*.docx`, `**/*.doc`, `**/*.hwp`, `**/*.hwpx`
@@ -86,11 +57,17 @@ echo "{\"skill\":\"auto\",\"ts\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"pid\":$$}"
 | 포트폴리오 | 포트폴리오, portfolio, 작품, 프로젝트 |
 
 **분류 절차:**
-1. Glob으로 파일 목록 수집
+1. Glob(없으면 `find`)으로 파일 목록 수집
 2. 파일명에서 키워드 매칭
 3. 키워드로 분류가 안 되는 파일은 Read로 첫 50줄을 읽어 내용 기반 분류
 4. PDF 파일은 Read로 첫 페이지를 읽어 분류
 5. **읽기 실패 fallback**: 감지된 파일을 Read로 열 수 없으면(형식 미지원·파싱 실패 등) "읽을 수 없습니다" 같은 도구 한계를 그대로 노출하지 말고 "파일 내용을 복사해서 붙여넣어 주시면 바로 분석하겠습니다"라고 자료 요청으로 전환합니다. (읽기 실패는 파일이 감지된 경우에만 발생하므로 여기서 처리 — 파일이 아예 없는 no-arg 진입은 Phase 4 Case 5에서 다룹니다.)
+6. **한글 문서(.hwp/.hwpx) 변환**: 감지되면 Read 전에 마크다운으로 변환해 그 결과로 분류·분석합니다(.hwpx는 표준 라이브러리만으로, .hwp는 kordoc/rhwp 변환기가 설치돼 있을 때만 — `npx kordoc` 자동 실행은 기본 꺼짐이며 사용자가 `JOBSTACK_ALLOW_NPX=1` 로 명시 허용한 환경에서만 고정 버전으로 호출). exit 3(변환기 없음)이면 "한글에서 '다른 이름으로 저장 → HWPX'로 저장해 다시 올려주세요"라고 안내하고 그 파일은 이름으로만 분류합니다.
+
+```bash
+. "${JOBSTACK_STATE_DIR:-$HOME/.jobstack}/env.sh"
+python3 "$_JS_BIN/hwpx2md.py" "<파일.hwpx>" --out "<파일>.md"
+```
 
 각 카테고리별로 감지된 파일 경로를 기록합니다.
 
@@ -106,9 +83,10 @@ echo "{\"skill\":\"auto\",\"ts\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"pid\":$$}"
 
 ### 감지 완료 이벤트 기록
 
-파일·텍스트 감지 및 케이스 판정이 끝나면 Bash로 후속 이벤트를 append합니다(규격은 `${CLAUDE_SKILL_DIR}/../docs/telemetry-events.md`). 실패해도 스킬 동작에 영향이 없어야 합니다:
+파일·텍스트 감지 및 케이스 판정이 끝나면 Bash로 후속 이벤트를 append합니다(규격은 `${CLAUDE_SKILL_DIR}/references/telemetry-events.md`). 실패해도 스킬 동작에 영향이 없어야 합니다:
 
 ```bash
+. "${JOBSTACK_STATE_DIR:-$HOME/.jobstack}/env.sh"
 echo '{"skill":"auto","ts":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","pid":'$$',"event":"detected","phase":"case-N","no_arg":false}' \
   >> "$_JS_STATE/analytics/skill-usage.jsonl" 2>/dev/null || true
 ```
@@ -138,12 +116,13 @@ echo '{"skill":"auto","ts":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","pid":'$$',"event"
   - 기술/자격증
   - 어학성적
 
-  **추출 가드레일** (공통 규칙은 `${CLAUDE_SKILL_DIR}/../templates/guardrails.md` §1 참조):
+  **추출 가드레일** (공통 규칙은 `${CLAUDE_SKILL_DIR}/references/guardrails.md` §1 참조):
   1. **명시된 사실만 기록** — 이력서에 적혀 있지 않은 어학 급수·재직사·자격증 등을 그럴듯하게 추정해 채우지 않습니다.
   2. **누락 필드는 placeholder로 저장** — 빈 값이나 추정값이 아니라 `[이메일 입력 필요]` 형태로 저장합니다. (이메일 없는 이력서 → `email: "[이메일 입력 필요]"`)
   3. **누락 항목은 AskUserQuestion 1회만** 질문합니다. 답을 못 받으면 placeholder를 유지하고 반복 요구하지 않습니다.
   4. **세션 외부 출처 금지** — 훈련 데이터·다른 사용자 문서 등 세션 밖 개인정보를 프로필에 넣지 않습니다.
   5. **예외: 산술 파생 필드** — 이력서에 명시된 기간 데이터에서 산술적으로 파생된 값(총 경력 개월 수, positioning 등)은 파생 근거를 함께 기록하는 조건으로 허용합니다(아래 중고신입 판정 참조).
+  6. **예시·샘플 PII 확인(resume #130 과 같은 규칙)** — 파싱한 이름·이메일·전화가 예시값(`홍길동`·`김철수`·`010-1234-1234`·`010-0000-0000`·`@example.com`·`sample@`·`your_email`)으로 보이면 확정 사실로 저장·표시하지 말고, 프로필 요약 확인 요청에서 먼저 "이름/연락처가 예시값처럼 보여요. 실제 정보로 업데이트할까요?"를 묻습니다. 확인 전에는 해당 필드를 `[확인 필요: 값]` placeholder로 저장합니다.
 
 - **중고신입 감지 (산술 파생)**: 이력서에 명시된 경력·인턴 기간의 합산이 6개월~3년이면 프로필에 `positioning: 중고신입` 필드를 기록합니다. 이는 추론 필드가 아니라 **산술 파생 필드**이므로 파생 근거(`positioning_basis: "경력 합산 N개월, 출처: 이력서 기재 기간"`)를 함께 기록합니다. (예: 경력 18개월 이력서 → `positioning: 중고신입`, `positioning_basis: "경력 합산 18개월, 출처: 이력서 기재 기간"`)
   - 확인 요청 메시지에 한 줄 추가: "경력 N개월은 숨길 게 아니라 무기입니다 — 이력서·자소서에서 경력 중심으로 재구성하겠습니다."
@@ -159,23 +138,7 @@ echo '{"skill":"auto","ts":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","pid":'$$',"event"
 
 감지된 파일과 프로필 상태를 기반으로 체크리스트를 출력합니다:
 
-```
-╔══════════════════════════════════════════╗
-║  jobstack 취업 준비 현황                   ║
-╠══════════════════════════════════════════╣
-║                                          ║
-║  [x] 프로필 — default.yaml 로드           ║
-║  [x] 이력서 — resume.pdf 감지             ║
-║  [ ] 이력서 첨삭 ← 추천 다음 단계          ║
-║  [ ] 기업분석 — 채용공고.pdf 감지           ║
-║  [x] 자기소개서 — 자소서_삼성.docx 감지     ║
-║  [ ] 자소서 첨삭                           ║
-║  [ ] 포트폴리오                            ║
-║  [ ] 통합 리뷰                             ║
-║  [ ] 모의면접                              ║
-║                                          ║
-╚══════════════════════════════════════════╝
-```
+> 대시보드 양식: `${CLAUDE_SKILL_DIR}/references/dashboard.md` — Phase 3 출력 직전에 Read 한다.
 
 체크 기준:
 - 프로필: `$_JS_STATE/profiles/default.yaml` 존재
@@ -187,11 +150,18 @@ echo '{"skill":"auto","ts":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","pid":'$$',"event"
 - 통합 리뷰: analytics에 review 스킬 기록 존재
 - 모의면접: interview-history에 기록 존재
 
-**지원 현황 통합** (상태 어휘는 `${CLAUDE_SKILL_DIR}/../docs/tracker-states.md`의 canonical 9상태를 그대로 사용):
-- `$_JS_STATE/tracker/applications.jsonl`을 읽어 진행 중인 지원 건수를 집계하고, 대시보드 하단에 `지원 현황: N건 진행 중` 줄을 출력합니다.
+**지원 현황 통합** (상태 어휘는 `${CLAUDE_SKILL_DIR}/references/tracker-states.md`의 canonical 9상태를 그대로 사용):
+- `"$_JS_BIN/jobstack-tracker" stats` (env.sh 소싱 후) 출력의 진행 중 건수로 대시보드 하단에 `지원 현황: N건 진행 중` 줄을 붙입니다(파일을 직접 읽어 세지 않습니다).
 - 상태는 **저장=영문 키 / 표시=한글 라벨** 원칙을 따릅니다(준비중/지원완료/서류합격/1차면접/2차면접/최종면접/최종합격/불합격/지원취소). `status`가 한글인 구버전 라인은 읽기 시점에 매핑표로 정규화합니다.
-- **7일 정체 넛지**: `updated_at` 기준 7일 이상 상태 변화가 없는 진행 상태(preparing~final) 건에 "○○ 지원 7일째 변화 없음 — 후속 확인?"을 출력합니다. 종결 상태(offer/rejected/withdrawn)는 제외합니다.
+- **7일 정체 넛지**: `"$_JS_BIN/jobstack-tracker" nudge` (env.sh 소싱 후) 출력을 그대로 붙입니다(정체가 없어도 "정체 항목 없음" 한 줄이 나오므로 항상 표시 — 아래 운영 메모와 달리 생략하지 않습니다). 정체 판정과 문구는 스크립트가 만듭니다.
 - 지원 현황은 봇 네이티브 명령으로 관리되므로 대시보드에서 별도 명령을 추천하지 않습니다(파일 읽기·표시만 담당).
+
+**운영 메모 상위 3건** (선택 — 기록 없으면 이 절 자체를 생략):
+```bash
+. "${JOBSTACK_STATE_DIR:-$HOME/.jobstack}/env.sh"
+"$_JS_BIN/jobstack-learn" top --n 3
+```
+출력이 비어 있으면 표시하지 않습니다("기록 없음" 문구도 대신 보여주지 않습니다). 기록되는 것은 수집 셀렉터 깨짐·차단·반복 자료 요청 같은 메타뿐이며 사용자 문서 내용은 없습니다.
 
 > ⚠️ **파일 미감지 시 "읽었다/감지됨"이라고 말하지 마세요 (#113)**: 위 체크에서 실제로 파일이 감지되지 않았다면, `{파일명}` 자리표시자가 들어간 "이력서가 감지되었습니다" 류 안내를 **렌더하지 마세요**. 대신 "아직 이력서/파일이 워크스페이스에 도착하지 않았어요. 파일을 업로드해 주시면 바로 분석할게요."라고 **명시적으로 미감지**를 안내하고 업로드를 요청하세요. 감지되지 않은 파일을 읽은 것처럼 말하거나, 제공되지 않은 경력·사실을 채워 넣지 마세요.
 
@@ -208,26 +178,33 @@ Phase 4의 파일 기반 케이스 분기에 앞서, 사용자 요청이 다음 
 
 이 패턴은 보수적으로 유지합니다. false negative(전략 요청인데 못 잡음)는 auto 기본 흐름으로 진행되므로 무해하지만, false positive(일반 요청을 전략으로 오판)는 사용자 흐름을 끊으므로 더 나쁩니다. 애매하면 위임하지 않고 기본 케이스 분기로 진행합니다.
 
+## 그 외 요청 라우팅
+
+파일 감지와 무관하게 요청이 아래 패턴이면 해당 스킬의 워크플로우를 이 세션에서 이어서 실행하거나, 사용자에게 명령을 안내합니다(명령 표기는 언더스코어).
+
+| 요청 패턴 | 스킬 |
+|---|---|
+| "경험 정리", "자소서 소재 발굴", "내 경험 뭐 쓰지" | `/experience_bank` |
+| "경력기술서", "이력서랑 경력기술서 뭐가 달라" | `/career_history` |
+| "링크드인·원티드·리멤버 프로필", "스카우트 제안이 안 와요" | `/scout_profile` |
+| "면접 회고", "왜 떨어졌을까", "패턴 분석" | `/retro` |
+| "연봉", "처우 비교", "협상" | `/salary` |
+| "채용공고 찾아줘", "지금 뜨는 공고" | `/job_search` |
+| "포트폴리오 봐줘", "GitHub 프로필" | `/portfolio` |
+| 공기업·공공기관 NCS 자소서 | `/cover_letter` (공기업 NCS 보강 소절) |
+| "NCS", "직업기초능력", "능력단위", "자가진단", "직무기술서 매핑" | CLI: ncs 스킬(Skill 도구로 호출), 봇: `/cover_letter` 공기업 NCS 보강 소절 |
+| 지원 현황 관리 | 봇: `/track`·`/myapps`, CLI: tracker 스킬 |
+
 ---
 
 ## Phase 4: 다음 단계 제안
 
 감지 결과에 따라 AskUserQuestion으로 다음 단계를 제안합니다.
 
-> **파일 출력 선택지 (모든 Case 공통)**: 각 Case의 선택지에 "최종 파일 출력(.docx)"을 포함합니다. `${CLAUDE_SKILL_DIR}/../bin/jobstack-export`가 있으면 pandoc으로 md→docx 변환하고, pandoc 미설치(exit 2)·변환 실패(exit 3) 시 markdown 본문을 복붙용으로 제공하는 폴백으로 진행합니다. **단, exit 4(미확인 placeholder 잔존)는 폴백 대상이 아닙니다** — markdown을 제출용으로 주지 말고, 출력된 미확인 항목을 사용자에게 채우도록 요청한 뒤 다시 변환합니다. (봇 환경에서는 기존 File output protocol을 따릅니다.)
+> **파일 출력 선택지 (모든 Case 공통)**: 각 Case의 선택지에 "최종 파일 출력(.docx)"을 포함합니다. `"$_JS_BIN/jobstack-export"`로 md→docx 변환하고(pandoc 또는 Node docx 폴백), 둘 다 불가(exit 2)·변환 실패(exit 3) 시 markdown 본문을 복붙용으로 제공하는 폴백으로 진행합니다. **단, exit 4(미확인 placeholder 잔존)는 폴백 대상이 아닙니다** — markdown을 제출용으로 주지 말고, 출력된 미확인 항목을 사용자에게 채우도록 요청한 뒤 다시 변환합니다. (봇 환경에서는 기존 File output protocol을 따릅니다.)
 
 ### Case 1: 이력서만 있음
-```
-이력서가 감지되었습니다: {파일명}
-프로필을 자동 생성했습니다.
-
-추천: A) 이력서 첨삭. 이유: 이력서를 먼저 완성하면 자소서/면접 준비의 기반이 됩니다.
-
-A) 이력서 첨삭 진행
-B) 관심 기업 분석부터
-C) 취업 전략 수립부터
-D) 최종 파일 출력(.docx)
-```
+> 제안 대본: `${CLAUDE_SKILL_DIR}/references/cases.md` Case 1 — AskUserQuestion 제시 직전에 Read 한다.
 
 ### Case 2: 채용공고 있음
 
@@ -240,69 +217,19 @@ D) 최종 파일 출력(.docx)
 
 특정 기업의 전형 방식·자소서 폐지 여부를 본문에 단정하지 않습니다. 공고 본문으로 판별이 불확실하면 실행 중 WebSearch로 확인합니다(출처·기준일 병기).
 
-```
-채용공고가 감지되었습니다: {파일명}
-기업: {채용공고에서 추출한 기업명}
-요구 서류 형태: {자소서형 / 이력서·경력기술서형 / 영상·과제형}
-
-추천: A) 기업분석. 이유: 채용공고의 키워드를 분석하면 이력서/자소서를 맞춤화할 수 있습니다.
-
-A) 기업분석 진행
-B) 채용공고에 맞춰 이력서 작성
-C) 채용공고에 맞춰 자소서 작성   ← 자소서를 요구하는 전형일 때만 노출
-D) 경력기술서 작성   ← 경력기술서를 요구하는 전형일 때만 노출
-E) 최종 파일 출력(.docx)
-```
+> 제안 대본: `${CLAUDE_SKILL_DIR}/references/cases.md` Case 2 — 서류 형태 진단 후 AskUserQuestion 제시 직전에 Read 한다.
 
 ### Case 3: 이력서 + 자소서 있음
-```
-이력서와 자소서가 모두 감지되었습니다.
-- 이력서: {파일명}
-- 자소서: {파일명}
-
-추천: A) 통합 리뷰. 이유: 이력서↔자소서 일관성을 점검하고 면접 준비로 넘어갑니다.
-
-A) 통합 리뷰 (이력서↔자소서 일관성 점검)
-B) 자소서 첨삭 먼저
-C) 이력서 첨삭 먼저
-D) 최종 파일 출력(.docx)
-E) 모의면접 진행
-```
+> 제안 대본: `${CLAUDE_SKILL_DIR}/references/cases.md` Case 3 — AskUserQuestion 제시 직전에 Read 한다.
 
 ### Case 4: 이력서 + 자소서 + 채용공고
-```
-서류가 충분히 준비되어 있습니다!
-- 이력서: {파일명}
-- 자소서: {파일명}
-- 채용공고: {파일명}
-
-추천: A) 서류합격 패키지. 이유: 이력서·자소서를 채용공고에 맞춰 다듬고 일관성까지 점검하는 것이 합격에 가장 직접적입니다.
-
-A) 서류합격 패키지 (이력서 + 자소서 + 통합 리뷰 결합 리포트)
-B) 기업분석 (채용공고 기반)
-C) 개별 서류 첨삭
-D) 최종 파일 출력(.docx)
-E) 모의면접 진행
-```
+> 제안 대본: `${CLAUDE_SKILL_DIR}/references/cases.md` Case 4 — AskUserQuestion 제시 직전에 Read 한다.
 
 ### Case 5: 파일 없이 진입 (no-arg)
 
 파일이 없는 진입은 오류가 아니라 정상 진입 경로입니다. "파일이 없습니다"로 시작하지 말고, 페인포인트 훅으로 대화를 엽니다.
 
-```
-어디가 약한지 3분 안에 진단해 드릴게요. 지금 가장 걸리는 게 뭔가요?
-
-1) 내 이력서/자소서가 괜찮은 건지 모르겠다
-2) 계속 떨어지는데 왜인지 모르겠다
-3) 첨삭 부탁할 사람이 마땅치 않다
-4) 유료 첨삭은 비용이 부담된다
-5) AI가 쓴 초안이 내 경험을 지워버린 것 같아 불안하다
-
-바로 시작하려면 이렇게 주세요:
-- 이력서/자소서 파일을 드래그해서 올려주기
-- 문서 내용을 텍스트로 복붙해 주기
-- 아직 서류가 없다면 → 전략 수립부터 (/strategy)
-```
+> 제안 대본: `${CLAUDE_SKILL_DIR}/references/cases.md` Case 5 — AskUserQuestion 제시 직전에 Read 한다.
 
 - 사용자가 페인포인트를 고르면 해당 흐름으로 연결합니다(1·2·5 → 문서 진단/첨삭, 3·4 → 진단 후 첨삭 루프 안내, 전략 필요 시 `/strategy`).
 - **인사말·능력 질문 처리**: "안녕", "뭐 할 수 있어?", "도와줘" 같은 인사·능력 질문에는 위 페인포인트 훅 대신(또는 이어서) **메뉴판**을 즉시 제시합니다 — 할 수 있는 것 목록(이력서·자소서 첨삭, 기업분석, 통합 리뷰, 모의면접, 전략 수립)과 첫 액션 제안 한 줄을 함께 보여줍니다.
@@ -322,7 +249,7 @@ E) 모의면접 진행
 - **완성 조건**: 1회 첨삭으로 끝이 아닙니다. **진단 → 수정 → 재리뷰 → 파일화(.docx 출력)** 루프까지 도달해야 완성입니다. 첫 진단 후 사용자에게 수정본 재리뷰와 파일 출력을 이어서 제안합니다.
 - 완료 시 다시 대시보드를 업데이트하고 다음 단계 제안
 
-**완료 이벤트 기록**: auto는 진입점이므로 라우팅 결과를 `detected` 이벤트로만 기록하고(위 Phase 1 참조), 퍼널 이벤트(`submitted`/`diagnosed`/`second_review`/`exported`)는 **각 하위 스킬이 자기 시점에** 기록합니다. auto가 `second_review`를 직접 올리면 대응하는 `diagnosed` 없이 분자만 늘어 퍼널이 왜곡되므로, auto에서는 append하지 않습니다(규격 `${CLAUDE_SKILL_DIR}/../docs/telemetry-events.md`).
+**완료 이벤트 기록**: auto는 진입점이므로 라우팅 결과를 `detected` 이벤트로만 기록하고(위 Phase 1 참조), 퍼널 이벤트(`submitted`/`diagnosed`/`second_review`/`exported`)는 **각 하위 스킬이 자기 시점에** 기록합니다. auto가 `second_review`를 직접 올리면 대응하는 `diagnosed` 없이 분자만 늘어 퍼널이 왜곡되므로, auto에서는 append하지 않습니다(규격 `${CLAUDE_SKILL_DIR}/references/telemetry-events.md`).
 
 ---
 

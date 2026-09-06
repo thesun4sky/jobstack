@@ -1,0 +1,151 @@
+{
+  "skill": "tracker",
+  "cases": [
+    {
+      "id": "tracker-gate-v1-migration-list",
+      "tier": "gate",
+      "prompt": "지원 현황 목록 보여줘.",
+      "files": [],
+      "setup": [
+        "mkdir -p \"$STATE_DIR/tracker\"",
+        "cp \"$REPO/test/golden/tracker/v1-compat/input.jsonl\" \"$STATE_DIR/tracker/applications.jsonl\""
+      ],
+      "expectations": {
+        "must_contain": [
+          "진행중",
+          "대기중",
+          "종료"
+        ],
+        "must_not_contain": [
+          "다각적",
+          "포괄적",
+          "심층적",
+          "혁신적",
+          "체계적",
+          "합격 보장",
+          "무조건 통과",
+          "전문가가 직접 첨삭",
+          "AI 대체 불가"
+        ],
+        "must_call": [
+          "jobstack-tracker list"
+        ],
+        "must_read": [],
+        "max_turns": 6
+      },
+      "grader": "deterministic",
+      "note": "test/golden/tracker/v1-compat 의 입력(input.jsonl)과 기대 특성(list_output_traits)을 그대로 재사용한다 — 골든 테스트가 검증하는 v1 한글 status 정규화가 실제 스킬 실행에서도 유지되는지 확인하는 U-16 대표 게이트 케이스."
+    },
+    {
+      "id": "tracker-periodic-rejection-checklist",
+      "tier": "periodic",
+      "prompt": "카카오 지원 건 불합격으로 업데이트해줘.",
+      "files": [],
+      "setup": [
+        "mkdir -p \"$STATE_DIR/tracker\"",
+        "cp \"$REPO/test/golden/tracker/v1-compat/input.jsonl\" \"$STATE_DIR/tracker/applications.jsonl\""
+      ],
+      "expectations": {
+        "must_contain": [
+          "채용서류 반환",
+          "다음 추천"
+        ],
+        "must_not_contain": [
+          "다각적",
+          "포괄적",
+          "심층적",
+          "혁신적",
+          "체계적",
+          "합격 보장",
+          "무조건 통과",
+          "전문가가 직접 첨삭",
+          "AI 대체 불가"
+        ],
+        "must_call": [
+          "jobstack-tracker update --status"
+        ],
+        "must_read": [],
+        "max_turns": 8
+      },
+      "grader": "llm",
+      "note": "같은 golden 입력의 app-002(카카오, updated_at 2026-03-29)는 오늘(기준일) 대비 정체 조건을 만족해 정체 넛지와 탈락 후 권리 체크리스트가 함께 뜬다. '다음 추천:' 줄은 스크립트 자체 산출(결정적)이라 must_contain으로도 확인하지만, 체크리스트 전달 톤·정체 넛지 문구의 자연스러움은 LLM 채점으로 본다."
+    },
+    {
+      "id": "tracker-e2e-add-update-stats-chain",
+      "tier": "e2e",
+      "prompt": "카카오 서버개발자 포지션에 지원완료 상태로 추가하고, 바로 1차면접으로 업데이트한 다음 지원 통계도 보여줘.",
+      "files": [],
+      "setup": [],
+      "expectations": {
+        "must_contain": [],
+        "must_not_contain": [
+          "다각적",
+          "포괄적",
+          "심층적",
+          "혁신적",
+          "체계적",
+          "합격 보장",
+          "무조건 통과",
+          "전문가가 직접 첨삭",
+          "AI 대체 불가"
+        ],
+        "must_call": [
+          "jobstack-tracker add --company --position",
+          "jobstack-tracker update --status",
+          "jobstack-tracker stats"
+        ],
+        "must_read": [],
+        "max_turns": 14,
+        "must_output": [
+          "추가됨",
+          "갱신됨",
+          "퍼널 전환율"
+        ]
+      },
+      "grader": "deterministic",
+      "note": "한 세션 안에서 add→update→stats 세 하위 명령이 순서대로 체이닝되는지 확인하는 전체 흐름 케이스. 빈 상태에서 시작하므로 이전 케이스의 seed와 독립적이다(케이스별 격리 작업 디렉토리·STATE_DIR 전제)."
+    }
+  ],
+  "should_trigger": [
+    {
+      "query": "지원 현황 목록 보여줘",
+      "expect": true
+    },
+    {
+      "query": "카카오 지원 방금 했는데 트래커에 추가해줘",
+      "expect": true
+    },
+    {
+      "query": "마감일 캘린더 보여줘",
+      "expect": true
+    },
+    {
+      "query": "지원 통계 보여줘, 통과율이 어떻게 되나",
+      "expect": true
+    },
+    {
+      "query": "면접 회고 분석해줘, 어디서 떨어졌는지",
+      "expect": false
+    },
+    {
+      "query": "이력서 첨삭해줘",
+      "expect": false
+    },
+    {
+      "query": "연봉 협상 어떻게 준비하면 될까",
+      "expect": false
+    },
+    {
+      "query": "새 공고 찾아줘",
+      "expect": false
+    },
+    {
+      "query": "취업 준비 전체적으로 뭐부터 하면 될지 모르겠어",
+      "expect": false
+    },
+    {
+      "query": "경험 카드 목록 보여줘",
+      "expect": false
+    }
+  ]
+}

@@ -1,0 +1,640 @@
+#!/usr/bin/env bash
+# jobstack-cron — 반복 실행 경로 (로컬) — v1.0 항목 U-14 초안
+#
+# 공고 모니터링을 로컬 cron(리눅스) / launchd(macOS)에 등록해 매일 새 공고·마감 임박
+# 공고·지원 정체 알림을 하나의 daily 파일로 모은다. Claude(`claude -p`)는 호출하지
+# 않는다 — 비용·권한 문제 때문이며, 자세한 이유는 cmd_run() 안의 --with-claude 처리
+# 주석을 참조(docs/plans/version-upgrade-review-2026-09.md U-14, docs/routines.md 대안 참고).
+#
+# 사용법: jobstack-cron <run|install|uninstall|status> [옵션]
+#
+#   run [--keyword <직무>] [--career entry|experienced] [--location <코드>] [--limit N] [--with-claude]
+#   install [--time HH:MM] [--dry-run]
+#   uninstall
+#   status
+#
+# 환경:
+#   JOBSTACK_STATE_DIR    상태 디렉토리 (기본 ~/.jobstack)
+#   JOBSTACK_FETCH_JOBS   fetch-jobs.mjs 대신 실행할 경로 (테스트 훅 — 인자 규약은 동일:
+#                        <platform> <keyword> <limit> <career> <location>, JSON 배열을 stdout 에)
+#   JOBSTACK_TRACKER_BIN  jobstack-tracker 대신 사용할 경로 (테스트 훅, 기본 "$JS_BIN/jobstack-tracker")
+#   JOBSTACK_CRON_OS_NAME `uname -s` 대신 사용할 OS 이름(테스트 훅, 예: Darwin) — 있으면 이 값을 우선한다
+#   JOBSTACK_NODE_BIN     fetch-jobs.mjs 를 실행할 node 경로(기본: PATH 의 node). cron/launchd 는 PATH 가
+#                        축소돼 Homebrew·nvm 의 node 를 못 찾는 일이 흔하다 — install 이 등록 항목에 PATH 를
+#                        넣어 주지만, 그래도 안 되면 절대경로를 지정한다.
+#
+# 필수: python3 — daily 파일·cron-last.json 스냅샷 생성에 쓴다. 없으면 시작하자마자 종료 코드 1.
+#
+# 종료 코드(run): 0 정상 · 1 인자/환경 오류(검색 조건 없음, node/python3 부재 등) ·
+#                2 전 플랫폼 수집 실패(degraded — daily 파일을 만들지 않고 cron.log 에 status=degraded 기록).
+#                무인 실행에서 "새 공고 0건" 과 "수집기 자체 실패" 를 구분하기 위한 코드다(PR #17 리뷰 반영).
+#
+# macOS bash 3.2 호환: 배열·`[[ ]]` 를 쓰지 않고 `[ ]`·case 로만 분기한다. 날짜 연산이
+# 필요한 곳(_date_days_ago)은 GNU `date -d` 우선 시도 후 BSD `date -v` 로 폴백한다.
+set -u
+
+command -v python3 >/dev/null 2>&1 || { echo "python3 가 필요합니다" >&2; exit 1; }
+
+: "${HOME:=/tmp}"
+
+HERE="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+JS_BIN="$HERE"
+_JS_STATE="${JOBSTACK_STATE_DIR:-$HOME/.jobstack}"
+TRACKER_BIN="${JOBSTACK_TRACKER_BIN:-$JS_BIN/jobstack-tracker}"
+NODE_BIN="${JOBSTACK_NODE_BIN:-node}"
+
+# fetch-jobs.mjs 의 자체 0건 진단 로그(logFailure)가 쓰는 파일 — env.sh 와 동일 경로.
+JOBSTACK_FETCH_DIAG_LOG="$_JS_STATE/analytics/fetch-diag.log"
+export JOBSTACK_FETCH_DIAG_LOG
+
+CRON_WORKDIR=""
+cleanup() { [ -n "$CRON_WORKDIR" ] && rm -rf "$CRON_WORKDIR" 2>/dev/null; }
+trap cleanup EXIT
+
+err() { printf '%s\n' "$*" >&2; }
+
+# OS 이름 판정 — JOBSTACK_CRON_OS_NAME(테스트 훅)이 있으면 그 값을 그대로 쓰고,
+# 없으면 `uname -s` 결과를 쓴다(둘 다 실패하면 unknown).
+_cron_os_name() {
+  if [ -n "${JOBSTACK_CRON_OS_NAME:-}" ]; then
+    printf '%s' "$JOBSTACK_CRON_OS_NAME"
+  else
+    uname -s 2>/dev/null || echo unknown
+  fi
+}
+
+cfg_get() { # $1=key — 값이 없거나 jobstack-config 가 없으면 빈 문자열(비정상 종료 무시)
+  if [ -x "$JS_BIN/jobstack-config" ]; then
+    "$JS_BIN/jobstack-config" get "$1" 2>/dev/null
+  fi
+}
+
+# N일 전 날짜(YYYY-MM-DD, KST). GNU date 우선, 실패 시 BSD date(-v) 로 폴백한다.
+_date_days_ago() {
+  n="$1"
+  TZ=Asia/Seoul date -d "-${n} day" +%Y-%m-%d 2>/dev/null \
+    || TZ=Asia/Seoul date -v-"${n}"d +%Y-%m-%d 2>/dev/null
+}
+
+usage() {
+  cat <<'EOF'
+사용법: jobstack-cron <run|install|uninstall|status> [옵션]
+
+  run [--keyword <직무>] [--career entry|experienced] [--location <코드>] [--limit N] [--with-claude]
+      공고 모니터링을 1회 실행하고 job-cache/daily-YYYY-MM-DD.md 를 생성합니다.
+      검색 조건은 인자 → `jobstack-config get cron_keyword` 등 설정 순으로 찾고,
+      직무(keyword)가 끝까지 없으면 안내 후 종료 코드 1로 끝납니다.
+
+  install [--time HH:MM] [--dry-run]
+      현재 OS 에 맞게 cron(Linux) 또는 launchd(macOS) 에 매일 실행을 등록합니다.
+      기본 시각 07:00. --dry-run 이면 등록될 내용만 출력하고 실제로 등록하지 않습니다.
+
+  uninstall
+      등록된 cron/launchd 항목을 제거합니다.
+
+  status
+      마지막 실행 시각과 최근 7일 daily 파일 존재 여부를 보여줍니다.
+EOF
+}
+
+# ─────────────────────────────────────────────────────────────────────────
+# run
+# ─────────────────────────────────────────────────────────────────────────
+
+run_fetch_jobs() { # $1=platform $2=keyword $3=limit $4=career $5=location -> stdout JSON 배열
+  if [ -n "${JOBSTACK_FETCH_JOBS:-}" ]; then
+    "$JOBSTACK_FETCH_JOBS" "$@"
+  else
+    "$NODE_BIN" "$JS_BIN/fetch-jobs.mjs" "$@"
+  fi
+}
+
+cmd_run() {
+  KEYWORD=""; CAREER=""; LOCATION=""; LIMIT=""; WITH_CLAUDE=false
+
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --keyword|--career|--location|--limit)
+        if [ $# -lt 2 ]; then err "옵션 $1 에 값이 필요합니다."; return 1; fi
+        case "$1" in
+          --keyword) KEYWORD="$2" ;;
+          --career) CAREER="$2" ;;
+          --location) LOCATION="$2" ;;
+          --limit) LIMIT="$2" ;;
+        esac
+        shift 2
+        ;;
+      --with-claude) WITH_CLAUDE=true; shift ;;
+      -h|--help) usage; return 0 ;;
+      *) err "알 수 없는 옵션: $1"; return 1 ;;
+    esac
+  done
+
+  [ -n "$KEYWORD" ] || KEYWORD="$(cfg_get cron_keyword)"
+  [ -n "$CAREER" ] || CAREER="$(cfg_get cron_career)"
+  [ -n "$LOCATION" ] || LOCATION="$(cfg_get cron_location)"
+  [ -n "$LIMIT" ] || LIMIT="$(cfg_get cron_limit)"
+  [ -n "$LIMIT" ] || LIMIT=20
+
+  if [ -z "$KEYWORD" ]; then
+    err "검색 조건이 없습니다. --keyword <직무> 로 지정하거나 아래로 기본값을 설정하세요:"
+    err "  jobstack-config set cron_keyword <직무>   (선택: cron_career, cron_location, cron_limit)"
+    return 1
+  fi
+
+  case "$CAREER" in
+    ""|entry|experienced) : ;;
+    *) err "--career 는 entry 또는 experienced 만 지원합니다: $CAREER"; return 1 ;;
+  esac
+
+  # limit 은 1~100 정수만(PR #17 리뷰 반영 — 비정상 값이 그대로 외부 API count 로 가지 않게 한다)
+  case "$LIMIT" in
+    ''|*[!0-9]*) err "--limit 은 1~100 사이 정수여야 합니다: $LIMIT"; return 1 ;;
+  esac
+  if [ "$LIMIT" -lt 1 ] || [ "$LIMIT" -gt 100 ]; then
+    err "--limit 은 1~100 사이 정수여야 합니다: $LIMIT"; return 1
+  fi
+
+  # node 사전 확인 — 없으면 "새 공고 0건" 이 아니라 환경 오류로 끝낸다(PR #17 리뷰 반영).
+  if [ -z "${JOBSTACK_FETCH_JOBS:-}" ] && ! command -v "$NODE_BIN" >/dev/null 2>&1; then
+    err "node 를 찾을 수 없습니다 (NODE_BIN=$NODE_BIN, PATH=$PATH)."
+    err "cron/launchd 는 PATH 가 축소돼 있습니다 — 'jobstack-cron install' 을 다시 실행해 PATH 를 등록하거나 JOBSTACK_NODE_BIN 에 node 절대경로를 지정하세요."
+    return 1
+  fi
+
+  mkdir -p "$_JS_STATE/job-cache" "$_JS_STATE/analytics" 2>/dev/null || true
+
+  CRON_WORKDIR="$(mktemp -d "${TMPDIR:-/tmp}/jobstack-cron.XXXXXX")" || {
+    err "임시 작업 디렉토리를 만들 수 없습니다."
+    return 1
+  }
+
+  # 플랫폼 호출 순서 — 실패는 건너뛰고 계속 진행한다.
+  PLATFORMS="saramin jumpit wanted jobkorea"
+  OK_LIST=""
+  FAIL_LIST=""
+  for PLATFORM in $PLATFORMS; do
+    OUT_FILE="$CRON_WORKDIR/raw-$PLATFORM.json"
+    if run_fetch_jobs "$PLATFORM" "$KEYWORD" "$LIMIT" "$CAREER" "$LOCATION" >"$OUT_FILE" 2>/dev/null \
+       && python3 -c 'import json,sys
+d=json.load(open(sys.argv[1], encoding="utf-8"))
+sys.exit(0 if isinstance(d, list) else 1)' "$OUT_FILE" 2>/dev/null
+    then
+      OK_LIST="$OK_LIST $PLATFORM"
+    else
+      FAIL_LIST="$FAIL_LIST $PLATFORM"
+    fi
+  done
+
+  # 전 플랫폼 실패 — 새 공고 판정 자체가 불가능하므로 성공처럼 보고하지 않는다(exit 2, PR #17 리뷰 반영).
+  if [ -z "$OK_LIST" ]; then
+    TS="$(TZ=Asia/Seoul date +%Y-%m-%dT%H:%M:%S%z)"
+    FAIL_COUNT="$(printf '%s\n' "$FAIL_LIST" | wc -w | tr -d ' ')"
+    printf '{"ts":"%s","cmd":"run","status":"degraded","platforms_ok":0,"platforms_failed":%s}\n' "$TS" "$FAIL_COUNT" \
+      >>"$_JS_STATE/analytics/cron.log" 2>/dev/null || true
+    err "수집 실패: 전 플랫폼($FAIL_LIST) — 새 공고를 판정할 수 없어 daily 파일을 만들지 않습니다 (analytics/fetch-diag.log 확인, exit 2)."
+    return 2
+  fi
+  OK_LIST="${OK_LIST# }"
+  FAIL_LIST="${FAIL_LIST# }"
+
+  PLATFORM_FILES=""
+  for PLATFORM in $OK_LIST; do
+    PLATFORM_FILES="$PLATFORM_FILES $CRON_WORKDIR/raw-$PLATFORM.json"
+  done
+
+  TODAY="$(TZ=Asia/Seoul date +%Y-%m-%d)"
+  SNAPSHOT="$_JS_STATE/job-cache/cron-last.json"
+  DAILY="$_JS_STATE/job-cache/daily-$TODAY.md"
+
+  PYOUT="$(python3 - "$TODAY" "$SNAPSHOT" "$DAILY" "$KEYWORD" "$CAREER" "$LOCATION" "$LIMIT" "$OK_LIST" "$FAIL_LIST" $PLATFORM_FILES <<'PY'
+import sys, json, os, re, datetime
+
+today_s, snapshot_path, daily_path, keyword, career, location, limit, ok_list, fail_list = sys.argv[1:10]
+platform_files = sys.argv[10:]
+
+
+def load_jobs(paths):
+    jobs = []
+    for p in paths:
+        try:
+            with open(p, encoding='utf-8') as f:
+                data = json.load(f)
+            if isinstance(data, list):
+                jobs.extend(data)
+        except Exception:
+            pass
+    return jobs
+
+
+def job_key(j):
+    link = str(j.get('link') or '').strip()
+    if link:
+        return link
+    return '|'.join([str(j.get('platform', '')), str(j.get('company', '')), str(j.get('title', ''))])
+
+
+jobs = load_jobs(platform_files)
+seen = set()
+deduped = []
+for j in jobs:
+    k = job_key(j)
+    if k in seen:
+        continue
+    seen.add(k)
+    deduped.append(j)
+jobs = deduped
+
+prev_keys = set()
+if os.path.exists(snapshot_path):
+    try:
+        with open(snapshot_path, encoding='utf-8') as f:
+            prev = json.load(f)
+        for j in prev.get('jobs', []):
+            prev_keys.add(job_key(j))
+    except Exception:
+        prev_keys = set()
+
+new_jobs = [j for j in jobs if job_key(j) not in prev_keys]
+
+today = datetime.date.fromisoformat(today_s)
+
+
+def parse_deadline(d):
+    """공고 deadline 자유 텍스트 → 구체 날짜(datetime.date) 또는 None.
+    상시채용·채용시마감·마감일 미확인처럼 구체 날짜가 없는 값은 None (D-7 집계 제외)."""
+    if not d:
+        return None
+    d = d.strip()
+    m = re.match(r'^(\d{4})-(\d{2})-(\d{2})', d)  # 사람인 ISO, 원티드 검증 후("YYYY-MM-DD 마감")
+    if m:
+        try:
+            return datetime.date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+        except ValueError:
+            return None
+    if '오늘 마감' in d:
+        return today
+    m = re.search(r'(\d+)\s*일\s*후\s*마감', d)  # 점핏 "N일 후 마감"
+    if m:
+        return today + datetime.timedelta(days=int(m.group(1)))
+    m = re.match(r'^D-(\d+)', d)
+    if m:
+        return today + datetime.timedelta(days=int(m.group(1)))
+    m = re.match(r'^(\d{1,2})/(\d{1,2})', d)  # 잡코리아 "MM/DD(요일) 마감"
+    if m:
+        month, day = int(m.group(1)), int(m.group(2))
+        try:
+            cand = datetime.date(today.year, month, day)
+        except ValueError:
+            return None
+        if cand < today:
+            try:
+                cand = datetime.date(today.year + 1, month, day)
+            except ValueError:
+                return None
+        return cand
+    return None
+
+
+for j in jobs:
+    j['_deadline_date'] = parse_deadline(j.get('deadline', ''))
+
+d7 = sorted(
+    (j for j in jobs if j['_deadline_date'] is not None and 0 <= (j['_deadline_date'] - today).days <= 7),
+    key=lambda j: j['_deadline_date'],
+)
+
+
+def esc(s):
+    return str(s or '').replace('|', '\\|').replace('\n', ' ').strip()
+
+
+def table(rows):
+    lines = ['| 회사 | 제목 | 마감 | 링크 |', '|---|---|---|---|']
+    for j in rows:
+        lines.append('| {} | {} | {} | {} |'.format(
+            esc(j.get('company')), esc(j.get('title')), esc(j.get('deadline')), esc(j.get('link'))))
+    return '\n'.join(lines)
+
+
+ok_platforms = ok_list.split() if ok_list else []
+fail_platforms = fail_list.split() if fail_list else []
+
+lines = []
+lines.append('# 채용 모니터링 — {} (KST)'.format(today_s))
+lines.append('')
+lines.append('## 검색 조건')
+lines.append('- 직무: {}'.format(keyword))
+lines.append('- 경력: {}'.format(career or '전체'))
+lines.append('- 지역: {}'.format(location or '전체'))
+lines.append('- 건수 상한(플랫폼별): {}'.format(limit))
+lines.append('- 수집 성공: {}'.format(', '.join(ok_platforms) if ok_platforms else '없음'))
+if fail_platforms:
+    lines.append('- 수집 실패: {} (네트워크·차단 여부는 analytics/fetch-diag.log 확인)'.format(', '.join(fail_platforms)))
+lines.append('')
+lines.append('## 새 공고 ({}건)'.format(len(new_jobs)))
+lines.append('')
+if not ok_platforms:
+    lines.append('수집에 성공한 플랫폼이 없어 새 공고 여부를 확인할 수 없습니다. 위 실패 목록을 확인하세요.')
+elif new_jobs:
+    lines.append(table(new_jobs))
+else:
+    lines.append('새 공고 없음 — 이전 실행과 동일합니다.')
+lines.append('')
+lines.append('## 마감 D-7 이내 ({}건)'.format(len(d7)))
+lines.append('')
+if d7:
+    lines.append(table(d7))
+else:
+    lines.append('D-7 이내 마감 예정 공고 없음.')
+lines.append('')
+
+with open(daily_path, 'w', encoding='utf-8') as f:
+    f.write('\n'.join(lines) + '\n')
+
+for j in jobs:
+    j.pop('_deadline_date', None)
+
+snap = {
+    'generated_at': datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=9))).replace(microsecond=0).isoformat(),
+    'keyword': keyword,
+    'career': career,
+    'location': location,
+    'jobs': jobs,
+}
+tmp_path = snapshot_path + '.tmp'
+with open(tmp_path, 'w', encoding='utf-8') as f:
+    json.dump(snap, f, ensure_ascii=False, indent=2)
+os.replace(tmp_path, snapshot_path)
+
+print('NEW_COUNT={}'.format(len(new_jobs)))
+print('D7_COUNT={}'.format(len(d7)))
+PY
+)"
+  PY_EXIT=$?
+  if [ "$PY_EXIT" -ne 0 ]; then
+    err "daily 파일 생성 중 오류가 발생했습니다 (python3 종료 코드 $PY_EXIT)."
+    return 1
+  fi
+
+  NEW_COUNT="$(printf '%s\n' "$PYOUT" | sed -n 's/^NEW_COUNT=//p')"
+  D7_COUNT="$(printf '%s\n' "$PYOUT" | sed -n 's/^D7_COUNT=//p')"
+  : "${NEW_COUNT:=0}"
+  : "${D7_COUNT:=0}"
+
+  # 지원 정체 알림 — jobstack-tracker nudge 출력을 그대로 붙인다.
+  {
+    echo ''
+    echo '## 지원 정체 알림'
+    echo ''
+    if [ -x "$TRACKER_BIN" ]; then
+      "$TRACKER_BIN" nudge 2>/dev/null || echo '(nudge 실행 실패)'
+    else
+      echo '(jobstack-tracker 를 찾을 수 없어 지원 현황 확인을 생략합니다.)'
+    fi
+  } >>"$DAILY"
+
+  # 로그는 메타만 남긴다 — 직무·경력·지역 같은 검색값은 기록하지 않는다
+  # (job-search SKILL.md 텔레메트리 규칙과 동일한 PII 원칙).
+  TS="$(TZ=Asia/Seoul date +%Y-%m-%dT%H:%M:%S%z)"
+  OK_COUNT="$(printf '%s\n' "$OK_LIST" | wc -w | tr -d ' ')"
+  FAIL_COUNT="$(printf '%s\n' "$FAIL_LIST" | wc -w | tr -d ' ')"
+  printf '{"ts":"%s","cmd":"run","platforms_ok":%s,"platforms_failed":%s,"new_jobs":%s,"d7_jobs":%s,"daily_file":"%s"}\n' \
+    "$TS" "$OK_COUNT" "$FAIL_COUNT" "$NEW_COUNT" "$D7_COUNT" "$(basename "$DAILY")" \
+    >>"$_JS_STATE/analytics/cron.log" 2>/dev/null || true
+
+  echo "채용 모니터링 완료 — 새 공고 ${NEW_COUNT}건, 마감 D-7 이내 ${D7_COUNT}건"
+  echo "파일: $DAILY"
+  if [ -n "$FAIL_LIST" ]; then
+    echo "수집 실패: $FAIL_LIST (analytics/fetch-diag.log 확인)"
+  fi
+  if [ "$WITH_CLAUDE" = true ]; then
+    # 모델 호출은 비용·권한 문제로 기본 비활성화한다 — cron 은 무인 실행이라
+    # `claude -p "/job_search …"` 를 여기서 실제로 실행하면 (1) API 과금이 스케줄마다
+    # 발생하고 (2) --permission-prompts none 없이는 승인 대기로 멈추고 --permission-prompts
+    # none 을 쓰면 무인 상태로 도구 실행 승인을 전부 생략하게 되는 위험이 있다.
+    # 그래서 --with-claude 가 켜져도 claude 를 직접 호출하지 않고, 생성된 daily 파일
+    # 경로만 안내한다 — 실제 호출은 사용자가 판단해 별도로 실행한다(docs/routines.md 참고).
+    echo "(--with-claude: claude -p 자동 호출은 비용·권한 문제로 비활성화되어 있습니다."
+    echo " 위 파일을 Claude Code 세션에 붙여넣거나 읽게 해 다음 행동을 요청하세요.)"
+  fi
+  return 0
+}
+
+# ─────────────────────────────────────────────────────────────────────────
+# install / uninstall / status
+# ─────────────────────────────────────────────────────────────────────────
+
+# XML 엔티티 이스케이프 — launchd plist 의 <string> 값에 넣기 전에 &·<·>·" 를 치환한다.
+# 순서 중요: &부터 먼저 치환해야 뒤이어 넣는 &lt; 등의 & 가 다시 이스케이프되지 않는다.
+xml_escape() { # $1=원본 문자열 → 이스케이프된 문자열을 stdout 에
+  printf '%s' "$1" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g' -e 's/"/\&quot;/g'
+}
+
+install_cron() { # $1=hour $2=min $3=self $4=log $5=dry_run $6=path
+  hour="$1"; min="$2"; self="$3"; log="$4"; dry="$5"; cron_path="$6"
+  case "$self $log $cron_path" in
+    *%*) err "경로에 % 가 있어 crontab 에 등록할 수 없습니다 — JOBSTACK_STATE_DIR(또는 PATH)를 바꾸세요"; return 1 ;;
+  esac
+  # PATH= 접두는 /bin/sh -c 의 환경 지정 — cron 의 축소된 PATH 에서도 node·python3 를 찾게 한다.
+  NEW_LINE="$min $hour * * * PATH=\"$cron_path\" \"$self\" run >> \"$log\" 2>&1  # jobstack-cron"
+  echo "다음 crontab 항목을 등록합니다 (서버 로컬 타임존 기준 — 서버가 KST 가 아니면"
+  echo "실제 실행 시각이 달라집니다. 정확한 KST 실행이 필요하면 docs/routines.md 의"
+  echo "클라우드 Routines 대안을 검토하세요):"
+  echo "  $NEW_LINE"
+  if [ "$dry" = true ]; then
+    echo "(--dry-run: 실제 등록은 수행하지 않았습니다)"
+    return 0
+  fi
+  if ! command -v crontab >/dev/null 2>&1; then
+    err "crontab 명령을 찾을 수 없습니다. cron 이 설치돼 있는지 확인하세요."
+    return 1
+  fi
+  CURRENT="$(crontab -l 2>/dev/null | grep -v '# jobstack-cron')"
+  { [ -n "$CURRENT" ] && printf '%s\n' "$CURRENT"; printf '%s\n' "$NEW_LINE"; } | crontab -
+  echo "설치 완료. 'crontab -l' 로 확인할 수 있습니다."
+}
+
+install_launchd() { # $1=hour $2=min $3=self $4=log $5=dry_run $6=path
+  hour="$1"; min="$2"; self="$3"; log="$4"; dry="$5"; cron_path="$6"
+  SELF_XML="$(xml_escape "$self")"
+  LOG_XML="$(xml_escape "$log")"
+  PATH_XML="$(xml_escape "$cron_path")"
+  PLIST="$HOME/Library/LaunchAgents/com.jobstack.cron.plist"
+  PLIST_BODY="$(cat <<PLIST_EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- jobstack-cron -->
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.jobstack.cron</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>$SELF_XML</string>
+    <string>run</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key><string>$PATH_XML</string>
+  </dict>
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key><integer>$hour</integer>
+    <key>Minute</key><integer>$min</integer>
+  </dict>
+  <key>StandardOutPath</key><string>$LOG_XML</string>
+  <key>StandardErrorPath</key><string>$LOG_XML</string>
+</dict>
+</plist>
+PLIST_EOF
+)"
+  echo "다음 launchd job 을 등록합니다 ($PLIST):"
+  echo "$PLIST_BODY"
+  if [ "$dry" = true ]; then
+    echo "(--dry-run: 실제 등록은 수행하지 않았습니다)"
+    return 0
+  fi
+  mkdir -p "$(dirname "$PLIST")" 2>/dev/null
+  printf '%s\n' "$PLIST_BODY" >"$PLIST"
+  launchctl unload "$PLIST" >/dev/null 2>&1
+  launchctl load "$PLIST"
+  echo "설치 완료: $PLIST"
+}
+
+cmd_install() {
+  TIME_HHMM="07:00"; DRY_RUN=false
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --time)
+        if [ $# -lt 2 ]; then err "옵션 --time 에 값이 필요합니다 (예: 07:30)."; return 1; fi
+        TIME_HHMM="$2"; shift 2 ;;
+      --dry-run) DRY_RUN=true; shift ;;
+      -h|--help) usage; return 0 ;;
+      *) err "알 수 없는 옵션: $1"; return 1 ;;
+    esac
+  done
+
+  case "$TIME_HHMM" in
+    [0-2][0-9]:[0-5][0-9]) : ;;
+    *) err "--time 형식은 HH:MM 이어야 합니다: $TIME_HHMM"; return 1 ;;
+  esac
+  HOUR="${TIME_HHMM%%:*}"
+  MIN="${TIME_HHMM##*:}"
+  HOUR_NUM=$((10#$HOUR))
+  MIN_NUM=$((10#$MIN))
+  if [ "$HOUR_NUM" -gt 23 ]; then
+    err "--time 의 시(HH)는 00-23 이어야 합니다: $TIME_HHMM"
+    return 1
+  fi
+
+  SELF="$JS_BIN/$(basename "${BASH_SOURCE[0]}")"
+  mkdir -p "$_JS_STATE/analytics" 2>/dev/null || true
+  LOG_FILE="$_JS_STATE/analytics/cron.log"
+
+  # 등록 항목에 넣을 PATH — 지금 셸에서 찾은 node·python3 디렉토리를 앞에 둔다(PR #17 리뷰 반영:
+  # cron/launchd 의 축소된 PATH 에서 Homebrew·nvm 의 node 를 못 찾으면 매일 수집이 조용히 실패한다).
+  NODE_FOUND="$(command -v "$NODE_BIN" 2>/dev/null || true)"
+  if [ -z "$NODE_FOUND" ]; then
+    err "경고: node 를 찾을 수 없습니다 (NODE_BIN=$NODE_BIN). 등록은 진행하지만 run 은 node 없이는 exit 1 로 끝납니다 — JOBSTACK_NODE_BIN 에 절대경로를 지정하세요."
+    NODE_FOUND=/usr/local/bin/node
+  fi
+  PY_FOUND="$(command -v python3 2>/dev/null || echo /usr/bin/python3)"
+  CRON_PATH="$(dirname "$NODE_FOUND"):$(dirname "$PY_FOUND"):/usr/local/bin:/usr/bin:/bin"
+
+  OS_NAME="$(_cron_os_name)"
+  case "$OS_NAME" in
+    Darwin) install_launchd "$HOUR_NUM" "$MIN_NUM" "$SELF" "$LOG_FILE" "$DRY_RUN" "$CRON_PATH" ;;
+    *)      install_cron "$HOUR_NUM" "$MIN_NUM" "$SELF" "$LOG_FILE" "$DRY_RUN" "$CRON_PATH" ;;
+  esac
+}
+
+cmd_uninstall() {
+  OS_NAME="$(_cron_os_name)"
+  if [ "$OS_NAME" = Darwin ]; then
+    PLIST="$HOME/Library/LaunchAgents/com.jobstack.cron.plist"
+    if [ -f "$PLIST" ]; then
+      launchctl unload "$PLIST" >/dev/null 2>&1
+      rm -f "$PLIST"
+      echo "launchd 등록을 해제했습니다: $PLIST"
+    else
+      echo "등록된 launchd job 이 없습니다."
+    fi
+  else
+    if ! command -v crontab >/dev/null 2>&1; then
+      echo "crontab 명령이 없어 등록된 항목도 없습니다."
+      return 0
+    fi
+    CURRENT="$(crontab -l 2>/dev/null)"
+    if printf '%s\n' "$CURRENT" | grep -q '# jobstack-cron'; then
+      printf '%s\n' "$CURRENT" | grep -v '# jobstack-cron' | crontab -
+      echo "crontab 등록을 해제했습니다."
+    else
+      echo "등록된 crontab 항목이 없습니다."
+    fi
+  fi
+}
+
+cmd_status() {
+  echo "상태 디렉토리: $_JS_STATE"
+  LOG_FILE="$_JS_STATE/analytics/cron.log"
+  if [ -s "$LOG_FILE" ]; then
+    LAST_LINE="$(tail -1 "$LOG_FILE")"
+    LAST_TS="$(printf '%s' "$LAST_LINE" | sed -n 's/.*"ts":"\([^"]*\)".*/\1/p')"
+    echo "마지막 실행: ${LAST_TS:-확인 불가}"
+    echo "  기록: $LAST_LINE"
+  else
+    echo "마지막 실행 기록 없음 ($LOG_FILE 없음 또는 비어 있음)"
+  fi
+
+  echo ""
+  echo "최근 7일 daily 파일:"
+  N=6
+  while [ "$N" -ge 0 ]; do
+    D="$(_date_days_ago "$N")"
+    if [ -z "$D" ]; then
+      N=$((N - 1))
+      continue
+    fi
+    F="$_JS_STATE/job-cache/daily-$D.md"
+    if [ -f "$F" ]; then
+      echo "  [있음] $D  $F"
+    else
+      echo "  [없음] $D"
+    fi
+    N=$((N - 1))
+  done
+
+  echo ""
+  OS_NAME="$(_cron_os_name)"
+  if [ "$OS_NAME" = Darwin ]; then
+    PLIST="$HOME/Library/LaunchAgents/com.jobstack.cron.plist"
+    if [ -f "$PLIST" ]; then echo "launchd 등록됨: $PLIST"; else echo "launchd 미등록"; fi
+  else
+    if command -v crontab >/dev/null 2>&1 && crontab -l 2>/dev/null | grep -q '# jobstack-cron'; then
+      echo "crontab 등록됨"
+    else
+      echo "crontab 미등록"
+    fi
+  fi
+}
+
+# ─────────────────────────────────────────────────────────────────────────
+
+main() {
+  if [ $# -lt 1 ]; then
+    usage
+    return 1
+  fi
+  CMD="$1"; shift
+  case "$CMD" in
+    run) cmd_run "$@" ;;
+    install) cmd_install "$@" ;;
+    uninstall) cmd_uninstall "$@" ;;
+    status) cmd_status "$@" ;;
+    -h|--help|help) usage; return 0 ;;
+    *) err "알 수 없는 하위 명령: $CMD"; usage; return 1 ;;
+  esac
+}
+
+main "$@"
+exit $?

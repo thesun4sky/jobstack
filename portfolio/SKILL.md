@@ -1,7 +1,5 @@
 ---
 name: portfolio
-preamble-tier: 2
-version: 0.2.0
 description: |
   포트폴리오 최적화 스킬. 프로젝트 임팩트 표현, 기술스택별 구성 가이드.
   "포트폴리오 봐줘", "포트폴리오 만들어줘", "GitHub 프로필" 등의 요청 시 활용.
@@ -15,55 +13,26 @@ allowed-tools:
   - AskUserQuestion
   - WebSearch
   - WebFetch
-benefits-from: [strategy]
+argument-hint: "[GitHub URL | README.md | 포트폴리오 파일]"
+when_to_use: |
+  프로젝트 결과물의 임팩트를 before→after 수치로 표현하고, 지원 직무 요구사항과의 갭을 분석할 때 사용한다.
+  README 작성이나 프로젝트 설명 개선에 초점을 맞추며, 성과 중심의 구성을 제안한다.
+  링크드인·원티드 프로필 텍스트는 /scout_profile 담당이다.
+metadata:
+  preamble-tier: 2
+  version: 0.2.0
+  benefits-from: [strategy]
 ---
 
-```bash
-# ─── jobstack 프리앰블 ─────────────────────────
-_JS_STATE="${JOBSTACK_STATE_DIR:-$HOME/.jobstack}"
-mkdir -p "$_JS_STATE/analytics" "$_JS_STATE/profiles" "$_JS_STATE/tracker" \
-         "$_JS_STATE/company-cache" "$_JS_STATE/interview-history" "$_JS_STATE/sessions" "$_JS_STATE/defense-maps" "$_JS_STATE/job-cache"
+!`bash "${CLAUDE_SKILL_DIR}/scripts/preamble.sh" portfolio "${CLAUDE_SESSION_ID}" "${CLAUDE_PLUGIN_DATA:-}"`
 
-# 세션 추적
-echo "$$" > "$_JS_STATE/sessions/$$"
-trap 'rm -f "$_JS_STATE/sessions/$$"' EXIT
+> 위 실행 컨텍스트가 비어 있거나 `KEY=VALUE` 목록 대신 `!` 명령·정책 차단 문구가 그대로 보이면(`!` 주입이 꺼진 환경), 첫 Bash 명령으로 `bash "${CLAUDE_SKILL_DIR}/scripts/preamble.sh" portfolio`를 실행해 같은 컨텍스트를 확보하고 `${CLAUDE_SKILL_DIR}/references/guardrails.md`를 Read 하세요. 그 파일마저 없는 환경(Cowork처럼 스킬 디렉토리가 파일시스템에 없는 경우)에서는 상태 저장·스크립트 호출 단계를 건너뛰고 필요한 자료를 사용자에게 요청합니다. `STATE_WRITE_FAILED=true`가 보이면 `JOBSTACK_STATE_DIR` 경로를 사용자에게 확인합니다. 이 스킬의 Bash 스니펫은 첫 줄에 `. "${JOBSTACK_STATE_DIR:-$HOME/.jobstack}/env.sh"`를 두어 `$_JS_STATE`·`$_JS_BIN`·`$TODAY`를 불러옵니다.
 
-# 설정 로딩
-_JS_CONFIG="${CLAUDE_SKILL_DIR}/../bin/jobstack-config"
-if [ -x "$_JS_CONFIG" ]; then
-  PROACTIVE=$("$_JS_CONFIG" get proactive 2>/dev/null || echo "true")
-else
-  PROACTIVE="true"
-fi
+### 공통 가드레일 (references/guardrails.md)
 
-# 프로필 로딩
-PROFILE="$_JS_STATE/profiles/default.yaml"
-if [ -f "$PROFILE" ]; then
-  echo "PROFILE_EXISTS=true"
-  echo "--- 프로필 요약 ---"
-  head -20 "$PROFILE"
-  echo "---"
-else
-  echo "PROFILE_EXISTS=false"
-fi
+!`sed '1{/^# /d;}' "${CLAUDE_SKILL_DIR}/references/guardrails.md"`
 
-# 활성 세션 수
-for _f in "$_JS_STATE/sessions/"*; do
-  [ -f "$_f" ] || continue
-  kill -0 "$(basename "$_f")" 2>/dev/null || rm -f "$_f"
-done
-ACTIVE_SESSIONS=$(ls "$_JS_STATE/sessions/" 2>/dev/null | wc -l | tr -d ' ')
-echo "ACTIVE_SESSIONS=$ACTIVE_SESSIONS"
-echo "PROACTIVE=$PROACTIVE"
-echo "SKILL_NAME=portfolio"
-
-# 텔레메트리
-echo "{\"skill\":\"portfolio\",\"ts\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"pid\":$$}" \
-  >> "$_JS_STATE/analytics/skill-usage.jsonl" 2>/dev/null || true
-```
-
-> **공통 가드레일**: 작업 시작 전 `${CLAUDE_SKILL_DIR}/../templates/guardrails.md` 를 Read 도구로 읽고 §1~§6 전 규칙을 준수하세요.
-
+!`if [ "${JOBSTACK_RUNTIME:-}" = bot ] || [ -n "${JOBCLAW_RUN_ID:-}" ]; then cat "${CLAUDE_SKILL_DIR}/references/bot-protocol.md"; fi`
 
 # /portfolio — 포트폴리오 최적화
 
@@ -129,7 +98,7 @@ echo "{\"skill\":\"portfolio\",\"ts\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"pid\"
 
 각 프로젝트에 대해 before→after 수치화를 적용합니다.
 
-**수치 날조 방지 (필수):** 수치는 사용자가 제공했거나 세션에서 확인된 것만 사용합니다. 확인 안 된 수치는 만들어 넣지 않고 `[수치 확인 필요]` placeholder + 질문 1회로 처리합니다. (`${CLAUDE_SKILL_DIR}/../templates/guardrails.md` §1 날조 금지 참조)
+**수치 날조 방지 (필수):** 수치는 사용자가 제공했거나 세션에서 확인된 것만 사용합니다. 확인 안 된 수치는 만들어 넣지 않고 `[수치 확인 필요]` placeholder + 질문 1회로 처리합니다. (`${CLAUDE_SKILL_DIR}/references/guardrails.md` §1 날조 금지 참조)
 
 **변환 원칙:**
 - "로그인 기능 구현" → "JWT 기반 인증 시스템 구축, 세션 관리 비용 40% 절감"
@@ -138,7 +107,7 @@ echo "{\"skill\":\"portfolio\",\"ts\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"pid\"
 
 > 위 3개는 형식 예시일 뿐이며, 실제 수치는 사용자의 실제 데이터로만 채웁니다.
 
-**수치가 없을 때:** 성과 숫자가 없다고 해서 만들어 넣지 않습니다. `${CLAUDE_SKILL_DIR}/../templates/experience-methods.md` §3(수치 폴백 5기준 + 대체 4종)을 적용해 대체 근거를 찾습니다:
+**수치가 없을 때:** 성과 숫자가 없다고 해서 만들어 넣지 않습니다. `${CLAUDE_SKILL_DIR}/references/experience-methods.md` §3(수치 폴백 5기준 + 대체 4종)을 적용해 대체 근거를 찾습니다:
 
 - **범위** — 담당 모듈 수 (예: 전체 12개 API 중 8개 담당)
 - **빈도** — 주간 배포 횟수 (예: 주 1회 배포 운영)
@@ -285,35 +254,22 @@ Phase 2에서 확인한 직군에 맞는 템플릿으로 구조를 잡습니다.
 
 ## 완료 상태
 
-완료 상태 4종과 뷰어 안내는 `${CLAUDE_SKILL_DIR}/../templates/completion-status.md` 기준을 따릅니다.
+완료 상태 4종과 뷰어 안내는 `${CLAUDE_SKILL_DIR}/references/completion-status.md` 기준을 따릅니다.
 
 - **완료 (DONE)** — 모든 단계 완료, 근거 제시
 - **우려사항 있는 완료 (DONE_WITH_CONCERNS)** — 완료, 알아야 할 사항 명시
 - **차단됨 (BLOCKED)** — 진행 불가, 차단 요인 기술. **채용공고·기사 등 시간 민감 데이터는 훈련 데이터로 절대 대체하지 않고**, 해당 섹션을 스킵한 뒤 `DONE_WITH_CONCERNS`로 처리합니다.
 - **추가 정보 필요 (NEEDS_CONTEXT)** — 필요한 내용 기술
 
-**결과물 뷰어**: 리라이팅된 README·갭 분석 리포트 등 Markdown 결과물을 생성하면 `$CLAUDE_SKILL_DIR/../bin/jobstack-view <결과파일.md>`로 브라우저에서 열도록 안내합니다(스타일링된 HTML + PDF 저장 가능).
+**결과물 뷰어**: 리라이팅된 README·갭 분석 리포트 등 Markdown 결과물을 생성하면 브라우저에서 열도록 안내합니다(스타일링된 HTML + PDF 저장 가능):
+
+```bash
+. "${JOBSTACK_STATE_DIR:-$HOME/.jobstack}/env.sh"
+"$_JS_BIN/jobstack-view" <결과파일.md>
+```
 
 ### 다음 스킬 추천
 
 - 포트폴리오 완료 → `/resume` (이력서에 포트폴리오 링크 반영)
 - 포트폴리오 완료 → `/review` (전체 서류 일관성 점검)
 - 포트폴리오 완료 → `/mock_interview` (포트폴리오 미끼 기반 꼬리질문 연습 — Phase 5 방어 테스트의 심화 문답 위임)
-
-## 시각화 이미지 생성
-
-포트폴리오 구조·갭 분석·구성 로드맵을 제시하는 답변에서는 반드시 응답 맨 끝에 아래 마커를 추가한다:
-
-```
-[IMAGE_PROMPT: <영어 프롬프트>]
-```
-
-**트리거 조건 (필수):**
-- 포트폴리오 구조 제안, 역량-프로젝트 매핑, 갭 분석 → **반드시** 추가
-- 프로젝트 구성 로드맵(2단계 이상), 우선순위 다이어그램 → 추가
-- 단순 단답, 링크 1개 안내, 오류 메시지 → 추가하지 않음
-
-이 마커를 빠뜨리지 말 것 — 위 조건에 해당하면 응답의 가장 마지막 줄에 반드시 포함한다.
-
-**프롬프트 스타일:** professional infographic/diagram 스타일. 실제 프로젝트·목표 역량·갭을 반영한다.
-예: `A professional portfolio roadmap infographic: current projects vs target role competencies, gap areas highlighted in red, recommended additions in green, suggested build order as a timeline. Clean diagram style, progress bars, dark theme, Korean labels.`

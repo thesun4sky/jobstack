@@ -1,7 +1,5 @@
 ---
 name: retro
-preamble-tier: 2
-version: 0.2.0
 description: |
   면접/지원 회고 스킬. 면접 결과 분석, 탈락 원인 진단, 개선 포인트 도출.
   누적 패턴 분석: 여러 면접 기록에서 반복 약점을 교차 분석.
@@ -12,54 +10,27 @@ allowed-tools:
   - Write
   - Grep
   - AskUserQuestion
-benefits-from: [mock-interview, tracker]
+  - WebSearch
+argument-hint: "[회사명] [탈락 단계]"
+when_to_use: |
+  면접이나 지원 결과를 분석하고, 반복되는 약점을 찾아 다음 지원에 반영할 때 사용한다.
+  회고 기록이 3건 이상 쌓이면 누적 패턴 분석으로 개선 전략을 도출할 수 있다.
+  모의면접 연습은 /mock_interview 담당이다.
+metadata:
+  preamble-tier: 2
+  version: 0.2.0
+  benefits-from: [mock-interview, tracker]
 ---
 
-```bash
-# ─── jobstack 프리앰블 ─────────────────────────
-_JS_STATE="${JOBSTACK_STATE_DIR:-$HOME/.jobstack}"
-mkdir -p "$_JS_STATE/analytics" "$_JS_STATE/profiles" "$_JS_STATE/tracker" \
-         "$_JS_STATE/company-cache" "$_JS_STATE/interview-history" "$_JS_STATE/sessions" "$_JS_STATE/defense-maps" "$_JS_STATE/job-cache"
+!`bash "${CLAUDE_SKILL_DIR}/scripts/preamble.sh" retro "${CLAUDE_SESSION_ID}" "${CLAUDE_PLUGIN_DATA:-}"`
 
-# 세션 추적
-echo "$$" > "$_JS_STATE/sessions/$$"
-trap 'rm -f "$_JS_STATE/sessions/$$"' EXIT
+> 위 실행 컨텍스트가 비어 있거나 `KEY=VALUE` 목록 대신 `!` 명령·정책 차단 문구가 그대로 보이면(`!` 주입이 꺼진 환경), 첫 Bash 명령으로 `bash "${CLAUDE_SKILL_DIR}/scripts/preamble.sh" retro`를 실행해 같은 컨텍스트를 확보하고 `${CLAUDE_SKILL_DIR}/references/guardrails.md`를 Read 하세요. 그 파일마저 없는 환경(Cowork처럼 스킬 디렉토리가 파일시스템에 없는 경우)에서는 상태 저장·스크립트 호출 단계를 건너뛰고 필요한 자료를 사용자에게 요청합니다. `STATE_WRITE_FAILED=true`가 보이면 `JOBSTACK_STATE_DIR` 경로를 사용자에게 확인합니다. 이 스킬의 Bash 스니펫은 첫 줄에 `. "${JOBSTACK_STATE_DIR:-$HOME/.jobstack}/env.sh"`를 두어 `$_JS_STATE`·`$_JS_BIN`·`$TODAY`를 불러옵니다.
 
-# 설정 로딩
-_JS_CONFIG="${CLAUDE_SKILL_DIR}/../bin/jobstack-config"
-if [ -x "$_JS_CONFIG" ]; then
-  PROACTIVE=$("$_JS_CONFIG" get proactive 2>/dev/null || echo "true")
-else
-  PROACTIVE="true"
-fi
+### 공통 가드레일 (references/guardrails.md)
 
-# 최근 면접 기록 확인
-echo "--- 최근 면접 기록 ---"
-RETRO_COUNT=$(ls "$_JS_STATE/interview-history/" 2>/dev/null | grep "^retro-" | wc -l | tr -d ' ')
-ls -t "$_JS_STATE/interview-history/" 2>/dev/null | head -5 || echo "기록 없음"
-echo "RETRO_HISTORY_COUNT=$RETRO_COUNT"
+!`sed '1{/^# /d;}' "${CLAUDE_SKILL_DIR}/references/guardrails.md"`
 
-# 최근 지원 현황 확인
-echo "--- 최근 지원 현황 ---"
-tail -5 "$_JS_STATE/tracker/applications.jsonl" 2>/dev/null || echo "기록 없음"
-
-# 활성 세션 수
-for _f in "$_JS_STATE/sessions/"*; do
-  [ -f "$_f" ] || continue
-  kill -0 "$(basename "$_f")" 2>/dev/null || rm -f "$_f"
-done
-ACTIVE_SESSIONS=$(ls "$_JS_STATE/sessions/" 2>/dev/null | wc -l | tr -d ' ')
-echo "ACTIVE_SESSIONS=$ACTIVE_SESSIONS"
-echo "PROACTIVE=$PROACTIVE"
-echo "SKILL_NAME=retro"
-
-# 텔레메트리
-echo "{\"skill\":\"retro\",\"ts\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"pid\":$$}" \
-  >> "$_JS_STATE/analytics/skill-usage.jsonl" 2>/dev/null || true
-```
-
-> **공통 가드레일**: 작업 시작 전 `${CLAUDE_SKILL_DIR}/../templates/guardrails.md` 를 Read 도구로 읽고 §1~§6 전 규칙을 준수하세요.
-
+!`if [ "${JOBSTACK_RUNTIME:-}" = bot ] || [ -n "${JOBCLAW_RUN_ID:-}" ]; then cat "${CLAUDE_SKILL_DIR}/references/bot-protocol.md"; fi`
 
 # 면접/지원 회고
 
@@ -85,7 +56,7 @@ C) 누적 패턴 분석 (여러 면접 경험 종합) ← 기록 3건+ 시 강�
 ---
 
 **C 선택 시 — 누적 패턴 분석 바로 실행:**
-모든 `$_JS_STATE/interview-history/retro-*.md` 파일을 Read하고, Phase 3.3 패턴 분석을 직접 수행합니다. Phase 2 (면접 인터뷰)는 건너뜁니다.
+Phase 2(면접 인터뷰)는 건너뛰고 Phase 3.3 패턴 분석으로 바로 진행합니다.
 
 ---
 
@@ -93,8 +64,13 @@ C) 누적 패턴 분석 (여러 면접 경험 종합) ← 기록 3건+ 시 강�
 
 탈락은 어느 단계에서 떨어졌는지에 따라 진단 축이 완전히 다릅니다. 먼저 탈락 직전 단계를 확정합니다.
 
-1. `$_JS_STATE/tracker/applications.jsonl`에서 해당 건의 `status`를 확인합니다. 상태 어휘는 tracker 상태 모델을 따릅니다 — 저장은 영문 키지만 표시·판단은 한글 라벨(준비중/지원완료/서류합격/1차면접/2차면접/최종면접/최종합격/불합격/지원취소)로 합니다. 읽은 값이 영문 키거나 구버전 한글이면 `docs/tracker-states.md`의 매핑표로 한글 라벨로 정규화한 뒤 사용합니다.
-2. 기록이 없으면 AskUserQuestion 1회로 탈락 단계를 확인합니다:
+1. 아래를 호출해 해당 건의 상태를 확인합니다.
+   ```bash
+   . "${JOBSTACK_STATE_DIR:-$HOME/.jobstack}/env.sh"
+   "$_JS_BIN/jobstack-tracker" list --json
+   ```
+   그룹별 배열(진행중/대기중/종료/구버전)에서 회사명이 일치하는 항목을 찾아 `status_label`을 확인합니다 — 이미 한글 라벨로 정규화된 값이므로 별도 변환이 필요 없습니다.
+2. 일치하는 기록이 없으면 AskUserQuestion 1회로 탈락 단계를 확인합니다:
    ```
    어느 단계에서 탈락했나요?
    A) 서류 (서류전형 불합격)
@@ -150,41 +126,57 @@ AskUserQuestion으로 하나씩 질문합니다:
 - 미끼 전략이 작동했는지 확인
 - **미끼 이후 방어 실패 지점 표시**: 자소서·답변으로 미끼를 던졌는데 꼬리질문에서 무너진 지점을 별도로 표시하고, 그 지점을 다음 `/mock_interview` 연습 대상으로 지정합니다.
 
+### 3.2.1 미끼 방어 준비율 (defense-map)
+
+```bash
+. "${JOBSTACK_STATE_DIR:-$HOME/.jobstack}/env.sh"
+"$_JS_BIN/jobstack-defense-map.mjs" stats --company "삼성전자"
+```
+
+출력의 `준비율 N/M (P%)` 줄을 회고 리포트의 참고 지표로 그대로 인용합니다(회사명은 스크립트가 공백 제거·소문자 부분일치로 느슨하게 매칭하고, 여러 파일이 있으면 전체 합산 `준비율`도 함께 냅니다). 결과가 없으면(`defense-map 파일이 없습니다`) 이 지표를 생략하고 오류를 노출하지 않습니다 — 파일 갱신 자체는 `/mock_interview` 종료 시 이뤄지므로 여기서는 조회만 합니다. entry 필드(`bait_type`·`defense_status` 등)의 전체 정의는 `${CLAUDE_SKILL_DIR}/references/defense-map-schema.md` 계약을 `jobstack-defense-map.mjs`가 구현한 것입니다.
+
+면접에서 실제로 받은 질문이 겹치는지 확인하려면 문장·예상 질문 목록을 함께 조회합니다:
+```bash
+. "${JOBSTACK_STATE_DIR:-$HOME/.jobstack}/env.sh"
+"$_JS_BIN/jobstack-defense-map.mjs" show --company "삼성전자"
+```
+겹치는 entry가 있으면 실전에서 통했는지(`ready`) 막혔는지(`weak`)를 회고에 기록합니다.
+
 ### 3.3 패턴 분석
 
-interview-history 디렉토리에 이전 회고 파일이 있으면 분석합니다.
-
-**약점 태그 집계 (프론트매터 우선):**
-- Grep으로 `$_JS_STATE/interview-history/retro-*.md`에서 `weakness_tags:` 라인을 집계합니다. 태그는 고정 8종(기업연구부족·꼬리질문대응·수치화부족·기술깊이·기준미스매치·근거부족·표현문제·컬처핏)만 사용합니다.
-- 프론트매터가 없는 구서식 파일은 폴백으로 "개선 필요", "아쉬운 점", "BLOCKED" 등 자유 키워드 Grep을 병행합니다(자유 서식 집계는 취약하므로 프론트매터 태그 집계를 신뢰 축으로 삼습니다).
-- 두 방식의 결과를 합산해 반복 등장하는 약점 태그와 개선 추세를 봅니다.
-
-**반복 정체 단계 × 약점 태그 교차 (스냅샷 근사):**
-- `$_JS_STATE/tracker/applications.jsonl`을 함께 Read합니다. 이 파일은 **현재 상태 스냅샷만** 담고 전이 이력이 없으므로, 아래 판정은 근사임을 출력에 명시합니다.
-- tracker 한글 상태 라벨 서열(준비중 → 지원완료 → 서류합격 → 1차면접 → 2차면접 → 최종면접 → 최종합격, 불합격은 별도 표기)을 기준으로 반복 탈락·정체 단계를 근사 판정하고, weakness_tags와 교차 표시합니다.
-- retro는 **교차 해석만** 담당합니다. 전환율 수치 산출·지원 통계·7일 정체 넛지는 tracker(stats/calendar) 소관이므로 여기서 계산하지 않습니다.
-- 병목 단계가 확인되면 `/strategy` 재수립 추천의 근거 문장으로 연결합니다.
-
-**패턴 출력 예시:**
+```bash
+. "${JOBSTACK_STATE_DIR:-$HOME/.jobstack}/env.sh"
+"$_JS_BIN/jobstack-retro-stats"
 ```
-누적 패턴 분석 (총 4건 회고 · 지원 스냅샷 근사)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+과거 회고가 있으면 스크립트가 각 회고 파일의 프론트매터(`weakness_tags`·`stage`)를 집계해 반복 약점 태그 빈도, 단계별 태그 교차표, 최근 3건 대비 이전 평균의 태그 개수 추세를 계산합니다. 단계 교차는 각 회고를 기록할 당시의 `stage` 값을 그대로 쓰므로 스냅샷 근사가 아니라 그 회고 시점의 실제 기록입니다. 프론트매터가 없는 구서식 파일은 집계에서 제외됩니다.
+
+```
+회고 누적 통계 — 4건 ($_JS_STATE/interview-history)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 반복 약점 태그:
-  3/4회 — 기업연구부족
-  2/4회 — 꼬리질문대응
-  1/4회 — 수치화부족
+  꼬리질문대응    ■■■        3건
+  기업연구부족    ■■         2건
+  수치화부족     ■          1건
 
-정체 단계 × 약점 태그 교차 (스냅샷 기반 근사, 전이 이력 아님):
-  1차면접 단계 불합격 3회 + 꼬리질문대응 태그 3회 → 1차 면접이 병목
-    → /strategy 재수립 근거: 1차 면접 방어력 집중 보강
+단계 × 태그:
+  1차면접: 꼬리질문대응 2, 수치화부족 1, 기업연구부족 1
+  서류: 기업연구부족 1
+  2차면접: 꼬리질문대응 1
 
-개선 추세:
-  ✅ 수치화부족 → 최근 2회에서 개선됨
-  ⚠️ 기업연구부족 → 여전히 반복 중
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+추세: 최근 3건 평균 약점 1.3개 vs 이전 평균 2.0개
+
+최근 회고:
+  2026-07-04  삼성전자  1차면접  불합격  [꼬리질문대응, 수치화부족]
+  2026-07-20  카카오  1차면접  불합격  [기업연구부족, 꼬리질문대응]
+  2026-08-10  토스  서류  불합격  [기업연구부족]
+  2026-08-25  당근  2차면접  불합격  [꼬리질문대응]
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
-과거 기록이 없으면 현재 단일 회고만 진행합니다.
+병목 단계가 확인되면(같은 단계에서 반복 등장하는 태그) `/strategy` 재수립 추천의 근거 문장으로 연결합니다. retro는 이 출력을 **해석**만 담당합니다 — 전환율 수치 산출·지원 통계·7일 정체 넛지는 tracker(`stats`/`calendar`/`nudge`) 소관이므로 여기서 계산하지 않습니다.
+
+과거 기록이 없으면(`회고 파일 없음`) 현재 단일 회고만 진행합니다. 3건 미만이면 스크립트가 `※ 3건 미만이라 패턴 단정은 보류합니다`를 덧붙이므로 그대로 전달합니다.
 
 ### 3.4 탈락 원인 3축 분리 진단
 
@@ -196,7 +188,7 @@ interview-history 디렉토리에 이전 회고 파일이 있으면 분석합니
 | ② 근거 부족 | 문제·역할·행동·변화 중 빠진 요소가 있음 | `/cover_letter` 소재 보강 (경험 전환 6단계) |
 | ③ 표현 문제 | 추상어·구조 때문에 전달이 약함 | `/review` |
 
-- 근거 보강은 `${CLAUDE_SKILL_DIR}/../templates/experience-methods.md` 의 §1(경험 전환 6단계)을 적용합니다.
+- 근거 보강은 `${CLAUDE_SKILL_DIR}/references/experience-methods.md` 의 §1(경험 전환 6단계)을 적용합니다.
 - **직무 변경 후 탈락**이면 '기준부터 재점검'합니다 — 같은 경험도 새 직무 공고의 키워드로 다시 해석해야 합니다.
 
 ### 3.5 전형 유형별 회고 축
@@ -255,15 +247,16 @@ actions: [1차 면접 대상 모의면접 2회, before→after 수치 3건 보�
 ---
 ```
 
-- `stage`는 tracker 한글 상태 라벨 중 하나로만 씁니다(canonical 매핑은 `docs/tracker-states.md`). `weakness_tags`는 위 고정 8태그 안에서만 씁니다 — 새 태그를 임의로 만들지 않습니다.
-- **제3자 PII 기록 금지**: 면접관 실명·연락처 등 제3자 정보를 회고 파일에 남기지 않습니다. 3등급 PII 정책(제3자=금지, 익명화·집계만)을 따르며, 자세한 규칙은 `${CLAUDE_SKILL_DIR}/../templates/guardrails.md` §1을 참조합니다.
+- `stage`는 tracker 한글 상태 라벨 중 하나로만 씁니다(canonical 매핑은 `${CLAUDE_SKILL_DIR}/references/tracker-states.md`). `weakness_tags`는 위 고정 8태그 안에서만 씁니다 — 새 태그를 임의로 만들지 않습니다. 이 프론트매터 형식은 `jobstack-retro-stats`가 그대로 파싱하는 계약이므로 필드명·형식을 임의로 바꾸지 않습니다.
+- **제3자 PII 기록 금지**: 면접관 실명·연락처 등 제3자 정보를 회고 파일에 남기지 않습니다. 3등급 PII 정책(제3자=금지, 익명화·집계만)을 따르며, 자세한 규칙은 `${CLAUDE_SKILL_DIR}/references/guardrails.md` §1을 참조합니다.
 - 지원 현황을 관리 중이면 봇 네이티브 명령 `/track`·`/myapps`에서 해당 건의 상태·메모를 갱신하도록 안내합니다.
 
-**회고 상세 기록:** 회고 모드(A/B/C)·탈락 단계·weakness_tags 등 회고 상세는 위 회고 산출 파일(`retro-{기업명}-{date}.md`)의 YAML 프론트매터에만 남깁니다. `skill-usage.jsonl`에는 프리앰블에서 이미 기록한 표준 텔레메트리 외에 별도 이벤트를 추가하지 않습니다 — 이벤트 규격은 `docs/telemetry-events.md`의 정의된 종류만 씁니다.
+**회고 상세 기록:** 회고 모드(A/B/C)·탈락 단계·weakness_tags 등 회고 상세는 위 회고 산출 파일(`retro-{기업명}-{date}.md`)의 YAML 프론트매터에만 남깁니다. `skill-usage.jsonl`에는 프리앰블에서 이미 기록한 표준 텔레메트리 외에 별도 이벤트를 추가하지 않습니다 — 이벤트 규격은 `${CLAUDE_SKILL_DIR}/references/telemetry-events.md`의 정의된 종류만 씁니다.
 
 **결과물 뷰어 안내:** 회고 파일을 저장한 뒤 다음 명령으로 브라우저에서 열 수 있음을 사용자에게 안내합니다.
 ```bash
-$CLAUDE_SKILL_DIR/../bin/jobstack-view <회고파일.md>
+. "${JOBSTACK_STATE_DIR:-$HOME/.jobstack}/env.sh"
+"$_JS_BIN/jobstack-view" <회고파일.md>
 ```
 
 ---

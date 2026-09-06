@@ -1,0 +1,628 @@
+#!/usr/bin/env python3
+"""jobstack-tracker — 지원 현황 JSONL 의 결정적 조작 (docs/tracker-states.md 의 구현, U-09).
+
+tracker 스킬이 JSONL 을 손으로 고쳐 쓰던 작업(상태 전이·max_stage·퍼널·정체 넛지·v1 마이그레이션)을
+표준 라이브러리만 쓰는 이 스크립트가 맡는다. 같은 입력이면 같은 출력이 나온다.
+
+사용법:
+  jobstack-tracker add --company 회사 --position 직무 [--status 준비중|preparing] [--deadline YYYY-MM-DD]
+                       [--notes 메모] [--fit-score N] [--research-ref 파일명] [--json]
+  jobstack-tracker update <id|회사명> --status <영문키|한글라벨> [--notes 메모] [--deadline YYYY-MM-DD] [--json]
+  jobstack-tracker list [--json]
+  jobstack-tracker calendar [--json]
+  jobstack-tracker stats [--json]
+  jobstack-tracker nudge [--days 7] [--mark] [--json]
+  jobstack-tracker migrate [--yes]
+  jobstack-tracker validate
+
+환경: JOBSTACK_STATE_DIR (기본 ~/.jobstack) → tracker/applications.jsonl
+종료 코드: 0 정상 · 1 입력 오류 · 2 파일 오류/검증 실패(손상된 JSONL 포함, 모든 서브커맨드 공통)
+  인자 오류(필수 옵션 누락 등)는 argparse 기본값대로 exit 2 를 낸다.
+"""
+from __future__ import annotations
+
+import argparse
+import contextlib
+import datetime as dt
+import json
+import os
+import sys
+import tempfile
+
+try:
+    import fcntl  # POSIX 전용 — 없는 플랫폼(Windows 등)에서는 잠금 없이 진행한다.
+except ImportError:  # pragma: no cover
+    fcntl = None
+
+STATE_DIR = os.environ.get('JOBSTACK_STATE_DIR') or os.path.expanduser('~/.jobstack')
+TRACKER_FILE = os.path.join(STATE_DIR, 'tracker', 'applications.jsonl')
+
+PIPELINE = ['preparing', 'applied', 'document_pass', 'interview_1', 'interview_2', 'final', 'offer']
+TERMINAL = ['rejected', 'withdrawn']
+CANONICAL = PIPELINE + TERMINAL
+LABEL = {
+    'preparing': '준비중', 'applied': '지원완료', 'document_pass': '서류합격', 'interview_1': '1차면접',
+    'interview_2': '2차면접', 'final': '최종면접', 'offer': '최종합격', 'rejected': '불합격', 'withdrawn': '지원취소',
+}
+# v1 한글 저장값 → v2 영문 키 (docs/tracker-states.md 매핑표) + v2 한글 라벨 역매핑
+V1_MAP = {'준비중': 'preparing', '서류전형': 'applied', '서류합격': 'document_pass', '1차면접': 'interview_1',
+          '2차면접': 'interview_2', '최종합격': 'offer', '불합격': 'rejected'}
+LABEL_TO_KEY = {v: k for k, v in LABEL.items()}
+LABEL_TO_KEY.update(V1_MAP)
+PROGRESS = set(PIPELINE) - {'offer'}   # 정체 넛지 대상: preparing~final
+KST = dt.timezone(dt.timedelta(hours=9))
+
+
+def today_kst() -> dt.date:
+    return dt.datetime.now(KST).date()
+
+
+def now_kst_iso() -> str:
+    return dt.datetime.now(KST).replace(microsecond=0).isoformat()
+
+
+def parse_date(s: str | None) -> dt.date | None:
+    if not s:
+        return None
+    try:
+        return dt.date.fromisoformat(s)
+    except ValueError:
+        return None
+
+
+def normalize_status(raw: str | None) -> tuple[str, bool, bool]:
+    """→ (영문 키 또는 원문, v1 여부, 알 수 없는 값 여부)"""
+    if raw is None:
+        return '', False, True
+    if raw in CANONICAL:
+        return raw, False, False
+    if raw in LABEL_TO_KEY:
+        return LABEL_TO_KEY[raw], True, False
+    return raw, True, True
+
+
+def stage_rank(key: str) -> int:
+    return PIPELINE.index(key) if key in PIPELINE else -1
+
+
+class Record:
+    def __init__(self, raw_line: str | None, data: dict):
+        self.raw_line = raw_line          # 원문 보존(변경 없으면 그대로 다시 쓴다)
+        self.data = data
+        self.dirty = raw_line is None
+
+    @property
+    def status(self) -> str:
+        return normalize_status(self.data.get('status'))[0]
+
+    @property
+    def is_v1(self) -> bool:
+        return normalize_status(self.data.get('status'))[1]
+
+    @property
+    def unknown(self) -> bool:
+        return normalize_status(self.data.get('status'))[2]
+
+    def label(self) -> str:
+        st = self.status
+        if self.unknown:
+            return f'{self.data.get("status")}(구버전 상태)'
+        return LABEL[st]
+
+    def effective_max_stage(self) -> tuple[str, bool]:
+        """(max_stage, 폴백 여부). 폴백: 진행 상태면 현재 status, 종결이면 applied."""
+        ms = self.data.get('max_stage')
+        if ms in PIPELINE:
+            return ms, False
+        st = self.status
+        if st in PIPELINE:
+            return st, True
+        return 'applied', True
+
+    def serialize(self) -> str:
+        return json.dumps(self.data, ensure_ascii=False, separators=(',', ':'))
+
+
+class CorruptFile(Exception):
+    """상태 파일(JSONL) 자체가 손상된 경우 — 일반 입력 오류(exit 1)와 구분해 main() 이
+    어느 서브커맨드에서든 항상 exit 2 로 매핑한다(리뷰 반영: 이전엔 validate 만 2 였고
+    list/add/update/stats/calendar/nudge 는 일반 SystemExit 경로를 타 1 로 새 나갔다)."""
+
+
+def load() -> list[Record]:
+    if not os.path.exists(TRACKER_FILE):
+        return []
+    records = []
+    with open(TRACKER_FILE, encoding='utf-8') as f:
+        for ln, line in enumerate(f, 1):
+            s = line.rstrip('\n')
+            if not s.strip():
+                continue
+            try:
+                data = json.loads(s)
+            except json.JSONDecodeError as e:
+                raise CorruptFile(f'[오류] {TRACKER_FILE}:{ln} JSON 파싱 실패 — {e}')
+            records.append(Record(s, data))
+    return records
+
+
+def save(records: list[Record]) -> None:
+    os.makedirs(os.path.dirname(TRACKER_FILE), exist_ok=True)
+    fd, tmp = tempfile.mkstemp(prefix='.applications.', suffix='.tmp', dir=os.path.dirname(TRACKER_FILE))
+    try:
+        with os.fdopen(fd, 'w', encoding='utf-8') as f:
+            for r in records:
+                f.write((r.serialize() if r.dirty or r.raw_line is None else r.raw_line) + '\n')
+        os.replace(tmp, TRACKER_FILE)   # 원자적 교체 — 쓰기 중단 시 원본 보존
+    except BaseException:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
+        raise
+
+
+@contextlib.contextmanager
+def locked():
+    """add/update/nudge/migrate 의 load() → save() 구간을 파일 잠금(`applications.jsonl.lock`, flock)
+    으로 감싼다(PR #17 리뷰 반영: 잠금 없는 읽기-수정-쓰기는 동시 실행 시 서로의 항목을 덮어써
+    병렬 add 20건 중 13건만 남는 lost update 가 재현됐다). 잠금 파일은 지우지 않는다 — flock 은
+    삭제와 경합하면 다른 프로세스가 새 inode 를 잠그는 틈이 생긴다."""
+    if fcntl is None:
+        yield
+        return
+    os.makedirs(os.path.dirname(TRACKER_FILE), exist_ok=True)
+    with open(TRACKER_FILE + '.lock', 'a+') as lf:
+        fcntl.flock(lf, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(lf, fcntl.LOCK_UN)
+
+
+def next_id(records: list[Record]) -> str:
+    mx = 0
+    for r in records:
+        rid = str(r.data.get('id', ''))
+        if rid.startswith('app-') and rid[4:].isdigit():
+            mx = max(mx, int(rid[4:]))
+    return f'app-{mx + 1:03d}'
+
+
+def find(records: list[Record], needle: str) -> Record:
+    exact = [r for r in records if r.data.get('id') == needle or r.data.get('company') == needle]
+    if len(exact) == 1:
+        return exact[0]
+    if len(exact) > 1:
+        raise SystemExit(f'[오류] "{needle}" 에 해당하는 항목이 {len(exact)}건입니다 — id 로 지정하세요: '
+                         + ', '.join(str(r.data.get("id")) for r in exact))
+    partial = [r for r in records if needle.lower() in str(r.data.get('company', '')).lower()]
+    if len(partial) == 1:
+        return partial[0]
+    if len(partial) > 1:
+        raise SystemExit(f'[오류] "{needle}" 와 부분일치하는 항목이 {len(partial)}건입니다 — id 로 지정하세요: '
+                         + ', '.join(f'{r.data.get("id")}({r.data.get("company")})' for r in partial))
+    raise SystemExit(f'[오류] "{needle}" 항목을 찾지 못했습니다')
+
+
+def resolve_status_arg(s: str) -> str:
+    key, _, unknown = normalize_status(s)
+    if unknown:
+        raise SystemExit(f'[오류] 알 수 없는 상태 "{s}" — 허용: ' + ', '.join(f'{k}({LABEL[k]})' for k in CANONICAL))
+    return key
+
+
+def dday(deadline: str | None, today: dt.date) -> str:
+    d = parse_date(deadline)
+    if not d:
+        return '-'
+    n = (d - today).days
+    return f'D-{n}' if n > 0 else ('D-day' if n == 0 else f'D+{-n}')
+
+
+# ── 명령 ───────────────────────────────────────────────────────────────────────
+def cmd_add(a) -> int:
+    records = load()
+    status = resolve_status_arg(a.status)
+    if a.deadline and not parse_date(a.deadline):
+        raise SystemExit('[오류] --deadline 은 YYYY-MM-DD 형식이어야 합니다')
+    today = today_kst().isoformat()
+    data = {
+        'id': next_id(records), 'company': a.company, 'position': a.position,
+        'status': status, 'max_stage': status if status in PIPELINE else 'applied',
+        'schema_version': 2, 'applied_at': today, 'deadline': a.deadline or '',
+        'updated_at': today, 'last_nudged_at': None, 'notes': a.notes or '',
+        'fit_score': a.fit_score, 'research_ref': a.research_ref,
+    }
+    rec = Record(None, data)
+    records.append(rec)
+    save(records)
+    if a.json:
+        print(json.dumps(data, ensure_ascii=False))
+    else:
+        print(f'추가됨: {data["id"]}  {data["company"]}  {data["position"]}  [{LABEL[status]}]')
+    return 0
+
+
+def cmd_update(a) -> int:
+    records = load()
+    rec = find(records, a.target)
+    new = resolve_status_arg(a.status)
+    old = rec.status
+    d = dict(rec.data)
+    d['status'] = new
+    d['schema_version'] = 2
+    ms, _ = rec.effective_max_stage()
+    if new in PIPELINE and stage_rank(new) > stage_rank(ms):
+        ms = new
+    d['max_stage'] = ms            # 종결 전환 시 직전 진행 단계 보존, rejected/withdrawn 은 절대 기록 안 함
+    d['updated_at'] = today_kst().isoformat()
+    if a.notes is not None:
+        d['notes'] = a.notes
+    if a.deadline is not None:
+        if a.deadline and not parse_date(a.deadline):
+            raise SystemExit('[오류] --deadline 은 YYYY-MM-DD 형식이어야 합니다')
+        d['deadline'] = a.deadline
+    rec.data = d
+    rec.dirty = True
+    save(records)
+    if a.json:
+        print(json.dumps(d, ensure_ascii=False))
+    else:
+        print(f'갱신됨: {d["id"]}  {d["company"]}  {LABEL.get(old, old)} → {LABEL[new]}  (max_stage={ms})')
+        hint = {'rejected': '/retro 로 이번 지원을 복기할 수 있습니다.', 'withdrawn': '/retro 로 이번 지원을 복기할 수 있습니다.',
+                'document_pass': '/mock_interview 로 면접을 준비할 수 있습니다.'}.get(new)
+        if hint:
+            print('다음 추천: ' + hint)
+    return 0
+
+
+def group_of(key: str) -> str:
+    if key in ('interview_1', 'interview_2', 'final'):
+        return '진행중'
+    if key in ('preparing', 'applied', 'document_pass'):
+        return '대기중'
+    if key in ('offer', 'rejected', 'withdrawn'):
+        return '종료'
+    return '구버전'
+
+
+def funnel(records: list[Record]) -> dict:
+    """docs/tracker-states.md 퍼널 규칙: max_stage 기준, withdrawn 분모 제외, 폴백 건수 별도 표기."""
+    fallback = 0
+    applied_plus = 0
+    doc_plus = 0
+    itv_plus = 0
+    offers = 0
+    for r in records:
+        if r.unknown:
+            fallback += 1
+            continue
+        if r.status == 'withdrawn':
+            continue
+        ms, fb = r.effective_max_stage()
+        if fb:
+            fallback += 1
+        rank = stage_rank(ms)
+        if rank >= stage_rank('applied'):
+            applied_plus += 1
+        if rank >= stage_rank('document_pass'):
+            doc_plus += 1
+        if rank >= stage_rank('interview_1'):
+            itv_plus += 1
+        if r.status == 'offer':
+            offers += 1
+    doc_rate = round(doc_plus / applied_plus * 100) if applied_plus else None
+    itv_rate = round(offers / itv_plus * 100) if itv_plus else None
+    return {'applied_plus': applied_plus, 'document_pass_plus': doc_plus, 'interview_plus': itv_plus,
+            'offers': offers, 'document_rate': doc_rate, 'interview_rate': itv_rate, 'fallback_count': fallback}
+
+
+def cmd_list(a) -> int:
+    records = load()
+    today = today_kst()
+    groups: dict[str, list[Record]] = {'진행중': [], '대기중': [], '종료': [], '구버전': []}
+    for r in records:
+        groups[group_of(r.status) if not r.unknown else '구버전'].append(r)
+
+    def sort_key(r: Record):
+        d = parse_date(r.data.get('deadline'))
+        return (0 if d else 1, d or dt.date.max, str(r.data.get('updated_at', '')))
+
+    if a.json:
+        out = {g: [dict(r.data, status_key=r.status, status_label=r.label(), dday=dday(r.data.get('deadline'), today))
+                   for r in sorted(rs, key=sort_key)] for g, rs in groups.items() if rs}
+        out['funnel'] = funnel(records)
+        out['today_kst'] = today.isoformat()
+        print(json.dumps(out, ensure_ascii=False, indent=2))
+        return 0
+
+    total = len(records)
+    bar = '━' * 48
+    print(f'지원 현황 (총 {total}건) · 기준일: {today.isoformat()} (KST)')
+    print(bar)
+    icons = {'진행중': '✅', '대기중': '⏳', '종료': '❌', '구버전': '❓'}
+    compact = total <= 5
+    for g in ('진행중', '대기중', '종료', '구버전'):
+        rs = groups[g]
+        if not rs:
+            continue
+        print(f'{icons[g]} {g} ({len(rs)}건)')
+        for r in sorted(rs, key=sort_key):
+            d = r.data
+            fit = f'  적합도 {d["fit_score"]}' if d.get('fit_score') not in (None, '') else ''
+            if compact:
+                print(f'  ▸ {d.get("id")} {d.get("company")} · {d.get("position")} · {r.label()} · {dday(d.get("deadline"), today)}{fit}')
+            else:
+                print(f'  {str(d.get("id")):8s} {str(d.get("company")):10s} {str(d.get("position")):14s} {r.label():8s} {dday(d.get("deadline"), today):6s}{fit}')
+    print(bar)
+    f = funnel(records)
+    parts = []
+    if f['document_rate'] is not None:
+        parts.append(f'서류 {f["document_rate"]}%')
+    if f['interview_rate'] is not None:
+        parts.append(f'면접 {f["interview_rate"]}%')
+    if parts:
+        print('통과율: ' + ' → '.join(parts) + (f'  (정확도 제한: 구버전·폴백 {f["fallback_count"]}건)' if f['fallback_count'] else ''))
+    return 0
+
+
+def cmd_calendar(a) -> int:
+    records = load()
+    today = today_kst()
+    upcoming, passed = [], []
+    for r in records:
+        d = parse_date(r.data.get('deadline'))
+        if not d:
+            continue
+        (upcoming if d >= today else passed).append((d, r))
+    upcoming.sort(key=lambda x: x[0])
+    passed.sort(key=lambda x: x[0])
+    if a.json:
+        print(json.dumps({'today_kst': today.isoformat(),
+                          'upcoming': [dict(r.data, dday=dday(r.data.get('deadline'), today), status_label=r.label()) for _, r in upcoming],
+                          'passed': [dict(r.data, dday=dday(r.data.get('deadline'), today), status_label=r.label()) for _, r in passed]},
+                         ensure_ascii=False, indent=2))
+        return 0
+    bar = '━' * 32
+    print(f'기준일: {today.isoformat()} (KST)')
+    print('다가오는 마감일')
+    print(bar)
+    for d, r in upcoming:
+        n = (d - today).days
+        mark = ' ⚠️' if n <= 7 else ''
+        print(f'📅 {d.strftime("%m-%d")} ({dday(r.data.get("deadline"), today)})  {r.data.get("company")} {r.data.get("position")} [{r.label()}]{mark}')
+    if not upcoming:
+        print('(없음)')
+    if passed:
+        print()
+        print('⚠️ 마감 경과 — 결과 확인 필요')
+        for d, r in passed:
+            print(f'📅 {d.strftime("%m-%d")} ({dday(r.data.get("deadline"), today)})  {r.data.get("company")} {r.data.get("position")} [{r.label()}]')
+    print(bar)
+    return 0
+
+
+def cmd_stats(a) -> int:
+    records = load()
+    total = len(records)
+    dist = {k: 0 for k in CANONICAL}
+    unknown = 0
+    for r in records:
+        if r.unknown:
+            unknown += 1
+        else:
+            dist[r.status] += 1
+    f = funnel(records)
+    durations = []
+    for r in records:
+        s, e = parse_date(r.data.get('applied_at')), parse_date(r.data.get('updated_at'))
+        if s and e and e >= s:
+            durations.append((e - s).days)
+    avg_days = round(sum(durations) / len(durations)) if durations else None
+
+    # 적합도 상·하위 서류합격률 — 각 그룹 결과 확정 3건 이상일 때만
+    fit_cmp = None
+    scored = [r for r in records if isinstance(r.data.get('fit_score'), (int, float)) and not r.unknown
+              and r.status != 'withdrawn' and stage_rank(r.effective_max_stage()[0]) >= stage_rank('applied')]
+    if len(scored) >= 6:
+        scored.sort(key=lambda r: r.data['fit_score'], reverse=True)
+        half = len(scored) // 2
+        top, bottom = scored[:half], scored[-half:]
+
+        def decided(rs):
+            return [r for r in rs if stage_rank(r.effective_max_stage()[0]) >= stage_rank('document_pass') or r.status == 'rejected']
+
+        dt_, db_ = decided(top), decided(bottom)
+        if len(dt_) >= 3 and len(db_) >= 3:
+            rate = lambda rs: round(sum(1 for r in rs if stage_rank(r.effective_max_stage()[0]) >= stage_rank('document_pass')) / len(rs) * 100)
+            fit_cmp = {'top_rate': rate(dt_), 'bottom_rate': rate(db_), 'top_n': len(dt_), 'bottom_n': len(db_)}
+
+    if a.json:
+        print(json.dumps({'total': total, 'distribution': dist, 'unknown': unknown, 'funnel': f,
+                          'avg_days': avg_days, 'fit_comparison': fit_cmp}, ensure_ascii=False, indent=2))
+        return 0
+    bar = '━' * 32
+    print('지원 통계')
+    print(bar)
+    print(f'총 지원:        {total}건')
+    print(f'진행중:         {sum(dist[k] for k in ("interview_1", "interview_2", "final"))}건')
+    print(f'대기중:         {sum(dist[k] for k in ("preparing", "applied", "document_pass"))}건')
+    print(f'최종합격:       {dist["offer"]}건')
+    print(f'불합격:         {dist["rejected"]}건')
+    print(f'지원취소:       {dist["withdrawn"]}건')
+    if unknown:
+        print(f'구버전 상태:    {unknown}건')
+    print()
+    print('상태별 분포:')
+    for k in CANONICAL:
+        if dist[k]:
+            print(f'  {LABEL[k]:6s} {"■" * dist[k]:10s} {dist[k]}건')
+    print()
+    print('퍼널 전환율:')
+    print(f'  서류 통과율   {f["document_rate"] if f["document_rate"] is not None else "-"}% (max_stage ≥ 서류합격 / ≥ 지원완료)')
+    print(f'  면접 통과율   {f["interview_rate"] if f["interview_rate"] is not None else "-"}% (offer / max_stage ≥ 1차면접)')
+    if f['fallback_count']:
+        print(f'  정확도 제한: 구버전·max_stage 폴백 {f["fallback_count"]}건 포함')
+    if avg_days is not None:
+        print()
+        print(f'평균 진행 기간: {avg_days}일')
+    if fit_cmp:
+        print(f'적합도 상위 서류합격률 {fit_cmp["top_rate"]}% ({fit_cmp["top_n"]}건) vs 하위 {fit_cmp["bottom_rate"]}% ({fit_cmp["bottom_n"]}건)')
+    print(bar)
+    return 0
+
+
+def cmd_nudge(a) -> int:
+    records = load()
+    today = today_kst()
+    hits = []
+    for r in records:
+        if r.unknown or r.status not in PROGRESS:
+            continue
+        upd = parse_date(r.data.get('updated_at'))
+        if not upd or (today - upd).days < a.days:
+            continue
+        last = r.data.get('last_nudged_at')
+        last_d = parse_date(str(last)[:10]) if last else None
+        if last_d and (today - last_d).days < a.days:
+            continue
+        hits.append(((today - upd).days, r))
+    if a.mark and hits:
+        for _, r in hits:
+            r.data = dict(r.data, last_nudged_at=now_kst_iso())
+            r.dirty = True
+        save(records)
+    if a.json:
+        print(json.dumps([dict(r.data, days_idle=n, status_label=r.label()) for n, r in hits], ensure_ascii=False, indent=2))
+        return 0
+    if not hits:
+        print(f'정체 항목 없음 ({a.days}일 기준)')
+        return 0
+    for n, r in hits:
+        print(f'📋 {r.data.get("company")} {r.data.get("position")} — {r.label()} {n}일째 변화 없음, 결과 업데이트할까요?')
+    if a.mark:
+        print(f'(last_nudged_at 갱신 {len(hits)}건)')
+    return 0
+
+
+def cmd_migrate(a) -> int:
+    records = load()
+    v1 = [r for r in records if r.is_v1 and not r.unknown]
+    unknown = [r for r in records if r.unknown]
+    if not v1:
+        print('구버전(v1) 항목 없음 — 재작성할 것이 없습니다')
+        return 0
+    if not a.yes:
+        print(f'구버전 형식 {len(v1)}건 발견. 사용자 승인 후 `--yes` 로 다시 실행하면 원본을 applications.jsonl.bak 으로 백업하고 재작성합니다.')
+        for r in v1:
+            print(f'  {r.data.get("id")}  {r.data.get("company")}  {r.data.get("status")} → {r.status}')
+        if unknown:
+            print(f'  (매핑표에 없는 값 {len(unknown)}건은 원문 유지: ' + ', '.join(str(r.data.get('status')) for r in unknown) + ')')
+        return 0
+    bak = TRACKER_FILE + '.bak'
+    with open(TRACKER_FILE, encoding='utf-8') as src, open(bak, 'w', encoding='utf-8') as dst:
+        dst.write(src.read())
+    for r in v1:
+        d = dict(r.data)
+        key = r.status
+        d['status'] = key
+        d['schema_version'] = 2
+        if d.get('max_stage') not in PIPELINE:
+            d['max_stage'] = key if key in PIPELINE else 'applied'
+        r.data = d
+        r.dirty = True
+    save(records)
+    print(f'재작성 완료: {len(v1)}건 (백업: {bak})')
+    return 0
+
+
+def cmd_validate(a) -> int:
+    errors = []
+    try:
+        records = load()
+    except CorruptFile as e:
+        print(e)
+        return 2
+    ids = set()
+    for r in records:
+        d = r.data
+        rid = d.get('id')
+        if not rid:
+            errors.append('id 없음: ' + r.serialize()[:80])
+        elif rid in ids:
+            errors.append(f'id 중복: {rid}')
+        ids.add(rid)
+        if r.unknown:
+            errors.append(f'{rid}: 알 수 없는 status "{d.get("status")}"')
+        for k in ('applied_at', 'deadline', 'updated_at'):
+            v = d.get(k)
+            if v and not parse_date(v):
+                errors.append(f'{rid}: {k} 날짜 형식 오류 "{v}"')
+        ms = d.get('max_stage')
+        if ms is not None and ms not in PIPELINE:
+            errors.append(f'{rid}: max_stage "{ms}" 는 파이프라인 단계가 아닙니다 (rejected/withdrawn 금지)')
+    if errors:
+        print('\n'.join('[FAIL] ' + e for e in errors))
+        return 2
+    print(f'[PASS] {len(records)}건 유효 ({TRACKER_FILE})')
+    return 0
+
+
+def main(argv=None) -> int:
+    p = argparse.ArgumentParser(prog='jobstack-tracker', description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    sub = p.add_subparsers(dest='cmd', required=True)
+
+    s = sub.add_parser('add')
+    s.add_argument('--company', required=True)
+    s.add_argument('--position', required=True)
+    s.add_argument('--status', default='preparing')
+    s.add_argument('--deadline')
+    s.add_argument('--notes')
+    s.add_argument('--fit-score', type=int)
+    s.add_argument('--research-ref')
+    s.add_argument('--json', action='store_true')
+    s.set_defaults(fn=cmd_add)
+
+    s = sub.add_parser('update')
+    s.add_argument('target', help='id 또는 회사명')
+    s.add_argument('--status', required=True)
+    s.add_argument('--notes')
+    s.add_argument('--deadline')
+    s.add_argument('--json', action='store_true')
+    s.set_defaults(fn=cmd_update)
+
+    for name, fn in (('list', cmd_list), ('calendar', cmd_calendar), ('stats', cmd_stats)):
+        s = sub.add_parser(name)
+        s.add_argument('--json', action='store_true')
+        s.set_defaults(fn=fn)
+
+    s = sub.add_parser('nudge')
+    s.add_argument('--days', type=int, default=7)
+    s.add_argument('--mark', action='store_true')
+    s.add_argument('--json', action='store_true')
+    s.set_defaults(fn=cmd_nudge)
+
+    s = sub.add_parser('migrate')
+    s.add_argument('--yes', action='store_true')
+    s.set_defaults(fn=cmd_migrate)
+
+    s = sub.add_parser('validate')
+    s.set_defaults(fn=cmd_validate)
+
+    a = p.parse_args(argv)
+    try:
+        if a.fn in (cmd_add, cmd_update, cmd_nudge, cmd_migrate):
+            with locked():
+                return a.fn(a)
+        return a.fn(a)
+    except CorruptFile as e:
+        print(e, file=sys.stderr)
+        return 2
+    except SystemExit as e:
+        if isinstance(e.code, str):
+            print(e.code, file=sys.stderr)
+            return 1
+        raise
+
+
+if __name__ == '__main__':
+    sys.exit(main())
