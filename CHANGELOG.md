@@ -58,7 +58,8 @@
   실행은 기본 꺼짐(`JOBSTACK_ALLOW_NPX=1` 명시 허용, `kordoc@4.12.3` 고정). `jobstack-cron` 은 node 부재
   시 exit 1, 전 플랫폼 수집 실패 시 exit 2, cron/launchd 등록 항목에 PATH 를 넣음. tracker·exp·defense-map
   의 읽기-수정-쓰기를 파일 잠금으로 감싸 동시 add 유실 방지. `fetch-jobs.mjs`·cron 의 limit 을 1~100 정수로
-  검증. 테스트를 실경로·launchd 기대값으로 분리하고 CI 에 macOS smoke job 추가.
+  검증. 테스트를 실경로·launchd 기대값으로 분리하고 CI 에 macOS smoke job 추가. 후속 리뷰로 README 플러그인
+  예시 명령을 `/jobstack:job-search` 로 정정(플러그인 네임스페이스는 하이픈, 로컬 alias·봇은 언더스코어).
 
 ## [0.5.0] - 2026-09-03
 

@@ -105,7 +105,7 @@ cd jobstack
 /plugin install jobstack@jobstack
 ```
 
-플러그인 설치에서는 스킬을 `/jobstack:auto`처럼 네임스페이스로 호출하고, `claude plugin update jobstack`으로 갱신합니다. Node 의존성은 첫 `/jobstack:job_search` 실행 시 플러그인 데이터 디렉토리(`${CLAUDE_PLUGIN_DATA}`)에 설치돼 플러그인 갱신 후에도 유지됩니다.
+플러그인 설치에서는 스킬을 `/jobstack:auto`처럼 네임스페이스로 호출하고, `claude plugin update jobstack`으로 갱신합니다. 플러그인 네임스페이스 안의 이름은 스킬 디렉토리 이름 그대로 하이픈입니다(예: `/jobstack:job-search`, `/jobstack:cover-letter`). 로컬 심링크 설치는 `install.sh` 가 언더스코어 alias(`/job_search`)도 함께 만들고 Telegram 봇도 언더스코어 표기를 쓰므로, 이 문서의 추천 명령은 언더스코어로 적습니다([templates/BOT-COMMAND-STYLE.md](templates/BOT-COMMAND-STYLE.md)). Node 의존성은 첫 `/jobstack:job-search` 실행 시 플러그인 데이터 디렉토리(`${CLAUDE_PLUGIN_DATA}`)에 설치돼 플러그인 갱신 후에도 유지됩니다.
 
 - 스킬은 Claude Code 표준 위치 `~/.claude/skills/`에 심링크됩니다 (v0.3까지 쓰던 `~/.claude/commands/` 심링크는 설치 시 자동 정리). 저장소를 `git pull`하면 바로 반영됩니다.
 - 옵션: `./install.sh --with-insane-search` (차단 사이트 수집 어댑터, Python 3.10+), `./install.sh --prefix` (스킬명에 `jobstack-` 접두어)
