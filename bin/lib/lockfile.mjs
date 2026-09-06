@@ -44,12 +44,12 @@ function isAlive(pid) {
 export function withLock(targetPath, fn, { timeoutMs, staleMs = 30000 } = {}) {
   const timeout = timeoutMs ?? (Number(process.env.JOBSTACK_LOCK_TIMEOUT_MS) || 10000);
   const lockPath = `${targetPath}.lock`;
-  mkdirSync(dirname(lockPath), { recursive: true });
+  mkdirSync(dirname(lockPath), { recursive: true, mode: 0o700 }); // 상태 디렉토리는 소유자 전용(PR #18 재리뷰)
   const started = Date.now();
   let fd = -1;
   for (;;) {
     try {
-      fd = openSync(lockPath, 'wx');
+      fd = openSync(lockPath, 'wx', 0o600); // 잠금 파일도 소유자 전용
       break;
     } catch (e) {
       if (e.code !== 'EEXIST') throw e;

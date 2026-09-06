@@ -96,6 +96,11 @@ apply_plans:
 
 ---
 
+## 저장 직전 검사와 파일 권한
+
+- `add`·`update`·`apply` 는 저장 직전에 `validate` 와 같은 카드 단위 검사(`cardErrors()`)를 돌린다. 공백만 있는 필수값, 문자열이 아닌 `--json` 값, `tool/task/effect` 가 하나라도 비거나 공백인 `ai_usage`, `apply_plans` 계약 위반은 exit 1 이며 파일은 바뀌지 않는다 — 이 스크립트가 만든 파일은 항상 `validate` 를 통과한다. `update --numbers ""` 만 빈 값(미지정)을 허용한다.
+- 카드에는 개인 이력·지원 회사·근거가 담기므로 프리앰블(umask 077) 없이 직접 실행해도 새로 만드는 디렉토리(상태 디렉토리·`profiles/`·`defense-maps/`)는 0700, `experiences.yaml`·방어맵 파일·잠금 파일은 0600 으로 만든다. 이미 있는 디렉토리의 권한은 바꾸지 않는다(사용자가 정한 위치일 수 있음).
+
 ## 스킬 소비자
 
 - **resume**: 카드의 `problem`/`role`/`action`/`change`/`numbers`를 경력·프로젝트 항목 초안의 근거로 인용한다. 이력서 본문은 S·T·A·R 까지만 쓰고 `apply_plans`(두 번째 R)는 쓰지 않는다.

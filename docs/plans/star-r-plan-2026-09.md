@@ -3,7 +3,7 @@
 - **작성일**: 2026-09-06 · **기준 커밋**: `main @ 75ed5a6` (PR #17 v1.0.0 머지 직후) · **대상 버전**: 1.1.0
 - **근거 문서**: `templates/experience-methods.md`(경험 전환 6단계), `docs/experience-card-schema.md`(카드 계약), `ETHOS.md` 원칙 1·5·8, `docs/plans/version-upgrade-review-2026-09.md` U-21(`ai_usage` 신설 선례)
 - **표기**: `[사실]` 코드·문서로 확인 · `[2차]` 원문 접근 불가, 검색 요약 기준 · **S** 30분 내 · **M** 1~2시간 · **L** 반나절 이상
-- **상태**: 구현 완료 — 커밋 11개, 1차 3관점 리뷰 9건·2차 5관점 리뷰 14건·PR #18 오너 리뷰 6건 반영, gate eval 2/2·스모크 4/4 통과(§8).
+- **상태**: 구현 완료 — 커밋 12개, 1차 3관점 리뷰 9건·2차 5관점 리뷰 14건·PR #18 오너 리뷰 6건·재리뷰 3건 반영, gate eval 2/2·스모크 4/4 통과(§8).
 
 ---
 
@@ -171,7 +171,8 @@ SKILL.md 의 경험 카드 항목을 한 줄 안에서 `list --company`·`apply_
 | be3eb2a | C9 2차 5관점 리뷰 반영(아래 표) | test-exp 131/131, 린트 8종, run-integration-test 93/93, Node·셸 테스트 전부 통과 |
 | 592ccae | C9 문서 — 2차 리뷰 표·company_research 스모크 3차 | — |
 | 24ee96f | C10 PR #18 오너 리뷰 반영(아래 표) | test-exp 150/150, test-preambles 19/19, run-integration-test 93/93, 린트 8종 |
-| (이 커밋) | C10 문서 — 오너 리뷰 반영 표 | — |
+| 6e2abbb | C10 문서 — 오너 리뷰 반영 표 | — |
+| (이 커밋) | C11 PR #18 재리뷰 반영(아래 표 7~9) — 쓰기 경로 검증·파일 권한 | test-exp 164/164, test-preambles 19/19, run-integration-test 93/93, 린트 8종 |
 
 결정적 테스트: `test/test-exp.sh` 150/150(원본 67 → 1차 리뷰 28·2차 리뷰 36·PR 리뷰 19 추가), `run-integration-test.sh` 93/93(격리 HOME), Node 테스트 7종·셸 테스트 12종·golden 통과, 린트 8종 통과.
 
@@ -231,6 +232,9 @@ SKILL.md 의 경험 카드 항목을 한 줄 안에서 `list --company`·`apply_
 | 4 | `list --company` 부분일치가 여럿이면 `matched_apply_plan` 이 첫 항목만 — 계열사 계획이 섞일 수 있음 | 낮음 확인 | 정확 일치(또는 부분일치 1건)일 때만 단수 키, `matched_apply_plans`·`ambiguous_company_match`·상위 `ambiguous_company_matches`, 표 푸터 안내, 3단언 |
 | 5 | three-docs-guide "자소서=선택 이유와 배움" 이 일반 STARR/STAR-L 의 배움으로 회귀할 여지 | 반영 | "선택 이유와 행동 변화·입사 후 적용" 으로, 복제본 2개 재생성 |
 | 6 | NCS 가 기관별 `apply_plans` 를 먼저 보지 않음 | 반영 | Phase 4 경험 카드 우선 사용에 `list --company <기관명>` → `list` 순서 한 줄 |
+| 7 | (재리뷰) `add --json` 이 불완전한 `ai_usage` 를 저장해 같은 도구의 `validate` 가 곧바로 실패 | **중요** 확인 — 재현: add rc=0 → validate FAIL | validate 의 카드 단위 검사를 `cardErrors()` 로 분리해 `add`·`update`·`apply` 가 저장 직전에 같은 검사(`assertCardValid`)를 돌린다 — 위반이면 파일 미변경. 단언 6개 |
+| 8 | (재리뷰) 공백만 있는 필수값·`ai_usage` 값이 add/update 를 통과 | 중간 확인 | add 는 공백 필수값을 누락으로, `--json` 의 문자열 아닌 값을 타입 오류로 거부; update 는 필수 필드 공백 거부(`--numbers ""` 만 허용); `ai_usage` 는 add/update/validate 모두 세 값 non-blank 통일. 단언 5개 + 픽스처 |
+| 9 | (재리뷰) 프리앰블 없이 직접 실행하면 상태 파일 권한이 umask 에 의존(755/644) | 낮음(보안 기본값) 확인 | `atomicWrite`(exp·defense-map) 는 새 디렉토리 0700·파일 0600, lockfile 은 디렉토리 0700·잠금 0600. 기존 디렉토리 권한은 유지. umask 022 에서 700/700/600·잠금 600 단언 3개 |
 
 검증: `test/test-exp.sh` 150/150, `test-preambles.sh` 19/19, `test-defense-map.sh`, `run-integration-test.sh` 93/93(격리 HOME), 린트 8종, Node 7종·셸 12종 통과.
 

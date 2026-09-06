@@ -124,9 +124,9 @@ function assertInsideDmDir(filePath) {
 
 function atomicWrite(filePath, content) {
   const dir = dirname(filePath);
-  mkdirSync(dir, { recursive: true });
+  mkdirSync(dir, { recursive: true, mode: 0o700 }); // 방어맵도 개인 정보 — 디렉토리 0700·파일 0600(PR #18 재리뷰)
   const tmp = join(dir, `.${Date.now()}.${randomBytes(4).toString('hex')}.tmp`);
-  writeFileSync(tmp, content, 'utf8');
+  writeFileSync(tmp, content, { encoding: 'utf8', mode: 0o600 });
   renameSync(tmp, filePath);
 }
 

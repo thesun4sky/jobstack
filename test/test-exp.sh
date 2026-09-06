@@ -58,6 +58,20 @@ has "json 입력 add 성공" "추가됨: exp-${TODAY_COMPACT}-04" "$OUT6"
 has "json 입력 job_link_tags 저장" "- 기획" "$(cat "$F")"
 has "[수치 확인 필요] placeholder 그대로 저장(날조 없음)" '\[수치 확인 필요\]' "$(cat "$F")"
 
+# add 가 자기 validate 를 통과하지 못할 카드를 만들지 않아야 한다(PR #18 재리뷰) — 저장 직전 같은 검사를 돌린다
+BEFORE_BADADD=$(cat "$F")
+JSON_AI_OUT=$("$E" add --json '{"title":"t","problem":"p","role":"r","action":"a","change":"c","ai_usage":{"tool":"x"}}' 2>&1); RC=$?
+[ $RC -eq 1 ] && has "--json 의 불완전 ai_usage 는 add 거부(exit 1)" "ai_usage" "$JSON_AI_OUT" || bad "--json 불완전 ai_usage 거부" "rc=$RC out=$JSON_AI_OUT"
+BLANK_TITLE_OUT=$("$E" add --title "   " --problem p --role r --action a --change c 2>&1); RC=$?
+[ $RC -eq 1 ] && has "공백만 있는 --title 은 누락으로 거부(exit 1)" "필수 인자 누락" "$BLANK_TITLE_OUT" || bad "공백 --title 거부" "rc=$RC out=$BLANK_TITLE_OUT"
+BLANK_AI_OUT=$("$E" add --title t --problem p --role r --action a --change c --ai-usage-tool "   " --ai-usage-task task --ai-usage-effect effect 2>&1); RC=$?
+[ $RC -eq 1 ] && has "공백만 있는 --ai-usage-tool 거부(exit 1)" "공백" "$BLANK_AI_OUT" || bad "공백 ai-usage 거부" "rc=$RC out=$BLANK_AI_OUT"
+JSON_NUM_OUT=$("$E" add --json '{"title":123,"problem":"p","role":"r","action":"a","change":"c"}' 2>&1); RC=$?
+[ $RC -eq 1 ] && has "--json 의 문자열 아닌 title 거부(exit 1)" "문자열이어야" "$JSON_NUM_OUT" || bad "--json 숫자 title 거부" "rc=$RC out=$JSON_NUM_OUT"
+JSON_BLANK_AI_OUT=$("$E" add --json '{"title":"t","problem":"p","role":"r","action":"a","change":"c","ai_usage":{"tool":"  ","task":"t","effect":"e"}}' 2>&1); RC=$?
+[ $RC -eq 1 ] && ok "--json 의 공백 ai_usage.tool 거부(exit 1)" || bad "--json 공백 ai_usage 거부" "rc=$RC out=$JSON_BLANK_AI_OUT"
+[ "$(cat "$F")" = "$BEFORE_BADADD" ] && ok "거부된 add 5건 모두 파일 미변경" || bad "거부된 add 파일 미변경" "파일이 변경됨"
+
 # ── list ──────────────────────────────────────────────────────────────────
 LIST_OUT=$("$E" list 2>&1)
 has "list 요약 헤더" "경험뱅크 요약" "$LIST_OUT"
@@ -140,6 +154,14 @@ VALIDATE_FULL=$("$E" validate 2>&1); RC=$?
 "$E" update "$ID2" --ai-usage-tool "Cursor" >/dev/null 2>&1
 has "완전한 ai_usage 의 일부 필드만 갱신은 허용" "tool: Cursor" "$(cat "$F")"
 has "일부 필드만 갱신해도 나머지 필드는 유지" "코드리뷰" "$(cat "$F")"
+BEFORE_BLANK_UPD=$(cat "$F")
+UPD_BLANK_OUT=$("$E" update "$ID1" --title "   " 2>&1); RC=$?
+[ $RC -eq 1 ] && has "update 공백만 있는 --title 거부(exit 1)" "비어 있습니다" "$UPD_BLANK_OUT" || bad "update 공백 title 거부" "rc=$RC out=$UPD_BLANK_OUT"
+UPD_BLANK_AI_OUT=$("$E" update "$ID2" --ai-usage-tool "   " 2>&1); RC=$?
+[ $RC -eq 1 ] && has "update 공백만 있는 --ai-usage-tool 거부(exit 1)" "채워져 있어야" "$UPD_BLANK_AI_OUT" || bad "update 공백 ai-usage 거부" "rc=$RC out=$UPD_BLANK_AI_OUT"
+[ "$(cat "$F")" = "$BEFORE_BLANK_UPD" ] && ok "거부된 update 는 파일 미변경" || bad "거부된 update 파일 미변경" "파일이 변경됨"
+UPD_EMPTY_NUM_OUT=$("$E" update "$ID2" --numbers "" 2>&1); RC=$?   # 카드2 는 numbers 가 원래 비어 있어 판정이 바뀌지 않는다
+[ $RC -eq 0 ] && ok "update --numbers 빈 값은 허용(미지정 의미)" || bad "update --numbers 빈 값" "rc=$RC out=$UPD_EMPTY_NUM_OUT"
 VALIDATE_AFTER_PARTIAL=$("$E" validate 2>&1); RC=$?
 [ $RC -eq 0 ] && has "완전한 ai_usage 의 부분 갱신 후에도 validate 통과" "PASS" "$VALIDATE_AFTER_PARTIAL" \
   || bad "완전한 ai_usage 부분 갱신 후 validate" "rc=$RC out=$VALIDATE_AFTER_PARTIAL"
@@ -382,6 +404,14 @@ cat > "$BADFILE" <<'YAML'
   action: a
   change: c
   created_at: 123
+- id: exp-20260701-06
+  title: blank-ai-usage
+  problem: p
+  role: r
+  action: a
+  change: c
+  created_at: "2026-07-01T00:00:00Z"
+  ai_usage: {tool: "   ", task: "t", effect: "e"}
 YAML
 BAD_OUT=$("$E" validate "$BADFILE" 2>&1); RC=$?
 [ $RC -eq 1 ] && ok "위반 파일 validate exit 1" || bad "위반 파일 validate exit 1" "rc=$RC"
@@ -397,6 +427,7 @@ has "validate: apply_plans created_at 누락은 형식 오류와 구분해 검�
 has "validate: apply_plans 비배열 검출" "apply_plans 는 배열이어야 합니다" "$BAD_OUT"
 has "validate: apply_plans position 비문자열 검출" "apply_plans\[0\] position 은 문자열이어야 합니다" "$BAD_OUT"
 has "validate: 보이지 않는 문자만인 회사명은 빈 값으로 검출" "apply_plans\[1\] company 가 비어 있습니다" "$BAD_OUT"
+has "validate: ai_usage 공백 값 검출" "exp-20260701-06: ai_usage" "$BAD_OUT"
 # 필수 필드 타입 — 숫자 id/title/created_at 은 존재해도 스키마 위반(show/update/apply 가 문자열 id 로 찾지 못함, PR #18 리뷰)
 has "validate: 숫자 id 는 문자열 타입 오류로 검출" "id 필드는 문자열이어야 합니다" "$BAD_OUT"
 has "validate: 숫자 title 은 문자열 타입 오류로 검출" "title 필드는 문자열이어야 합니다" "$BAD_OUT"
@@ -479,6 +510,17 @@ SAME_COUNT=$(grep -cE '^ {4}- company: 같은회사$' "$APF" 2>/dev/null); SAME_
 AP_VAL=$(JOBSTACK_STATE_DIR="$APSTATE" "$E" validate 2>&1); RC=$?
 [ $RC -eq 0 ] && ok "동시 apply 후 validate 통과(회사 중복 없음)" || bad "동시 apply 후 validate" "$AP_VAL"
 [ ! -e "$APF.lock" ] && ok "동시 apply 완료 후 잠금 파일 정리" || bad "apply 잠금 파일 잔존" "$APF.lock"
+
+# 상태 파일 권한 — 프리앰블(umask 077) 없이 직접 실행해도 새 디렉토리 700·파일 600·잠금 600 (PR #18 재리뷰)
+PERMSTATE="$WORK/state-perm"
+( umask 022; JOBSTACK_STATE_DIR="$PERMSTATE" "$E" add --title perm --problem p --role r --action a --change c >/dev/null 2>&1 )
+MODES=$(node -e "const fs=require('fs');console.log(process.argv.slice(1).map((p)=>(fs.statSync(p).mode&0o777).toString(8)).join(' '))" "$PERMSTATE" "$PERMSTATE/profiles" "$PERMSTATE/profiles/experiences.yaml" 2>&1)
+[ "$MODES" = "700 700 600" ] && ok "umask 022 에서도 상태 디렉토리 700·profiles 700·experiences.yaml 600" || bad "상태 파일 권한" "$MODES"
+( umask 022; JOBSTACK_STATE_DIR="$PERMSTATE" "$E" update "exp-${TODAY_COMPACT}-01" --title perm2 >/dev/null 2>&1 )
+MODE_AFTER=$(node -e "console.log((require('fs').statSync(process.argv[1]).mode&0o777).toString(8))" "$PERMSTATE/profiles/experiences.yaml" 2>&1)
+[ "$MODE_AFTER" = "600" ] && ok "update 뒤에도 파일 600 유지" || bad "update 뒤 파일 권한" "$MODE_AFTER"
+LOCKMODE=$(cd "$REPO/bin" && umask 022 && node --input-type=module -e "import { withLock } from './lib/lockfile.mjs'; import { statSync } from 'node:fs'; const p = process.argv[1]; withLock(p, () => console.log((statSync(p + '.lock').mode & 0o777).toString(8)));" "$PERMSTATE/profiles/experiences.yaml" 2>&1)
+[ "$LOCKMODE" = "600" ] && ok "잠금 파일은 소유자 전용(600)" || bad "잠금 파일 권한" "$LOCKMODE"
 
 # ── 잠금 소유자 확인(PR #18 리뷰) — 오래된 잠금이라도 소유 프로세스가 살아 있으면 훔치지 않는다 ──
 LSTATE="$WORK/state-lock"; mkdir -p "$LSTATE/profiles"

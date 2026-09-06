@@ -136,11 +136,14 @@ function parseArgs(argv) {
 }
 
 // ── 원자적 쓰기 — 임시 파일 + rename, 상태 디렉토리 안쪽에만 ────────────────────────
+// 경험 카드는 개인 이력·지원 회사·근거를 담으므로 프리앰블(umask 077) 없이 직접 실행해도 새로 만드는
+// 디렉토리는 0700, 파일은 0600 으로 만든다 — umask 는 비트를 지울 뿐 더하지 않으므로 mode 지정으로 충분(PR #18 재리뷰).
+// 이미 있는 디렉토리의 권한은 바꾸지 않는다(사용자가 정한 위치일 수 있음). 파일은 rename 으로 교체되므로 다음 쓰기부터 0600.
 function atomicWrite(filePath, content) {
   const dir = dirname(filePath);
-  mkdirSync(dir, { recursive: true });
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
   const tmp = join(dir, `.${Date.now()}.${randomBytes(4).toString('hex')}.tmp`);
-  writeFileSync(tmp, content, 'utf8');
+  writeFileSync(tmp, content, { encoding: 'utf8', mode: 0o600 });
   renameSync(tmp, filePath);
 }
 
@@ -197,13 +200,16 @@ function cmdAdd(flags) {
   const change = pick('change');
   const numbers = pick('numbers') ?? '';
 
+  // 공백만 있는 값은 누락으로, --json 의 문자열 아닌 값은 타입 오류로 본다(PR #18 재리뷰)
   const missing = [];
-  if (!title) missing.push('--title');
-  if (!problem) missing.push('--problem');
-  if (!role) missing.push('--role');
-  if (!action) missing.push('--action');
-  if (!change) missing.push('--change');
-  if (missing.length) die(`필수 인자 누락: ${missing.join(', ')}`);
+  const nonString = [];
+  for (const [k, v] of Object.entries({ title, problem, role, action, change })) {
+    if (v === undefined || v === null) missing.push(`--${k}`);
+    else if (typeof v !== 'string') nonString.push(k);
+    else if (!v.trim()) missing.push(`--${k}`);
+  }
+  if (nonString.length) die(`--json 의 ${nonString.join(', ')} 은 문자열이어야 합니다`);
+  if (missing.length) die(`필수 인자 누락: ${missing.join(', ')} (공백만 있는 값도 누락으로 봅니다)`);
 
   // job_link_tags: --tags "a,b" 가 --json 의 tags/job_link_tags 보다 우선
   let tags = fromJson.job_link_tags ?? fromJson.tags ?? [];
@@ -218,12 +224,14 @@ function cmdAdd(flags) {
   const aiTask = pick('ai-usage-task');
   const aiEffect = pick('ai-usage-effect');
   let aiUsage = fromJson.ai_usage ?? null;
-  if (aiTool || aiTask || aiEffect) {
-    if (!(aiTool && aiTask && aiEffect)) {
-      die('--ai-usage-tool / --ai-usage-task / --ai-usage-effect 는 함께 지정해야 합니다');
+  const aiGiven = [aiTool, aiTask, aiEffect].some((v) => v !== undefined && v !== null);
+  if (aiGiven) {
+    if ([aiTool, aiTask, aiEffect].some(blankStr)) {
+      die('--ai-usage-tool / --ai-usage-task / --ai-usage-effect 는 함께 지정해야 하며 공백만 있는 값은 안 됩니다');
     }
-    aiUsage = { tool: String(aiTool), task: String(aiTask), effect: String(aiEffect) };
+    aiUsage = { tool: aiTool, task: aiTask, effect: aiEffect };
   }
+  // --json 의 ai_usage 도 같은 계약 — 아래 assertCardValid 가 tool/task/effect 세 값을 검사한다(PR #18 재리뷰)
   if (aiUsage !== null && (typeof aiUsage !== 'object' || Array.isArray(aiUsage))) {
     die('ai_usage 는 null 또는 {tool, task, effect} 객체여야 합니다');
   }
@@ -244,6 +252,7 @@ function cmdAdd(flags) {
     ai_usage: aiUsage,
     created_at: nowUtcIsoZ(),
   };
+  assertCardValid(card, id); // validate 와 같은 검사 — 통과하지 못할 카드는 만들지 않는다
 
   const block = stringify([card]); // "- id: ...\n  ...\n" — 새 카드 1장짜리 블록 시퀀스
   let base = raw || '';
@@ -358,6 +367,8 @@ function cmdUpdate(positionals, flags) {
   let touched = false;
   for (const f of UPDATE_SIMPLE_FIELDS) {
     if (typeof flags[f] === 'string') {
+      // numbers 는 빈 값(미지정) 허용, 그 외 필수 필드는 공백만 있는 값을 저장하지 않는다(PR #18 재리뷰)
+      if (f !== 'numbers' && !flags[f].trim()) die(`--${f} 값이 비어 있습니다 (공백만 있는 값은 저장하지 않습니다)`);
       item.set(f, flags[f]);
       touched = true;
     }
@@ -384,9 +395,7 @@ function cmdUpdate(positionals, flags) {
     const finalTool = aiMap.get('tool');
     const finalTask = aiMap.get('task');
     const finalEffect = aiMap.get('effect');
-    const complete = typeof finalTool === 'string' && finalTool
-      && typeof finalTask === 'string' && finalTask
-      && typeof finalEffect === 'string' && finalEffect;
+    const complete = !blankStr(finalTool) && !blankStr(finalTask) && !blankStr(finalEffect);
     if (!complete) {
       die('--ai-usage-tool / --ai-usage-task / --ai-usage-effect 갱신 후 세 값이 모두 채워져 있어야 합니다'
         + ' (기존에 완전한 ai_usage 가 있는 카드라면 일부 필드만 갱신 가능)');
@@ -398,6 +407,7 @@ function cmdUpdate(positionals, flags) {
     die('수정할 필드를 최소 1개 지정하세요 (--title/--problem/--role/--action/--change/--numbers/--tags/--ai-usage-tool/--ai-usage-task/--ai-usage-effect)');
   }
 
+  assertCardValid(item.toJSON(), id); // validate 와 같은 검사 — 위반이면 파일 미변경
   atomicWrite(EXP_FILE, doc.toString());
   process.stdout.write(`수정됨: ${id}\n경로: ${EXP_FILE}\n`);
 }
@@ -462,8 +472,83 @@ function cmdApply(positionals, flags) {
     plans.add(node);
   }
 
+  assertCardValid(item.toJSON(), id); // validate 와 같은 검사 — 위반이면 파일 미변경
   atomicWrite(EXP_FILE, doc.toString());
   process.stdout.write(`적용 저장됨: ${id} · ${entry.company} (${idx >= 0 ? '교체' : '신규'})\n경로: ${EXP_FILE}\n`);
+}
+
+// ── 카드 단위 스키마 검사 — validate 와 add/update/apply 저장 직전이 같은 함수를 쓴다(PR #18 재리뷰:
+//    "쓰기 성공 → validate 실패" 계열을 구조적으로 막는다). id 중복은 파일 전체를 봐야 하므로 cmdValidate 가 따로 본다.
+const blankStr = (v) => typeof v !== 'string' || !v.trim();
+function cardErrors(card, label) {
+  const errors = [];
+  if (card === null || typeof card !== 'object' || Array.isArray(card)) return [`${label}: 카드가 객체가 아닙니다`];
+  for (const f of REQUIRED_FIELDS) {
+    const v = card[f];
+    if (v === undefined || v === null || v === '') errors.push(`${label}: 필수 필드 누락 (${f})`);
+    else if (typeof v !== 'string') errors.push(`${label}: ${f} 필드는 문자열이어야 합니다`); // 숫자 id 는 show/update/apply 가 찾지 못한다(PR #18 리뷰)
+    else if (!v.trim()) errors.push(`${label}: 필수 필드 누락 (${f} — 공백뿐)`);
+  }
+  if (typeof card.id === 'string' && card.id && !ID_RE.test(card.id)) {
+    errors.push(`${label}: id 형식 오류 (exp-YYYYMMDD-NN 아님)`);
+  }
+  if (typeof card.created_at === 'string' && card.created_at) {
+    if (!ISO_RE.test(card.created_at) || Number.isNaN(Date.parse(card.created_at))) {
+      errors.push(`${label}: created_at 형식 오류 (ISO 8601 아님)`);
+    }
+  }
+  if (card.job_link_tags !== undefined && card.job_link_tags !== null) {
+    const ok = Array.isArray(card.job_link_tags) && card.job_link_tags.every((t) => typeof t === 'string');
+    if (!ok) errors.push(`${label}: job_link_tags 는 문자열 배열이어야 합니다`);
+  }
+  if (card.numbers !== undefined && card.numbers !== null && typeof card.numbers !== 'string') {
+    errors.push(`${label}: numbers 는 문자열이어야 합니다`);
+  }
+  if (card.ai_usage !== undefined && card.ai_usage !== null) {
+    const au = card.ai_usage;
+    // tool/task/effect 세 값이 모두 공백 아닌 문자열이어야 한다 — 공백만 있는 값은 없는 것과 같다(PR #18 재리뷰)
+    const ok = typeof au === 'object' && !Array.isArray(au)
+      && ['tool', 'task', 'effect'].every((k) => !blankStr(au[k]));
+    if (!ok) errors.push(`${label}: ai_usage 는 null 또는 {tool, task, effect} 가 모두 채워진 문자열 객체여야 합니다`);
+  }
+  if (card.apply_plans !== undefined && card.apply_plans !== null) {
+    const plans = card.apply_plans;
+    if (!Array.isArray(plans)) {
+      errors.push(`${label}: apply_plans 는 배열이어야 합니다`);
+    } else {
+      const seenCompanies = new Set();
+      plans.forEach((p, j) => {
+        const tag = `apply_plans[${j}]`;
+        if (p === null || typeof p !== 'object' || Array.isArray(p)) {
+          errors.push(`${label}: ${tag} 항목이 객체가 아닙니다`);
+          return;
+        }
+        for (const k of APPLY_REQUIRED) {
+          const blank = blankStr(p[k]) || (k === 'company' && !normCompany(p[k]));
+          if (blank) errors.push(`${label}: ${tag} ${k} 가 비어 있습니다`);
+        }
+        if (p.position !== undefined && p.position !== null && typeof p.position !== 'string') {
+          errors.push(`${label}: ${tag} position 은 문자열이어야 합니다`);
+        }
+        if (p.created_at === undefined || p.created_at === null || p.created_at === '') {
+          errors.push(`${label}: ${tag} created_at 가 비어 있습니다`);
+        } else if (typeof p.created_at !== 'string' || !ISO_RE.test(p.created_at) || Number.isNaN(Date.parse(p.created_at))) {
+          errors.push(`${label}: ${tag} created_at 형식 오류 (ISO 8601 아님)`);
+        }
+        const key = normCompany(p.company);
+        if (key) {
+          if (seenCompanies.has(key)) errors.push(`${label}: ${tag} 회사 중복 (${p.company})`);
+          seenCompanies.add(key);
+        }
+      });
+    }
+  }
+  return errors;
+}
+// 저장 직전 검사 — 위반이면 파일을 바꾸지 않고 exit 1
+function assertCardValid(card, label) {
+  const errs = cardErrors(card, label);
+  if (errs.length) die(`저장 전 스키마 검사 실패(파일 미변경) — ${errs.join(' / ')}`);
 }
 
 // ── validate ────────────────────────────────────────────────────────────────
@@ -497,70 +582,10 @@ function cmdValidate(positionals) {
   parsed.forEach((card, idx) => {
     const hasId = card && typeof card === 'object' && typeof card.id === 'string' && card.id;
     const label = hasId ? card.id : `#${idx + 1}(id 없음)`;
-    if (card === null || typeof card !== 'object' || Array.isArray(card)) {
-      errors.push(`${label}: 카드가 객체가 아닙니다`);
-      return;
-    }
-    for (const f of REQUIRED_FIELDS) {
-      const v = card[f];
-      if (v === undefined || v === null || v === '') errors.push(`${label}: 필수 필드 누락 (${f})`);
-      else if (typeof v !== 'string') errors.push(`${label}: ${f} 필드는 문자열이어야 합니다`); // 숫자 id 는 show/update/apply 가 찾지 못한다(PR #18 리뷰)
-      else if (!v.trim()) errors.push(`${label}: 필수 필드 누락 (${f} — 공백뿐)`);
-    }
+    errors.push(...cardErrors(card, label));
     if (hasId) {
-      if (!ID_RE.test(card.id)) errors.push(`${label}: id 형식 오류 (exp-YYYYMMDD-NN 아님)`);
       if (seenIds.has(card.id)) errors.push(`${label}: id 중복`);
       seenIds.add(card.id);
-    }
-    if (typeof card.created_at === 'string' && card.created_at) {
-      if (!ISO_RE.test(card.created_at) || Number.isNaN(Date.parse(card.created_at))) {
-        errors.push(`${label}: created_at 형식 오류 (ISO 8601 아님)`);
-      }
-    }
-    if (card.job_link_tags !== undefined && card.job_link_tags !== null) {
-      const ok = Array.isArray(card.job_link_tags) && card.job_link_tags.every((t) => typeof t === 'string');
-      if (!ok) errors.push(`${label}: job_link_tags 는 문자열 배열이어야 합니다`);
-    }
-    if (card.numbers !== undefined && card.numbers !== null && typeof card.numbers !== 'string') {
-      errors.push(`${label}: numbers 는 문자열이어야 합니다`);
-    }
-    if (card.ai_usage !== undefined && card.ai_usage !== null) {
-      const au = card.ai_usage;
-      const ok = typeof au === 'object' && !Array.isArray(au)
-        && typeof au.tool === 'string' && typeof au.task === 'string' && typeof au.effect === 'string';
-      if (!ok) errors.push(`${label}: ai_usage 는 null 또는 {tool, task, effect} 문자열 객체여야 합니다`);
-    }
-    if (card.apply_plans !== undefined && card.apply_plans !== null) {
-      const plans = card.apply_plans;
-      if (!Array.isArray(plans)) {
-        errors.push(`${label}: apply_plans 는 배열이어야 합니다`);
-      } else {
-        const seenCompanies = new Set();
-        plans.forEach((p, j) => {
-          const tag = `apply_plans[${j}]`;
-          if (p === null || typeof p !== 'object' || Array.isArray(p)) {
-            errors.push(`${label}: ${tag} 항목이 객체가 아닙니다`);
-            return;
-          }
-          for (const k of APPLY_REQUIRED) {
-            const blank = typeof p[k] !== 'string' || !p[k].trim() || (k === 'company' && !normCompany(p[k]));
-            if (blank) errors.push(`${label}: ${tag} ${k} 가 비어 있습니다`);
-          }
-          if (p.position !== undefined && p.position !== null && typeof p.position !== 'string') {
-            errors.push(`${label}: ${tag} position 은 문자열이어야 합니다`);
-          }
-          if (p.created_at === undefined || p.created_at === null || p.created_at === '') {
-            errors.push(`${label}: ${tag} created_at 가 비어 있습니다`);
-          } else if (typeof p.created_at !== 'string' || !ISO_RE.test(p.created_at) || Number.isNaN(Date.parse(p.created_at))) {
-            errors.push(`${label}: ${tag} created_at 형식 오류 (ISO 8601 아님)`);
-          }
-          const key = normCompany(p.company);
-          if (key) {
-            if (seenCompanies.has(key)) errors.push(`${label}: ${tag} 회사 중복 (${p.company})`);
-            seenCompanies.add(key);
-          }
-        });
-      }
     }
   });
 

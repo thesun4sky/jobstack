@@ -18,7 +18,7 @@ STAR-R 도입 — 경험 카드에 기업분석 근거와 함께 '입사 후 적
 - **company-research Phase 5.5 경험 카드 연결 (SR-04)** — 키워드 체크리스트·'이미 팀원처럼' 화두와 닿는
   카드 3장 이하에 R 문장을 제안하고 확인 후 `apply`. 리포트 §5 에 "경험 카드 적용 문장" 항목.
 - **eval·테스트 (SR-07)** — `expbank-gate-star-r-apply` 게이트 케이스(캐시·카드 setup, apply 4플래그
-  must_call), `test/test-exp.sh` 단언 67 → 150(1차 리뷰 28·2차 리뷰 36·PR 리뷰 19 추가).
+  must_call), `test/test-exp.sh` 단언 67 → 164(1차 리뷰 28·2차 리뷰 36·PR 리뷰 19·재리뷰 14 추가).
 
 ### Changed
 - **문서·면접 스킬 소비 (SR-05·SR-06)** — cover-letter 는 '요'에 지원 기업 `apply_plans` 우선(`list --company`),
@@ -62,6 +62,11 @@ STAR-R 도입 — 경험 카드에 기업분석 근거와 함께 '입사 후 적
   `ambiguous_company_match`·상위 `ambiguous_company_matches` 와 표 푸터 안내를 추가.
 - three-docs-guide 의 "자소서=선택 이유와 배움" 을 "행동 변화·입사 후 적용" 으로(일반 STARR/STAR-L 회귀 방지),
   NCS Phase 4 에 기관명 확정 시 `list --company <기관명>` 우선 확인 한 줄.
+- **재리뷰 — 쓰기 경로 입력 검증** — `add --json` 이 불완전한 `ai_usage` 를 저장하고, 공백만 있는 필수값·`ai_usage` 값이
+  add/update 를 통과하던 문제. validate 의 카드 단위 검사를 `cardErrors()` 로 분리해 `add`·`update`·`apply` 가 저장 직전에
+  같은 검사를 돌린다(위반이면 파일 미변경). `--json` 의 문자열 아닌 필수값은 타입 오류, `update --numbers ""` 만 빈 값 허용.
+- **재리뷰 — 상태 파일 권한** — 프리앰블(umask 077) 없이 직접 실행하면 umask 에 따라 디렉토리 755·파일 644 로 만들어지던 문제.
+  새로 만드는 디렉토리 0700·파일 0600·잠금 파일 0600(jobstack-exp·jobstack-defense-map·lockfile). 기존 디렉토리 권한은 바꾸지 않음.
 
 ## [1.0.0] - 2026-09-03
 
