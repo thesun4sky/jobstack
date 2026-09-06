@@ -3,7 +3,7 @@
 - **작성일**: 2026-09-06 · **기준 커밋**: `main @ 75ed5a6` (PR #17 v1.0.0 머지 직후) · **대상 버전**: 1.1.0
 - **근거 문서**: `templates/experience-methods.md`(경험 전환 6단계), `docs/experience-card-schema.md`(카드 계약), `ETHOS.md` 원칙 1·5·8, `docs/plans/version-upgrade-review-2026-09.md` U-21(`ai_usage` 신설 선례)
 - **표기**: `[사실]` 코드·문서로 확인 · `[2차]` 원문 접근 불가, 검색 요약 기준 · **S** 30분 내 · **M** 1~2시간 · **L** 반나절 이상
-- **상태**: 계획 확정(오너 결정 4건 반영) → 구현 진행. 실행 로그는 §8 에 구현 후 기록한다.
+- **상태**: 구현 완료 — 커밋 7개, 3관점 리뷰 9건 반영, gate eval 2/2·스모크 4/4 통과(§8).
 
 ---
 
@@ -155,6 +155,57 @@ SKILL.md 의 경험 카드 항목을 한 줄 안에서 `list --company`·`apply_
 
 ---
 
-## 8. 실행 로그
+## 8. 실행 로그 (2026-09-06)
 
-구현 후 기록: 커밋 해시 · 테스트 결과 · 리뷰 표(`| # | 관점 | 대상 | 지적 | 판정 | 조치 |`) · 스모크 표.
+### 커밋
+
+| 커밋 | 내용 | 검증 |
+|---|---|---|
+| 2778a2a | C1 계획서 | lint-conventions |
+| a7c2b53 | C2 SR-02 저장 계층(apply·list --company·validate·스키마·테스트) | `node --check`, test-exp 92/92, gen-skill-docs --check |
+| a572965 | C3 SR-01·SR-03·SR-04·SR-07 방법론 §7·experience-bank·company-research·eval | 린트 7종, run-evals --dry-run 16케이스 |
+| 19b9acf | C4 SR-05·SR-06 소비 스킬 | 린트, resume 299·cover-letter 298·mock-interview 296줄 유지 |
+| 723eecd | C5 SR-08 릴리스 1.1.0 | test-plugin-manifest, run-integration-test 93/93 |
+| 5f335d1 | C6 리뷰·스모크 반영 | test-exp 95/95, 린트 |
+
+결정적 테스트: `test/test-exp.sh` 95/95(원본 67 → 28 추가), `run-integration-test.sh` 93/93(격리 HOME), Node 테스트 7종·셸 테스트 6종·golden 통과, 린트 8종 통과.
+
+### 3관점 리뷰 (Workflow: 컨벤션 Haiku 4.5 · 방법론 적대적 검증 Sonnet 5 · 스크립트 코드리뷰 Sonnet 5, 지적마다 Sonnet 5 반박자 1명)
+
+에이전트 14개, 지적 11건 → 검증 통과 9건(high 1·medium 1·low 7), 기각 2건.
+
+| # | 관점 | 대상 | 지적 | 판정 | 조치 |
+|---|---|---|---|---|---|
+| 1 | 컨벤션 | `bin/jobstack-exp.mjs:22` | 주석의 `~/.jobstack` 표기 | 기각 — 기존 라인, 린트 범위 밖, 다른 스크립트와 동일 관례 | 없음 |
+| 2 | 방법론 | `mock-interview/SKILL.md:183` | `list --company` 만 호출하면 아직 apply 하지 않은 카드의 change·numbers 가 사라짐 | **high** 확인 | 무필터 `list` → `list --company` 2단계로 분리 |
+| 3 | 방법론 | `ncs/SKILL.md:162` | 기관 분석 근거의 출처·폴백이 §7 과 연결되지 않음 | 기각 — §7 규칙 ① 을 직접 참조, 복제본 동일 | 없음 |
+| 4 | 방법론 | `cover-letter/references/structure-guide.md:36` | 포부 3개 시간축이 같은 plan 문장을 반복할 위험 | **medium** 확인 | 카드 여러 장이면 배분, 한 장이면 한 시간축에만 쓰고 나머지는 같은 basis 로 새 문장 |
+| 5 | 방법론 | `templates/experience-methods.md:117` | humanize-check 인용이 `§1 ①` 인데 원문은 `(a)/(b)` | low 확인 | `(a)` 로 정정, 복제본 재생성 |
+| 6 | 스크립트 | `bin/jobstack-exp.mjs` apply | 같은 회사 재-apply 시 `--position` 생략하면 이전 값 소실 | low 확인(전체 교체는 의도된 계약) | 스키마·usage 에 명시 + 회귀 단언 |
+| 7 | 스크립트 | `test/test-exp.sh` | `--position` 저장 단언 없음 | low 확인 | 단언 추가 |
+| 8 | 스크립트 | `CHANGELOG.md` | 신규 단언 수 24 ≠ 실측 25 | low 확인 | 최종 28(67→95) 로 정정 |
+| 9 | 스크립트 | `evals/experience-bank/evals.json` | must_call 은 세션 전체 문자열 매칭이라 한 호출 내 4플래그 동시성을 보장하지 않음(must_output 이 보완) | low 확인 | note 문구 정정 |
+| 10 | 스크립트 | `test/test-exp.sh:155` | `grep -c 'company: '` 가 자유 텍스트 안의 문자열도 셈 | low 확인 | `^ {4}- company: ` 앵커링 |
+| 11 | 스크립트 | `bin/jobstack-exp.mjs` validate | apply_plans `created_at` 누락도 '형식 오류' 로 보고 | low 확인 | 누락/형식 오류 메시지 분리 + 픽스처 |
+
+스모크 관찰에서 추가로 반영: cover-letter 초안이 '요' 의 plan 문장을 "~하고 싶습니다" 다짐형으로 바꾸고 '이' 에 "배웠습니다" 를 남김 → '요' 는 실행형 그대로 쓰라는 문구를 SKILL.md 133행에 추가(5단계 첨삭의 배운 점 규칙은 그대로). experience-bank gate 케이스 1차 실행에서 카드 스키마 Read 를 건너뛰어 must_read 실패 → add 전 Read 를 건너뛰지 않는다는 문구 추가.
+
+### 헤드리스 실측
+
+### gate eval (`test/run-evals.sh --tier gate --skill experience-bank`, 2회)
+
+| 케이스 | 1차 | 수정 | 2차 |
+|---|---|---|---|
+| expbank-gate-single-card | FAIL — must_read: 카드 스키마 Read 를 건너뛰고 add | experience-bank Phase 4 에 "add 전 Read 를 건너뛰지 않는다" 명시 | PASS (6턴, 0.19 USD) |
+| expbank-gate-star-r-apply(신규) | PASS (10턴, 0.23 USD) — apply 4플래그·`적용 저장됨`·§7 Read | 턴 예산 10 → 12 | PASS |
+
+### 스킬 스모크 (격리 HOME, 카드 2장·네이버 캐시·apply 1건 시드, sonnet 16턴, 리뷰 반영 전 → 후)
+
+| 스킬 | 케이스 | 1차 | 2차(5f335d1) | 확인한 것 |
+|---|---|---|---|---|
+| experience_bank | 카드 추가 + 네이버 입사 후 적용 연결 | 7턴 53s 0.24 PASS | 7턴 34s 0.19 PASS | add → §7 Read → `apply`(basis = 캐시 화두 원문) → validate → list. 2차는 카드 스키마 Read 포함 |
+| company_research | 오늘 캐시 재사용 + Phase 5.5 | 6턴 48s 0.24 PASS | 8턴 59s 0.19 PASS | 웹 검색 없이 캐시 재사용, `list --json` → 미연결 카드 1장에 `apply`, 기존 연결 카드는 유지 |
+| cover_letter | 네이버 지원동기 초안 | 8턴 111s 0.33 PASS | 13턴 119s 0.38 PASS | 1차: '요' 를 다짐형("기여하고 싶습니다")으로 바꾸고 '이' 에 "배웠습니다" 잔존. 2차: `list --company` → `list` 2단계, '요' 를 실행형 그대로, 다짐형·"배웠습니다" 0건 |
+| mock_interview | 입사 후 적용 질문 1개 | 4턴 31s 0.18 PASS | 4턴 28s 0.16 PASS | 2차: 무필터 `list` → `list --company 네이버` → show, 카드 R·화두를 근거로 질문 |
+
+관찰: 4케이스 모두 캐시·카드에 없는 기업 과제를 지어내지 않았고 `basis` 는 요약 블록·체크리스트 원문을 인용했다. 비용 합계 약 2.7 USD(스모크 2회 1.9, gate 2회 약 0.8).

@@ -18,7 +18,7 @@ STAR-R 도입 — 경험 카드에 기업분석 근거와 함께 '입사 후 적
 - **company-research Phase 5.5 경험 카드 연결 (SR-04)** — 키워드 체크리스트·'이미 팀원처럼' 화두와 닿는
   카드 3장 이하에 R 문장을 제안하고 확인 후 `apply`. 리포트 §5 에 "경험 카드 적용 문장" 항목.
 - **eval·테스트 (SR-07)** — `expbank-gate-star-r-apply` 게이트 케이스(캐시·카드 setup, apply 4플래그
-  must_call), `test/test-exp.sh` 24단언 추가.
+  must_call), `test/test-exp.sh` 28단언 추가(67 → 95).
 
 ### Changed
 - **문서·면접 스킬 소비 (SR-05·SR-06)** — cover-letter 는 '요'에 지원 기업 `apply_plans` 우선(`list --company`),
@@ -27,6 +27,15 @@ STAR-R 도입 — 경험 카드에 기업분석 근거와 함께 '입사 후 적
   `apply_plans` 를 "입사하면 어떻게 쓰겠나" 평가 근거로.
 - **카드 스키마 문서** — 소비자 목록에 career-history·scout-profile 추가, 쓰기 경계(experience-bank·
   company-research 만 `apply`) 명시.
+
+### Fixed — 3관점 리뷰·스모크 반영 (실행 기록 `docs/plans/star-r-plan-2026-09.md` §8)
+- mock-interview 가 `list --company` 만 호출해 아직 apply 하지 않은 카드의 change·numbers 를 잃던 문제 —
+  무필터 `list` 로 전체 카드를 확보한 뒤 `list --company` 로 apply_plans 카드만 추린다.
+- cover-letter 입사 후 포부 3개 시간축이 같은 plan 문장을 반복하지 않도록 배분 규칙, '요' 는 plan 문장을
+  실행형 그대로 쓴다(스모크에서 다짐형으로 바뀌던 것 관찰).
+- `validate` 의 apply_plans `created_at` 누락과 형식 오류 메시지 분리, 재-apply 전체 교체(`--position` 소실)
+  계약을 스키마·usage 에 명시, §7 의 humanize-check 인용 표기 정정, test-exp 의 company 카운트 앵커링과
+  position 단언, eval note 의 must_call 의미 정정, experience-bank 는 add 전 카드 스키마 Read 를 건너뛰지 않음.
 
 ## [1.0.0] - 2026-09-03
 
