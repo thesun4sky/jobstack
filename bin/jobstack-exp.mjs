@@ -16,7 +16,8 @@
  *                     [--change C] [--numbers N] [--tags a,b]
  *                     [--ai-usage-tool X] [--ai-usage-task Y] [--ai-usage-effect Z]
  *   jobstack-exp apply <id> --company C --plan P --basis B --source S [--position X]
- *                     (STAR-R 의 R = 입사 후 적용. 회사당 1건 upsert — 근거·출처가 비면 거부)
+ *                     (STAR-R 의 R = 입사 후 적용. 회사당 1건 upsert — 근거·출처가 비면 거부.
+ *                      같은 회사 재-apply 는 항목 전체를 교체하므로 --position 생략 시 이전 값은 사라진다)
  *   jobstack-exp validate [file]
  *
  * 환경: JOBSTACK_STATE_DIR (기본 ~/.jobstack) → profiles/experiences.yaml
@@ -512,7 +513,9 @@ function cmdValidate(positionals) {
           if (p.position !== undefined && p.position !== null && typeof p.position !== 'string') {
             errors.push(`${label}: ${tag} position 은 문자열이어야 합니다`);
           }
-          if (typeof p.created_at !== 'string' || !ISO_RE.test(p.created_at) || Number.isNaN(Date.parse(p.created_at))) {
+          if (p.created_at === undefined || p.created_at === null || p.created_at === '') {
+            errors.push(`${label}: ${tag} created_at 가 비어 있습니다`);
+          } else if (typeof p.created_at !== 'string' || !ISO_RE.test(p.created_at) || Number.isNaN(Date.parse(p.created_at))) {
             errors.push(`${label}: ${tag} created_at 형식 오류 (ISO 8601 아님)`);
           }
           const key = normCompany(p.company);

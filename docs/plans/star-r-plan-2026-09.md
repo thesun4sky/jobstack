@@ -53,7 +53,7 @@
 ### SR-01 · experience-methods §7 "STAR-R 서술 프레임 (R = 입사 후 적용)"  `[P1/S]`
 **소비 스킬**: experience-bank, company-research, cover-letter, resume, ncs, career-history, mock-interview
 
-§6 뒤에 §7 을 덧붙인다(§1~§6 번호 유지 — 스킬이 §N 으로 인용). 내용: 적용 시점(자소서 '요'·입사 후 포부·기업 맞춤 서류·면접 "입사하면 어떻게 기여" 답변, 이력서 본문 제외) / 매핑 표(S=`problem`, T=`problem`+`role`, A=`action`, R=`change`+`numbers`, R=`apply_plans[].plan`+`basis`·`source`) / 일반 STARR·STAR-L 과 의도적으로 다르다는 문단(감상은 §2 대로 행동 변화로) / **R 작성 규칙 4가지** — ① 근거 1개 이상: 기업분석 캐시의 키워드 체크리스트·'이미 팀원처럼' 화두·공고 문구를 `basis` 에 원문 인용, 출처 파일명·기준일을 `source` 에, 근거 없으면 쓰지 않고 `/company_research` 안내 ② 형식 한 문장 "[기업의 과제·키워드]에 [카드의 행동·변화]를 적용해 [기대 변화]", §6 희망→실행 어조, 새 수치 창작 금지 ③ 회사명 치환 테스트(humanize-check §1 ①) ④ 감상형 마무리는 먼저 행동 변화로 고친 뒤에만 R 을 잇는다 / 근거 확보 질문 2개(각 1회) / Before→After 2행. 작성 후 `bin/gen-skill-docs.sh` 로 복제본 재생성.
+§6 뒤에 §7 을 덧붙인다(§1~§6 번호 유지 — 스킬이 §N 으로 인용). 내용: 적용 시점(자소서 '요'·입사 후 포부·기업 맞춤 서류·면접 "입사하면 어떻게 기여" 답변, 이력서 본문 제외) / 매핑 표(S=`problem`, T=`problem`+`role`, A=`action`, R=`change`+`numbers`, R=`apply_plans[].plan`+`basis`·`source`) / 일반 STARR·STAR-L 과 의도적으로 다르다는 문단(감상은 §2 대로 행동 변화로) / **R 작성 규칙 4가지** — ① 근거 1개 이상: 기업분석 캐시의 키워드 체크리스트·'이미 팀원처럼' 화두·공고 문구를 `basis` 에 원문 인용, 출처 파일명·기준일을 `source` 에, 근거 없으면 쓰지 않고 `/company_research` 안내 ② 형식 한 문장 "[기업의 과제·키워드]에 [카드의 행동·변화]를 적용해 [기대 변화]", §6 희망→실행 어조, 새 수치 창작 금지 ③ 회사명 치환 테스트(humanize-check §1 (a)) ④ 감상형 마무리는 먼저 행동 변화로 고친 뒤에만 R 을 잇는다 / 근거 확보 질문 2개(각 1회) / Before→After 2행. 작성 후 `bin/gen-skill-docs.sh` 로 복제본 재생성.
 
 **완료 판정:**
 - §7 이 존재하고 매핑 표·규칙 4가지·질문 2개·예시 2행이 있다

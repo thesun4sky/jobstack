@@ -149,11 +149,13 @@ has "apply 신규 표시" "(신규)" "$APPLY_OUT"
 has "apply_plans.company 저장" "company: 토스" "$(cat "$F")"
 has "apply_plans.basis 원문 저장" "핵심 키워드: 결제 안정성" "$(cat "$F")"
 has "apply 후 주석 보존" "# 사용자 메모 — update 이후에도 남아야 함" "$(cat "$F")"
+has "apply_plans.position 저장" "position: 백엔드" "$(cat "$F")"
 
 # 같은 회사(공백·대소문자 정규화 등치)는 교체 — 항목 수는 그대로, 새 plan 만 남는다
 "$E" apply "$ID1" --company " 토스" --plan "새 계획" --basis "b2" --source "s2" >/dev/null 2>&1
-COMPANY_LINES=$(grep -c 'company: ' "$F")
+COMPANY_LINES=$(grep -cE '^ {4}- company: ' "$F")
 [ "$COMPANY_LINES" -eq 1 ] && ok "같은 회사 재-apply 는 교체(항목 1건 유지)" || bad "같은 회사 재-apply 교체" "company 줄 수=$COMPANY_LINES"
+hasnt "재-apply 에서 --position 생략 시 이전 position 은 이월되지 않음(전체 교체)" "position: 백엔드" "$(cat "$F")"
 has "교체 후 새 plan 저장" "새 계획" "$(cat "$F")"
 hasnt "교체 후 이전 plan 제거" "p95 지연 원인 분석부터" "$(cat "$F")"
 REPL_OUT=$("$E" apply "$ID1" --company "토스" --plan "새 계획2" --basis "b3" --source "s3" 2>&1)
@@ -161,7 +163,7 @@ has "교체 시 (교체) 표시" "(교체)" "$REPL_OUT"
 
 # 다른 회사는 추가
 "$E" apply "$ID1" --company "네이버" --plan "n-plan" --basis "n-basis" --source "n-source" >/dev/null 2>&1
-COMPANY_LINES=$(grep -c 'company: ' "$F")
+COMPANY_LINES=$(grep -cE '^ {4}- company: ' "$F")
 [ "$COMPANY_LINES" -eq 2 ] && ok "다른 회사 apply 는 추가(항목 2건)" || bad "다른 회사 apply 추가" "company 줄 수=$COMPANY_LINES"
 
 # 근거·출처 누락은 거부(exit 1) + 파일 미변경
@@ -239,6 +241,10 @@ cat > "$BADFILE" <<'YAML'
       basis: "b"
       source: "s"
       created_at: "not-a-date"
+    - company: "네이버"
+      plan: "p3"
+      basis: "b3"
+      source: "s3"
 YAML
 BAD_OUT=$("$E" validate "$BADFILE" 2>&1); RC=$?
 [ $RC -eq 1 ] && ok "위반 파일 validate exit 1" || bad "위반 파일 validate exit 1" "rc=$RC"
@@ -250,6 +256,7 @@ has "validate: 필수 필드 누락 검출" "필수 필드 누락" "$BAD_OUT"
 has "validate: apply_plans basis 공백 검출" "apply_plans\[0\] basis 가 비어 있습니다" "$BAD_OUT"
 has "validate: apply_plans 회사 중복(정규화) 검출" "회사 중복" "$BAD_OUT"
 has "validate: apply_plans created_at 형식 오류 검출" "apply_plans\[1\] created_at 형식 오류" "$BAD_OUT"
+has "validate: apply_plans created_at 누락은 형식 오류와 구분해 검출" "apply_plans\[2\] created_at 가 비어 있습니다" "$BAD_OUT"
 
 # 최상위가 리스트가 아닌 파일
 TOPFILE="$WORK/top.yaml"

@@ -69,7 +69,7 @@
         "max_turns": 10
       },
       "grader": "deterministic",
-      "note": "STAR-R 의 R(입사 후 적용)을 기업분석 캐시 근거와 함께 `apply` 로 저장하는지 확인하는 게이트 케이스. 카드 id 는 KST 날짜에 묶이므로 프롬프트에 박지 않고 list 로 확인하게 한다. 저장 판정은 스크립트 stdout('적용 저장됨', must_output)과 apply 플래그 4개(must_call)로 하고, §7 규칙 Read 는 must_read 로 본다."
+      "note": "STAR-R 의 R(입사 후 적용)을 기업분석 캐시 근거와 함께 `apply` 로 저장하는지 확인하는 게이트 케이스. 카드 id 는 KST 날짜에 묶이므로 프롬프트에 박지 않고 list 로 확인하게 한다. 저장 판정은 스크립트 stdout('적용 저장됨', must_output — --company/--basis/--source 가 빠지면 나오지 않는다)으로 하고, must_call 은 세션 전체 Bash 명령 문자열에 apply 플래그 4개가 등장했는지만 본다(같은 호출 안의 동시성은 must_output 이 실질적으로 보증). §7 규칙 Read 는 must_read 로 본다."
     },
     {
       "id": "expbank-periodic-numberless-fallback",

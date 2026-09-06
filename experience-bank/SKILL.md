@@ -139,7 +139,7 @@ ls -t "$_JS_STATE"/company-cache/*.md 2>/dev/null | head -5
 
 ## Phase 4: 저장
 
-완성된 카드는 손으로 YAML에 append하거나 Edit로 고치지 않고 `"$_JS_BIN/jobstack-exp.mjs"` 로 저장합니다 — id 채번·수치 판정·스키마 검증을 스크립트가 결정적으로 수행합니다(같은 입력이면 같은 출력). 파일이 없으면 스크립트가 만듭니다. 필드 정의는 이 문서가 아니라 `${CLAUDE_SKILL_DIR}/references/experience-card-schema.md` 가 단일 소스이므로 Read 해서 확인하세요.
+완성된 카드는 손으로 YAML에 append하거나 Edit로 고치지 않고 `"$_JS_BIN/jobstack-exp.mjs"` 로 저장합니다 — id 채번·수치 판정·스키마 검증을 스크립트가 결정적으로 수행합니다(같은 입력이면 같은 출력). 파일이 없으면 스크립트가 만듭니다. 필드 정의는 이 문서가 아니라 `${CLAUDE_SKILL_DIR}/references/experience-card-schema.md` 가 단일 소스이므로 **`add` 를 호출하기 전에 반드시 Read** 해 필드·플래그 계약을 확인합니다 — 프롬프트에 6단계 정보가 모두 주어져 있어도 이 Read 를 건너뛰지 않습니다.
 
 **모드 A(신규)** — 카드 1장을 끝에 추가(append, 기존 카드는 보존):
 
