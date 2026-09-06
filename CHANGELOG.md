@@ -1,5 +1,33 @@
 # Changelog
 
+## [1.1.0] - 2026-09-06
+
+STAR-R 도입 — 경험 카드에 기업분석 근거와 함께 '입사 후 적용'(R)을 잇는다. 계획·실행 기록은
+`docs/plans/star-r-plan-2026-09.md`.
+
+### Added
+- **STAR-R 서술 프레임 (SR-01)** — `templates/experience-methods.md` §7: S·T·A·R 은 카드 필드에 매핑하고
+  두 번째 R 을 '입사 후 적용'으로 정의(일반 STARR·STAR-L 의 성찰·배운 점과 의도적으로 다름). 작성 규칙
+  4가지(근거 1개 이상·한 문장·회사명 치환 테스트·감상 뒤에 잇지 않기), 근거 확보 질문 2개, Before→After 예시.
+- **카드 필드 `apply_plans` + `jobstack-exp.mjs apply` (SR-02)** — 회사당 1건 `{company, position?, plan,
+  basis, source, created_at}` 를 선택 필드로 추가. `apply <id> --company --plan --basis --source [--position]`
+  는 정규화 회사명 등치로 교체·추가하고 근거·출처가 비면 저장하지 않는다. `list [--company C]` 필터·적용 열·
+  `입사 후 적용 K장` 푸터, `validate` 의 apply_plans 검사. `add`/`update` 는 그대로(기존 카드 호환).
+- **experience-bank 입사 후 적용 절 (SR-03)** — 기업분석 캐시가 있을 때만 1회 질문 → 요약 블록만 읽기 →
+  §7 초안 → 확인 후 `apply`. 모드 B 보강·뱅크 요약 열·다음 추천에 반영.
+- **company-research Phase 5.5 경험 카드 연결 (SR-04)** — 키워드 체크리스트·'이미 팀원처럼' 화두와 닿는
+  카드 3장 이하에 R 문장을 제안하고 확인 후 `apply`. 리포트 §5 에 "경험 카드 적용 문장" 항목.
+- **eval·테스트 (SR-07)** — `expbank-gate-star-r-apply` 게이트 케이스(캐시·카드 setup, apply 4플래그
+  must_call), `test/test-exp.sh` 24단언 추가.
+
+### Changed
+- **문서·면접 스킬 소비 (SR-05·SR-06)** — cover-letter 는 '요'에 지원 기업 `apply_plans` 우선(`list --company`),
+  구조 가이드·구조화 모드·배운 점 규칙에 §7 연결; resume Phase 5 는 STAR-R 중 S·T·A·R 까지만 이력서 본문에;
+  ncs Phase 5 는 기관 분석 근거가 있을 때만 R; career-history 는 일치 카드를 배치 우선순위로; mock-interview 는
+  `apply_plans` 를 "입사하면 어떻게 쓰겠나" 평가 근거로.
+- **카드 스키마 문서** — 소비자 목록에 career-history·scout-profile 추가, 쓰기 경계(experience-bank·
+  company-research 만 `apply`) 명시.
+
 ## [1.0.0] - 2026-09-03
 
 검토 보고서 P2 항목(U-14~U-16, U-18~U-20, U-22, U-23) — 기능 확장. 실행 기록은
