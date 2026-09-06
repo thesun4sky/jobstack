@@ -10,11 +10,13 @@
  *   jobstack-exp add --title T --problem P --role R --action A --change C
  *                     [--numbers N] [--tags a,b] [--json '{...}']
  *                     [--ai-usage-tool X --ai-usage-task Y --ai-usage-effect Z]
- *   jobstack-exp list [--json]
+ *   jobstack-exp list [--json] [--company C]
  *   jobstack-exp show <id>
  *   jobstack-exp update <id> [--title T] [--problem P] [--role R] [--action A]
  *                     [--change C] [--numbers N] [--tags a,b]
  *                     [--ai-usage-tool X] [--ai-usage-task Y] [--ai-usage-effect Z]
+ *   jobstack-exp apply <id> --company C --plan P --basis B --source S [--position X]
+ *                     (STAR-R 의 R = 입사 후 적용. 회사당 1건 upsert — 근거·출처가 비면 거부)
  *   jobstack-exp validate [file]
  *
  * 환경: JOBSTACK_STATE_DIR (기본 ~/.jobstack) → profiles/experiences.yaml
@@ -45,6 +47,16 @@ const REQUIRED_FIELDS = ['id', 'title', 'problem', 'role', 'action', 'change', '
 const ID_RE = /^exp-\d{8}-\d{2}$/;
 const ISO_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/;
 const UPDATE_SIMPLE_FIELDS = ['title', 'problem', 'role', 'action', 'change', 'numbers'];
+// apply_plans (STAR-R 의 R = 입사 후 적용) — 회사당 1건, 근거(basis)·출처(source) 없이는 저장하지 않는다
+const APPLY_REQUIRED = ['company', 'plan', 'basis', 'source'];
+const normCompany = (s) => String(s ?? '').replace(/[\s-]+/g, '').toLowerCase();
+const applyPlansOf = (card) => (Array.isArray(card?.apply_plans) ? card.apply_plans : []);
+// 회사명 느슨 매칭(공백·하이픈 무시, 대소문자 무시, 부분일치) — defense-map 의 회사 매칭과 같은 규칙
+function matchedPlan(card, query) {
+  const key = normCompany(query);
+  if (!key) return null;
+  return applyPlansOf(card).find((p) => normCompany(p?.company).includes(key)) ?? null;
+}
 
 // ── KST/UTC 날짜 헬퍼 (가드레일 §4: 날짜가 실리는 출력은 항상 기준일을 KST로 확정) ──────
 function kstNow() {
@@ -73,11 +85,13 @@ function usage() {
   jobstack-exp add --title T --problem P --role R --action A --change C
                     [--numbers N] [--tags a,b] [--json '{...}']
                     [--ai-usage-tool X --ai-usage-task Y --ai-usage-effect Z]
-  jobstack-exp list [--json]
+  jobstack-exp list [--json] [--company C]
   jobstack-exp show <id>
   jobstack-exp update <id> [--title T] [--problem P] [--role R] [--action A]
                     [--change C] [--numbers N] [--tags a,b]
                     [--ai-usage-tool X] [--ai-usage-task Y] [--ai-usage-effect Z]
+  jobstack-exp apply <id> --company C --plan P --basis B --source S [--position X]
+                    (입사 후 적용 — 회사당 1건 upsert, --basis/--source 가 비면 저장하지 않음)
   jobstack-exp validate [file]
 
 환경: JOBSTACK_STATE_DIR (기본 ~/.jobstack) → profiles/experiences.yaml
@@ -247,20 +261,27 @@ function verdictOf(card) {
 }
 
 function cmdList(flags) {
-  const { cards } = loadExisting();
+  const { cards: all } = loadExisting();
   const today = kstDateDash();
+  const filter = typeof flags.company === 'string' && flags.company.trim() ? flags.company.trim() : null;
+  const cards = filter ? all.filter((c) => matchedPlan(c, filter) !== null) : all;
   const verdicts = cards.map(verdictOf);
   const needsNumbers = verdicts.filter((v) => v !== 'O').length;
+  const withPlans = cards.filter((c) => applyPlansOf(c).length > 0).length;
 
   if (flags.json) {
     const out = {
       today_kst: today,
       total: cards.length,
       needs_numbers: needsNumbers,
+      with_apply_plans: withPlans,
+      ...(filter ? { company_filter: filter } : {}),
       cards: cards.map((c, i) => ({
         ...c,
         numbers_verdict: verdicts[i],
         ai_usage_present: !!c?.ai_usage,
+        apply_plans_count: applyPlansOf(c).length,
+        ...(filter ? { matched_apply_plan: matchedPlan(c, filter) } : {}),
       })),
     };
     process.stdout.write(JSON.stringify(out, null, 2) + '\n');
@@ -268,19 +289,21 @@ function cmdList(flags) {
   }
 
   const bar = '━'.repeat(56);
-  console.log(`경험뱅크 요약  (기준일: ${today})`);
+  console.log(`경험뱅크 요약  (기준일: ${today}${filter ? ` · 회사 필터: ${filter}` : ''})`);
   console.log(bar);
-  console.log(`${'id'.padEnd(16)} ${'제목'.padEnd(24)} 수치   AI   직무 태그`);
+  console.log(`${'id'.padEnd(16)} ${'제목'.padEnd(24)} 수치   AI   적용  직무 태그`);
   cards.forEach((c, i) => {
     const id = String(c?.id ?? '').padEnd(16);
     const title = String(c?.title ?? '').padEnd(24);
     const verdict = verdicts[i].padEnd(4);
     const ai = (c?.ai_usage ? 'O' : '-').padEnd(3);
+    const plans = applyPlansOf(c).length;
+    const apply = (plans ? String(plans) : '-').padEnd(4);
     const tags = Array.isArray(c?.job_link_tags) ? c.job_link_tags.join(', ') : '';
-    console.log(`${id} ${title} ${verdict}   ${ai} ${tags}`);
+    console.log(`${id} ${title} ${verdict}   ${ai} ${apply} ${tags}`);
   });
   console.log(bar);
-  console.log(`카드 ${cards.length}장 · 수치 보강 필요 ${needsNumbers}장`);
+  console.log(`카드 ${cards.length}장 · 수치 보강 필요 ${needsNumbers}장 · 입사 후 적용 ${withPlans}장`);
 }
 
 // ── show ────────────────────────────────────────────────────────────────────
@@ -359,6 +382,56 @@ function cmdUpdate(positionals, flags) {
   process.stdout.write(`수정됨: ${id}\n경로: ${EXP_FILE}\n`);
 }
 
+// ── apply — 입사 후 적용(STAR-R 의 R) 항목을 회사당 1건 upsert ──────────────────────
+function cmdApply(positionals, flags) {
+  const id = positionals[0];
+  if (!id) die('id 를 지정하세요 (jobstack-exp apply <id> --company C --plan P --basis B --source S [--position X])');
+  const missing = APPLY_REQUIRED
+    .filter((k) => typeof flags[k] !== 'string' || !flags[k].trim())
+    .map((k) => `--${k}`);
+  if (missing.length) {
+    die(`필수 인자 누락: ${missing.join(', ')} (근거 --basis·출처 --source 없이는 입사 후 적용을 저장하지 않습니다)`);
+  }
+
+  const raw = readRaw(EXP_FILE);
+  if (raw === null || raw.trim() === '') die(`${id} 카드를 찾을 수 없습니다 (경험뱅크 파일 없음)`);
+  let doc;
+  try {
+    doc = parseDocument(raw);
+  } catch (e) {
+    die(`${EXP_FILE} YAML 파싱 실패 — ${e.message}`);
+  }
+  const seq = doc.contents;
+  if (!YAML.isSeq(seq)) die(`${EXP_FILE}: 최상위가 리스트가 아닙니다`);
+  const item = seq.items.find((it) => YAML.isMap(it) && it.get('id') === id);
+  if (!item) die(`${id} 카드를 찾을 수 없습니다`);
+
+  // 기존 apply_plans 시퀀스를 그대로 쓰고(주석 보존), 없거나 null 이면 새 블록 시퀀스를 만든다
+  let plans = item.get('apply_plans', true);
+  if (!YAML.isSeq(plans)) {
+    plans = doc.createNode([]);
+    item.set('apply_plans', plans);
+  }
+  if (plans.flow) plans.flow = false;
+
+  const entry = { company: flags.company.trim() };
+  if (typeof flags.position === 'string' && flags.position.trim()) entry.position = flags.position.trim();
+  entry.plan = flags.plan.trim();
+  entry.basis = flags.basis.trim();
+  entry.source = flags.source.trim();
+  entry.created_at = nowUtcIsoZ();
+
+  // 같은 회사(정규화 등치)는 교체, 아니면 추가 — 회사당 1건 계약
+  const key = normCompany(entry.company);
+  const idx = plans.items.findIndex((p) => YAML.isMap(p) && normCompany(p.get('company')) === key);
+  const node = doc.createNode(entry);
+  if (idx >= 0) plans.items[idx] = node;
+  else plans.add(node);
+
+  atomicWrite(EXP_FILE, doc.toString());
+  process.stdout.write(`적용 저장됨: ${id} · ${entry.company} (${idx >= 0 ? '교체' : '신규'})\n경로: ${EXP_FILE}\n`);
+}
+
 // ── validate ────────────────────────────────────────────────────────────────
 function cmdValidate(positionals) {
   const fileArg = positionals[0];
@@ -421,6 +494,35 @@ function cmdValidate(positionals) {
         && typeof au.tool === 'string' && typeof au.task === 'string' && typeof au.effect === 'string';
       if (!ok) errors.push(`${label}: ai_usage 는 null 또는 {tool, task, effect} 문자열 객체여야 합니다`);
     }
+    if (card.apply_plans !== undefined && card.apply_plans !== null) {
+      const plans = card.apply_plans;
+      if (!Array.isArray(plans)) {
+        errors.push(`${label}: apply_plans 는 배열이어야 합니다`);
+      } else {
+        const seenCompanies = new Set();
+        plans.forEach((p, j) => {
+          const tag = `apply_plans[${j}]`;
+          if (p === null || typeof p !== 'object' || Array.isArray(p)) {
+            errors.push(`${label}: ${tag} 항목이 객체가 아닙니다`);
+            return;
+          }
+          for (const k of APPLY_REQUIRED) {
+            if (typeof p[k] !== 'string' || !p[k].trim()) errors.push(`${label}: ${tag} ${k} 가 비어 있습니다`);
+          }
+          if (p.position !== undefined && p.position !== null && typeof p.position !== 'string') {
+            errors.push(`${label}: ${tag} position 은 문자열이어야 합니다`);
+          }
+          if (typeof p.created_at !== 'string' || !ISO_RE.test(p.created_at) || Number.isNaN(Date.parse(p.created_at))) {
+            errors.push(`${label}: ${tag} created_at 형식 오류 (ISO 8601 아님)`);
+          }
+          const key = normCompany(p.company);
+          if (key) {
+            if (seenCompanies.has(key)) errors.push(`${label}: ${tag} 회사 중복 (${p.company})`);
+            seenCompanies.add(key);
+          }
+        });
+      }
+    }
   });
 
   if (errors.length) {
@@ -456,6 +558,9 @@ switch (cmd) {
     break;
   case 'update':
     withLock(EXP_FILE, () => cmdUpdate(positionals, flags)); // 동시 실행 lost update 방지(PR #17 리뷰 반영)
+    break;
+  case 'apply':
+    withLock(EXP_FILE, () => cmdApply(positionals, flags)); // add/update 와 같은 잠금 경로
     break;
   case 'validate':
     process.exit(cmdValidate(positionals));

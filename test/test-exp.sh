@@ -140,6 +140,60 @@ OUT_UPD_MISS=$("$E" update exp-nonexistent --title x 2>&1); RC=$?
 OUT_UPD_NOFIELD=$("$E" update "$ID1" 2>&1); RC=$?
 [ $RC -eq 1 ] && has "update 필드 미지정 오류(exit 1)" "최소 1개" "$OUT_UPD_NOFIELD" || bad "update 필드미지정 exit 1" "rc=$RC"
 
+# ── apply — 입사 후 적용(STAR-R 의 R) 회사당 1건 upsert ─────────────────────
+APPLY_OUT=$("$E" apply "$ID1" --company "토스" --position "백엔드" \
+  --plan "결제 응답 지연 과제에 Redis 캐싱 설계 경험을 적용해 p95 지연 원인 분석부터 맡는다" \
+  --basis "핵심 키워드: 결제 안정성" --source "company-cache/토스-2026-09-06.md" 2>&1); RC=$?
+[ $RC -eq 0 ] && has "apply 정상 종료 + 저장 메시지" "적용 저장됨: $ID1" "$APPLY_OUT" || bad "apply 정상 종료" "rc=$RC out=$APPLY_OUT"
+has "apply 신규 표시" "(신규)" "$APPLY_OUT"
+has "apply_plans.company 저장" "company: 토스" "$(cat "$F")"
+has "apply_plans.basis 원문 저장" "핵심 키워드: 결제 안정성" "$(cat "$F")"
+has "apply 후 주석 보존" "# 사용자 메모 — update 이후에도 남아야 함" "$(cat "$F")"
+
+# 같은 회사(공백·대소문자 정규화 등치)는 교체 — 항목 수는 그대로, 새 plan 만 남는다
+"$E" apply "$ID1" --company " 토스" --plan "새 계획" --basis "b2" --source "s2" >/dev/null 2>&1
+COMPANY_LINES=$(grep -c 'company: ' "$F")
+[ "$COMPANY_LINES" -eq 1 ] && ok "같은 회사 재-apply 는 교체(항목 1건 유지)" || bad "같은 회사 재-apply 교체" "company 줄 수=$COMPANY_LINES"
+has "교체 후 새 plan 저장" "새 계획" "$(cat "$F")"
+hasnt "교체 후 이전 plan 제거" "p95 지연 원인 분석부터" "$(cat "$F")"
+REPL_OUT=$("$E" apply "$ID1" --company "토스" --plan "새 계획2" --basis "b3" --source "s3" 2>&1)
+has "교체 시 (교체) 표시" "(교체)" "$REPL_OUT"
+
+# 다른 회사는 추가
+"$E" apply "$ID1" --company "네이버" --plan "n-plan" --basis "n-basis" --source "n-source" >/dev/null 2>&1
+COMPANY_LINES=$(grep -c 'company: ' "$F")
+[ "$COMPANY_LINES" -eq 2 ] && ok "다른 회사 apply 는 추가(항목 2건)" || bad "다른 회사 apply 추가" "company 줄 수=$COMPANY_LINES"
+
+# 근거·출처 누락은 거부(exit 1) + 파일 미변경
+BEFORE_APPLY=$(cat "$F")
+MISS_OUT=$("$E" apply "$ID1" --company "카카오" --plan "x" 2>&1); RC=$?
+[ $RC -eq 1 ] && has "apply --basis/--source 누락 거부(exit 1)" "basis" "$MISS_OUT" || bad "apply 누락 거부 exit 1" "rc=$RC out=$MISS_OUT"
+[ "$(cat "$F")" = "$BEFORE_APPLY" ] && ok "거부된 apply 는 파일 미변경" || bad "거부된 apply 파일 미변경" "파일이 변경됨"
+BLANK_OUT=$("$E" apply "$ID1" --company "카카오" --plan "x" --basis "   " --source "s" 2>&1); RC=$?
+[ $RC -eq 1 ] && ok "apply --basis 공백만은 누락 취급(exit 1)" || bad "apply basis 공백 거부" "rc=$RC out=$BLANK_OUT"
+NOID_OUT=$("$E" apply exp-nonexistent --company c --plan p --basis b --source s 2>&1); RC=$?
+[ $RC -eq 1 ] && has "apply 없는 id 오류(exit 1)" "찾을 수 없습니다" "$NOID_OUT" || bad "apply 없는 id exit 1" "rc=$RC"
+
+# list — 적용 열·푸터·회사 필터
+LIST_APPLY=$("$E" list 2>&1)
+has "list 헤더에 적용 열" "적용" "$LIST_APPLY"
+ROW1=$(grep "$ID1" <<<"$LIST_APPLY")
+echo "$ROW1" | grep -qE 'O +- +2' && ok "list 적용 열에 항목 수(2)" || bad "list 적용 열 항목 수" "$ROW1"
+has "list 푸터 입사 후 적용 집계" "입사 후 적용 1장" "$LIST_APPLY"
+FILTERED=$("$E" list --company "토 스" 2>&1)
+has "list --company 정규화 매칭(공백 무시)" "$ID1" "$FILTERED"
+hasnt "list --company 는 항목 없는 카드 제외" "$ID2" "$FILTERED"
+has "list --company 필터 표시" "회사 필터: 토 스" "$FILTERED"
+FILTER_JSON=$("$E" list --json --company 네이버 2>&1)
+CHECK2=$(node -e "
+const d = JSON.parse(require('fs').readFileSync(0,'utf8'));
+const ok = d.company_filter === '네이버' && d.cards.length === 1 && d.cards[0].apply_plans_count === 2
+  && d.cards[0].matched_apply_plan && d.cards[0].matched_apply_plan.company === '네이버' && d.with_apply_plans === 1;
+console.log(ok ? 'OK' : 'MISMATCH:' + JSON.stringify(d));
+" <<<"$FILTER_JSON")
+[ "$CHECK2" = "OK" ] && ok "list --json --company 구조(apply_plans_count·matched_apply_plan)" || bad "list --json --company 구조" "$CHECK2"
+hasnt "list 표에는 json 키가 새지 않음" "apply_plans_count" "$LIST_APPLY"
+
 # ── validate — 스키마 위반 파일 ───────────────────────────────────────────────
 BADFILE="$WORK/bad.yaml"
 cat > "$BADFILE" <<'YAML'
@@ -167,6 +221,24 @@ cat > "$BADFILE" <<'YAML'
   created_at: "2026-07-01T00:00:00Z"
 - id: exp-20260701-02
   title: missing-fields
+- id: exp-20260701-03
+  title: bad-apply
+  problem: p
+  role: r
+  action: a
+  change: c
+  created_at: "2026-07-01T00:00:00Z"
+  apply_plans:
+    - company: "토스"
+      plan: "p"
+      basis: ""
+      source: "s"
+      created_at: "2026-07-01T00:00:00Z"
+    - company: "토 스"
+      plan: "p2"
+      basis: "b"
+      source: "s"
+      created_at: "not-a-date"
 YAML
 BAD_OUT=$("$E" validate "$BADFILE" 2>&1); RC=$?
 [ $RC -eq 1 ] && ok "위반 파일 validate exit 1" || bad "위반 파일 validate exit 1" "rc=$RC"
@@ -175,6 +247,9 @@ has "validate: created_at 형식 오류 검출" "created_at 형식 오류" "$BAD
 has "validate: id 중복 검출" "id 중복" "$BAD_OUT"
 has "validate: ai_usage 불완전 객체 검출" "ai_usage" "$BAD_OUT"
 has "validate: 필수 필드 누락 검출" "필수 필드 누락" "$BAD_OUT"
+has "validate: apply_plans basis 공백 검출" "apply_plans\[0\] basis 가 비어 있습니다" "$BAD_OUT"
+has "validate: apply_plans 회사 중복(정규화) 검출" "회사 중복" "$BAD_OUT"
+has "validate: apply_plans created_at 형식 오류 검출" "apply_plans\[1\] created_at 형식 오류" "$BAD_OUT"
 
 # 최상위가 리스트가 아닌 파일
 TOPFILE="$WORK/top.yaml"
