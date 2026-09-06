@@ -1,5 +1,6 @@
 # STAR·정량화 변환 예시
 resume 스킬 SKILL.md Phase 5(STAR 적용)·Phase 6(정량화 코칭)에서 Read 한다.
+STAR-R 의 두 번째 R(입사 후 적용)은 이력서 본문 대상이 아니다 — 자소서·면접에서 카드 `apply_plans` 로 쓴다(experience-methods.md §7).
 
 #### Before→After 변환 예시
 
