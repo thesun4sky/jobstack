@@ -60,6 +60,9 @@
   의 읽기-수정-쓰기를 파일 잠금으로 감싸 동시 add 유실 방지. `fetch-jobs.mjs`·cron 의 limit 을 1~100 정수로
   검증. 테스트를 실경로·launchd 기대값으로 분리하고 CI 에 macOS smoke job 추가. 후속 리뷰로 README 플러그인
   예시 명령을 `/jobstack:job-search` 로 정정(플러그인 네임스페이스는 하이픈, 로컬 alias·봇은 언더스코어).
+- 머지 전 스킬 스모크(2026-09-06, `docs/E2E-TEST-REPORT.md`): company-research·salary·strategy 의 병렬 리서치 문구에
+  Agent 호출을 한 응답에 함께 발행하고 결과를 기다리도록 명시 — 헤드리스에서 백그라운드 서브에이전트가 결과 수신 전에
+  턴을 끝내는 것을 관찰.
 
 ## [0.5.0] - 2026-09-03
 

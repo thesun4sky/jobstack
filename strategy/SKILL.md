@@ -113,7 +113,7 @@ updated_at: 2026-03-29
 
 WebSearch로 사용자의 목표 직무/산업 현황을 조사합니다.
 
-> **병렬 리서치**: Agent 도구를 쓸 수 있으면 직무 수요·산업 동향·전형 방식·요구 역량 조사를 `researcher` 서브에이전트(저장소 `agents/researcher.md`)에 항목별로 맡겨 병렬로 모으고, `items[].url`·`date`가 붙은 사실만 합성합니다. `found: false`·`blocked: true`는 "(출처 미확보)"로, `partial: true`는 "(일부 확인)"으로 남기고, Agent 도구가 없으면 WebSearch 순차 조사로 진행합니다.
+> **병렬 리서치**: Agent 도구를 쓸 수 있으면 직무 수요·산업 동향·전형 방식·요구 역량 조사를 `researcher` 서브에이전트(저장소 `agents/researcher.md`)에 항목별로 맡겨 병렬로 모으고, `items[].url`·`date`가 붙은 사실만 합성합니다. Agent 호출은 **한 응답에 소스 수만큼 함께 발행하고 결과를 기다리는 방식**(`run_in_background` 끄기)으로 실행합니다 — 하나씩 부르면 순차 실행이 되고, 백그라운드로 띄우면 헤드리스 실행에서 결과가 오기 전에 턴이 끝납니다. `found: false`·`blocked: true`는 "(출처 미확보)"로, `partial: true`는 "(일부 확인)"으로 남기고, Agent 도구가 없으면 WebSearch 순차 조사로 진행합니다.
 
 **검색 항목:** (연도는 실행 시점 KST 기준 현재 연도로 동적 치환, 하드코딩 금지)
 - "[직무명] 채용 동향 [현재 연도]"
