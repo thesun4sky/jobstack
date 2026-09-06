@@ -86,7 +86,7 @@ apply_plans:
 | 명령 | 기능 |
 |---|---|
 | `add --title T --problem P --role R --action A --change C [--numbers N] [--tags a,b] [--ai-usage-tool X --ai-usage-task Y --ai-usage-effect Z] [--json '{...}']` | 카드 1장을 파일 끝에 append — 기존 카드·주석 보존, append 후 전체 재파싱에 실패하면 원본을 건드리지 않고 종료 |
-| `list [--json] [--company C]` | id·제목·수치 판정(O/△/X)·AI 열(`ai_usage` 존재 시 O)·적용 열(`apply_plans` 항목 수, 없으면 `-`)·직무 태그 요약표 + `카드 N장 · 수치 보강 필요 M장 · 입사 후 적용 K장`. `--company C`는 정규화 부분일치로 그 회사의 `apply_plans`가 있는 카드만 보여 주고(값이 비면 exit 1 — 무필터로 폴백하지 않음), `--json`에는 `apply_plans_count`·`with_apply_plans`, 필터 시 `company_filter`·`matched_apply_plan`이 붙는다 |
+| `list [--json] [--company C]` | id·제목·수치 판정(O/△/X)·AI 열(`ai_usage` 존재 시 O)·적용 열(`apply_plans` 항목 수, 없으면 `-`)·직무 태그 요약표 + `카드 N장 · 수치 보강 필요 M장 · 입사 후 적용 K장`. `--company C`는 정규화 부분일치로 그 회사의 `apply_plans`가 있는 카드만 보여 주고(값이 비면 exit 1 — 무필터로 폴백하지 않음), `--json`에는 `apply_plans_count`·`with_apply_plans`, 필터 시 `company_filter`·`ambiguous_company_matches`와 카드마다 `matched_apply_plan`(정규화 등치 1건 또는 부분일치가 1건일 때만, 아니면 null)·`matched_apply_plans`(부분일치 전체)·`ambiguous_company_match`가 붙는다. 한 카드에 계열사 항목이 여럿이면(토스페이먼츠·토스증권 ↔ `토스`) 단수 키를 비우고 표 푸터에 모호 카드 수를 안내하므로 정확한 회사명으로 다시 조회한다 |
 | `show <id>` | 카드 1장을 YAML로 출력 |
 | `update <id> [--title T] [--problem P] [--role R] [--action A] [--change C] [--numbers N] [--tags a,b] [--ai-usage-tool X] [--ai-usage-task Y] [--ai-usage-effect Z]` | 지정한 필드만 in-place 수정 (주석 보존) |
 | `apply <id> --company C --plan P --basis B --source S [--position X]` | 입사 후 적용(STAR-R 의 R) 항목을 회사당 1건 upsert — 같은 회사(정규화 등치)는 교체, 다른 회사는 추가. `--basis`·`--source`가 비면 exit 1, 파일 미변경. `--position`을 값 없이 주면 exit 1. 교체해도 항목에 붙은 주석은 남는다. 주석 보존·원자적 쓰기·잠금은 `update`와 동일 |

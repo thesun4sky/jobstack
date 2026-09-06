@@ -10,7 +10,7 @@
 - YAML 프론트매터: `name`, `description`, `allowed-tools`, `argument-hint`, `when_to_use`, `model`, `effort` (Claude Code 표준) + `metadata:` 아래 `preamble-tier`, `version`, `benefits-from` (jobstack 메타). SKILL.md 는 300줄 이하(`test/test-skill-size.sh`) — 흐름·게이트·판단 규칙만 두고 정적 자료는 `references/` 로 옮겨 필요한 시점에 Read 한다(진행적 공개)
 - `allowed-tools` 의 서브에이전트 도구는 `Agent` 와 `Task` 를 함께 적는다(공식 문서 표기는 `Agent`, 2.1.259 헤드리스 init 이벤트는 `Task` 로 노출). 도구명 오타는 `test/test-skill-size.sh --frontmatter` 가 잡는다
 - 참조 규칙: `${CLAUDE_SKILL_DIR}` 뒤에는 스킬 디렉토리 안쪽 경로만 온다(`references/…`, `scripts/…`). `..` 은 심링크 설치에서 Read 가 실패하므로 금지. bin 스크립트는 `$_JS_BIN` 으로 부른다
-- Bash 스니펫은 첫 줄에 `. "${JOBSTACK_STATE_DIR:-$HOME/.jobstack}/env.sh"` 를 두어 `$_JS_STATE`·`$_JS_BIN`·`$TODAY` 를 불러온다
+- Bash 스니펫은 첫 줄에 `. "${JOBSTACK_STATE_DIR:-$HOME/.jobstack}/env.sh"` 를 두어 `$_JS_STATE`·`$_JS_BIN`·`$TODAY` 를 불러온다. env.sh 는 `JOBSTACK_STATE_DIR` 도 export 하므로 bin 스크립트가 같은 상태 디렉토리를 쓴다
 - 봇(jobclaw) 전용 출력 규칙(`[IMAGE_PROMPT:]`, `[CHOICES]`, `[OUTPUT_FILE:]`)은 SKILL.md 본문이 아니라 `templates/bot-protocol.md` + `templates/bot/{skill}.md` 에 둔다
 - 공유 템플릿: `templates/` (guardrails, voice, ask-user-question, completion-status, experience-methods, humanize-check, three-docs-guide, bot-protocol)
 - 상태 관리: `~/.jobstack/` (YAML/JSONL/Markdown) — 경로는 항상 `$_JS_STATE` 또는 `JOBSTACK_STATE_DIR` 로

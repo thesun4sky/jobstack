@@ -18,7 +18,7 @@ STAR-R 도입 — 경험 카드에 기업분석 근거와 함께 '입사 후 적
 - **company-research Phase 5.5 경험 카드 연결 (SR-04)** — 키워드 체크리스트·'이미 팀원처럼' 화두와 닿는
   카드 3장 이하에 R 문장을 제안하고 확인 후 `apply`. 리포트 §5 에 "경험 카드 적용 문장" 항목.
 - **eval·테스트 (SR-07)** — `expbank-gate-star-r-apply` 게이트 케이스(캐시·카드 setup, apply 4플래그
-  must_call), `test/test-exp.sh` 단언 67 → 131(1차 리뷰 28·2차 리뷰 36 추가).
+  must_call), `test/test-exp.sh` 단언 67 → 150(1차 리뷰 28·2차 리뷰 36·PR 리뷰 19 추가).
 
 ### Changed
 - **문서·면접 스킬 소비 (SR-05·SR-06)** — cover-letter 는 '요'에 지원 기업 `apply_plans` 우선(`list --company`),
@@ -47,6 +47,21 @@ STAR-R 도입 — 경험 카드에 기업분석 근거와 함께 '입사 후 적
 - guardrails §7 — 셸 펜스 인자에 공고·기업 페이지 원문을 넣을 때의 따옴표 규칙(`jobstack-exp add/update/apply`·tracker 공통).
 - test-exp 36단언 추가(95 → 131): 적용 열 컬럼 앵커링, 무필터 `--json` 스키마, 값 없는 플래그 거부, 유니코드 정규화,
   `apply_plans: []`/`null` 승격, 다른 카드 보존, 항목 뒤 주석 보존, validate 픽스처, 동시 apply 20건(잠금).
+
+### Fixed — PR #18 오너 리뷰 반영
+- **env.sh 가 `JOBSTACK_STATE_DIR` 를 export** — 스킬 스니펫은 env.sh 만 source 하는데 bin 스크립트(Node·Python)는
+  `JOBSTACK_STATE_DIR` 만 보므로, 대체 상태 디렉토리로 프리앰블을 돌린 뒤 `jobstack-exp.mjs` 가 `~/.jobstack` 에 기록되던
+  문제. 프리앰블 안내문·test-preambles 의 env.sh 검사·test-exp 계약 테스트 추가.
+- **validate 필수 필드 타입** — 숫자 `id`·`title`·`created_at` 처럼 문자열이 아닌 값을 통과시키던 문제(문자열 id 로 찾는
+  show/update/apply 와 불일치). `필드는 문자열이어야 합니다` 로 검출.
+- **잠금 회수 시 소유자 확인** — 오래된 잠금(30초)을 소유 프로세스 생존 여부와 무관하게 지우던 문제. 잠금 파일에
+  `{pid, started_at}` 를 적고 살아 있는 소유자의 잠금은 훔치지 않으며, 대기 시간 초과는 스택 트레이스 대신 안내 문구로
+  exit 1(`JOBSTACK_LOCK_TIMEOUT_MS` 로 조정). exp·defense-map 공통.
+- **`list --company` 부분일치 모호성** — 한 카드에 계열사 항목(토스페이먼츠·토스증권)이 여럿일 때 첫 항목만
+  `matched_apply_plan` 으로 주던 문제. 정확 일치(또는 부분일치 1건)일 때만 단수 키를 주고 `matched_apply_plans`·
+  `ambiguous_company_match`·상위 `ambiguous_company_matches` 와 표 푸터 안내를 추가.
+- three-docs-guide 의 "자소서=선택 이유와 배움" 을 "행동 변화·입사 후 적용" 으로(일반 STARR/STAR-L 회귀 방지),
+  NCS Phase 4 에 기관명 확정 시 `list --company <기관명>` 우선 확인 한 줄.
 
 ## [1.0.0] - 2026-09-03
 

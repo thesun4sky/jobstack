@@ -79,8 +79,9 @@ for s in $SKILLS; do
     [ -d "$STATE/$d" ] || errors+=("missing dir: $d")
   done
   if [ -f "$STATE/env.sh" ]; then
-    ENV_CHECK=$(bash -c ". '$STATE/env.sh' && echo \"\$_JS_STATE|\$_JS_BIN|\$TODAY|\$JOBSTACK_RUNTIME\"" 2>&1)
-    [ "$ENV_CHECK" = "$STATE|$REPO/bin|$(TZ=Asia/Seoul date +%Y-%m-%d)|cli" ] || errors+=("env.sh values wrong: $ENV_CHECK")
+    # JOBSTACK_STATE_DIR 는 export 되어야 한다 — bin 스크립트(Node·Python)가 이 값만 보므로(PR #18 리뷰)
+    ENV_CHECK=$(env -u JOBSTACK_STATE_DIR bash -c ". '$STATE/env.sh' && echo \"\$_JS_STATE|\$_JS_BIN|\$TODAY|\$JOBSTACK_RUNTIME|\$JOBSTACK_STATE_DIR|\$(printenv JOBSTACK_STATE_DIR)\"" 2>&1)
+    [ "$ENV_CHECK" = "$STATE|$REPO/bin|$(TZ=Asia/Seoul date +%Y-%m-%d)|cli|$STATE|$STATE" ] || errors+=("env.sh values wrong: $ENV_CHECK")
   else
     errors+=("env.sh not written")
   fi

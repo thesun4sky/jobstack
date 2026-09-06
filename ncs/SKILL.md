@@ -106,7 +106,7 @@ Phase 3에서는 사용자 자기신고 기반 **잠정 평가**만 합니다. P
 
 ### Phase 4: 경험→역량 변환 매트릭스
 
-**경험 카드 우선 사용**: 실행 컨텍스트의 `EXPERIENCES_EXISTS=true`이면 `$_JS_STATE/profiles/experiences.yaml`을 직접 Read하지 않고 `"$_JS_BIN/jobstack-exp.mjs" list`로 카드 목록을 확인한 뒤 `"$_JS_BIN/jobstack-exp.mjs" show <id>`로 매트릭스에 쓸 카드를 열어 경험 열을 채우고, 부족한 소재만 사용자에게 질문합니다. 카드의 문제·역할·행동·결과 4분리와 수치를 능력단위 수행 근거로 그대로 씁니다.
+**경험 카드 우선 사용**: 실행 컨텍스트의 `EXPERIENCES_EXISTS=true`이면 `$_JS_STATE/profiles/experiences.yaml`을 직접 Read하지 않고 `"$_JS_BIN/jobstack-exp.mjs" list`로 카드 목록을 확인한 뒤 `"$_JS_BIN/jobstack-exp.mjs" show <id>`로 매트릭스에 쓸 카드를 열어 경험 열을 채우고, 부족한 소재만 사용자에게 질문합니다. 기관명이 정해졌으면 먼저 `"$_JS_BIN/jobstack-exp.mjs" list --company <기관명>` 으로 그 기관의 `apply_plans`(입사 후 적용)가 붙은 카드를 확인한 뒤 `list` 전체를 봅니다 — 필터 결과가 0장이어도 무필터 카드는 그대로 씁니다. 카드의 문제·역할·행동·결과 4분리와 수치를 능력단위 수행 근거로 그대로 씁니다.
 
 사용자의 경험을 NCS 역량 단위로 변환합니다.
 

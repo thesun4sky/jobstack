@@ -375,6 +375,13 @@ cat > "$BADFILE" <<'YAML'
       basis: "b"
       source: "s"
       created_at: "2026-07-01T00:00:00Z"
+- id: 123
+  title: 123
+  problem: p
+  role: r
+  action: a
+  change: c
+  created_at: 123
 YAML
 BAD_OUT=$("$E" validate "$BADFILE" 2>&1); RC=$?
 [ $RC -eq 1 ] && ok "위반 파일 validate exit 1" || bad "위반 파일 validate exit 1" "rc=$RC"
@@ -390,6 +397,10 @@ has "validate: apply_plans created_at 누락은 형식 오류와 구분해 검�
 has "validate: apply_plans 비배열 검출" "apply_plans 는 배열이어야 합니다" "$BAD_OUT"
 has "validate: apply_plans position 비문자열 검출" "apply_plans\[0\] position 은 문자열이어야 합니다" "$BAD_OUT"
 has "validate: 보이지 않는 문자만인 회사명은 빈 값으로 검출" "apply_plans\[1\] company 가 비어 있습니다" "$BAD_OUT"
+# 필수 필드 타입 — 숫자 id/title/created_at 은 존재해도 스키마 위반(show/update/apply 가 문자열 id 로 찾지 못함, PR #18 리뷰)
+has "validate: 숫자 id 는 문자열 타입 오류로 검출" "id 필드는 문자열이어야 합니다" "$BAD_OUT"
+has "validate: 숫자 title 은 문자열 타입 오류로 검출" "title 필드는 문자열이어야 합니다" "$BAD_OUT"
+has "validate: 숫자 created_at 은 문자열 타입 오류로 검출" "created_at 필드는 문자열이어야 합니다" "$BAD_OUT"
 
 # 최상위가 리스트가 아닌 파일
 TOPFILE="$WORK/top.yaml"
@@ -468,6 +479,71 @@ SAME_COUNT=$(grep -cE '^ {4}- company: 같은회사$' "$APF" 2>/dev/null); SAME_
 AP_VAL=$(JOBSTACK_STATE_DIR="$APSTATE" "$E" validate 2>&1); RC=$?
 [ $RC -eq 0 ] && ok "동시 apply 후 validate 통과(회사 중복 없음)" || bad "동시 apply 후 validate" "$AP_VAL"
 [ ! -e "$APF.lock" ] && ok "동시 apply 완료 후 잠금 파일 정리" || bad "apply 잠금 파일 잔존" "$APF.lock"
+
+# ── 잠금 소유자 확인(PR #18 리뷰) — 오래된 잠금이라도 소유 프로세스가 살아 있으면 훔치지 않는다 ──
+LSTATE="$WORK/state-lock"; mkdir -p "$LSTATE/profiles"
+LOCK="$LSTATE/profiles/experiences.yaml.lock"
+DEAD_PID=$(sh -c 'echo $$')   # 방금 끝난 셸의 pid — 죽은 소유자
+printf '{"pid":%s,"started_at":"2026-01-01T00:00:00Z"}' "$DEAD_PID" > "$LOCK"; touch -t 202601010000 "$LOCK"
+DEADLOCK_OUT=$(JOBSTACK_STATE_DIR="$LSTATE" JOBSTACK_LOCK_TIMEOUT_MS=600 "$E" add --title lock1 --problem p --role r --action a --change c 2>&1); RC=$?
+[ $RC -eq 0 ] && ok "죽은 프로세스의 오래된 잠금은 치우고 진행" || bad "죽은 pid 잠금 회수" "rc=$RC $DEADLOCK_OUT"
+[ ! -e "$LOCK" ] && ok "회수한 잠금은 완료 후 정리" || bad "잠금 정리" "$LOCK 잔존"
+printf 'legacy' > "$LOCK"; touch -t 202601010000 "$LOCK"
+LEGACY_OUT=$(JOBSTACK_STATE_DIR="$LSTATE" JOBSTACK_LOCK_TIMEOUT_MS=600 "$E" add --title lock2 --problem p --role r --action a --change c 2>&1); RC=$?
+[ $RC -eq 0 ] && ok "소유자 정보 없는 오래된 잠금(구 형식)도 치우고 진행" || bad "구 형식 잠금 회수" "rc=$RC $LEGACY_OUT"
+sleep 30 & SLEEPER=$!; disown 2>/dev/null
+printf '{"pid":%s,"started_at":"2026-01-01T00:00:00Z"}' "$SLEEPER" > "$LOCK"; touch -t 202601010000 "$LOCK"
+LIVELOCK_OUT=$(JOBSTACK_STATE_DIR="$LSTATE" JOBSTACK_LOCK_TIMEOUT_MS=600 "$E" add --title lock3 --problem p --role r --action a --change c 2>&1); RC=$?
+[ $RC -eq 1 ] && has "살아 있는 프로세스의 오래된 잠금은 훔치지 않고 대기 시간 초과(exit 1)" "잠금 대기 시간 초과" "$LIVELOCK_OUT" || bad "살아 있는 pid 잠금 보호" "rc=$RC $LIVELOCK_OUT"
+has "잠금 시간 초과는 jobstack-exp: 접두사 안내" "^jobstack-exp: 잠금 대기 시간 초과" "$LIVELOCK_OUT"
+hasnt "잠금 시간 초과에 스택 트레이스 없음" "    at " "$LIVELOCK_OUT"
+has "시간 초과 메시지에 소유 pid 표시" "소유자 pid $SLEEPER" "$LIVELOCK_OUT"
+[ -e "$LOCK" ] && ok "살아 있는 소유자의 잠금 파일은 그대로" || bad "잠금 파일 보존" "훔쳐짐"
+kill "$SLEEPER" 2>/dev/null; rm -f "$LOCK"
+LOCK_COUNT=$(grep -c '^- id:' "$LSTATE/profiles/experiences.yaml"); LOCK_COUNT=${LOCK_COUNT:-0}
+[ "$LOCK_COUNT" -eq 2 ] && ok "잠금 시나리오 뒤 카드 2장(거부된 add 는 기록 없음)" || bad "잠금 시나리오 카드 수" "count=$LOCK_COUNT"
+HELD_JSON=$(JOBSTACK_STATE_DIR="$LSTATE" node -e "
+import('$REPO/bin/lib/lockfile.mjs').then(({ withLock }) => {
+  withLock('$LSTATE/profiles/experiences.yaml', () => process.stdout.write(require('fs').readFileSync('$LOCK', 'utf8')));
+});
+" 2>&1)
+echo "$HELD_JSON" | grep -q "\"pid\":$$" && bad "잠금 보유 중 소유자 pid 기록" "$HELD_JSON" || true
+echo "$HELD_JSON" | grep -qE '^\{"pid":[0-9]+,"started_at":"20' && ok "잠금 보유 중 파일에 {pid, started_at} 기록" || bad "잠금 소유자 기록" "$HELD_JSON"
+
+# ── env.sh 계약(PR #18 리뷰) — 스킬 스니펫은 env.sh 만 source 하므로 JOBSTACK_STATE_DIR 이 export 돼야 bin 스크립트가 같은 상태 디렉토리를 쓴다
+ALT="$WORK/alt-state"; FAKEHOME="$WORK/fakehome"; mkdir -p "$FAKEHOME"
+JOBSTACK_STATE_DIR="$ALT" HOME="$FAKEHOME" bash "$REPO/bin/jobstack-preamble" experience-bank test-session >/dev/null 2>&1
+[ -f "$ALT/env.sh" ] && ok "프리앰블이 대체 상태 디렉토리에 env.sh 생성" || bad "env.sh 생성" "$ALT/env.sh 없음"
+ENV_ADD_OUT=$(HOME="$FAKEHOME" bash -c 'unset JOBSTACK_STATE_DIR; . "$1/env.sh" && "$_JS_BIN/jobstack-exp.mjs" add --title envsh --problem p --role r --action a --change c' _ "$ALT" 2>&1)
+[ -f "$ALT/profiles/experiences.yaml" ] && ok "env.sh 만 source 한 add 가 \$_JS_STATE(대체 디렉토리)에 기록" || bad "env.sh 계약: 대체 디렉토리 기록" "$ENV_ADD_OUT"
+[ ! -f "$FAKEHOME/.jobstack/profiles/experiences.yaml" ] && ok "env.sh 만 source 한 add 가 ~/.jobstack 으로 새지 않음" || bad "env.sh 계약: HOME 누출" "$FAKEHOME/.jobstack 에 기록됨"
+
+# ── list --company 부분일치 모호성(PR #18 리뷰) — 계열사 항목이 여럿이면 단수 키를 비우고 전체·모호 플래그를 준다
+MSTATE="$WORK/state-match"
+JOBSTACK_STATE_DIR="$MSTATE" "$E" add --title m --problem p --role r --action a --change c >/dev/null 2>&1
+M_ID="exp-${TODAY_COMPACT}-01"
+JOBSTACK_STATE_DIR="$MSTATE" "$E" apply "$M_ID" --company "토스페이먼츠" --plan p1 --basis b --source s >/dev/null 2>&1
+JOBSTACK_STATE_DIR="$MSTATE" "$E" apply "$M_ID" --company "토스증권" --plan p2 --basis b --source s >/dev/null 2>&1
+AMB_JSON=$(JOBSTACK_STATE_DIR="$MSTATE" "$E" list --json --company 토스 2>&1)
+CHECK_AMB=$(node -e "
+const d = JSON.parse(require('fs').readFileSync(0,'utf8'));
+const c = d.cards[0];
+const ok = d.cards.length === 1 && c.matched_apply_plan === null && Array.isArray(c.matched_apply_plans) && c.matched_apply_plans.length === 2
+  && c.ambiguous_company_match === true && d.ambiguous_company_matches === 1;
+console.log(ok ? 'OK' : 'MISMATCH:' + JSON.stringify(d));
+" <<<"$AMB_JSON")
+[ "$CHECK_AMB" = "OK" ] && ok "부분일치 다건이면 matched_apply_plan=null · matched_apply_plans 2건 · ambiguous_company_match" || bad "부분일치 모호 JSON" "$CHECK_AMB"
+EXACT_JSON=$(JOBSTACK_STATE_DIR="$MSTATE" "$E" list --json --company 토스증권 2>&1)
+CHECK_EXACT=$(node -e "
+const d = JSON.parse(require('fs').readFileSync(0,'utf8'));
+const c = d.cards[0];
+const ok = !!c.matched_apply_plan && c.matched_apply_plan.company === '토스증권' && c.matched_apply_plans.length === 1
+  && c.ambiguous_company_match === false && d.ambiguous_company_matches === 0;
+console.log(ok ? 'OK' : 'MISMATCH:' + JSON.stringify(d));
+" <<<"$EXACT_JSON")
+[ "$CHECK_EXACT" = "OK" ] && ok "정확 일치 1건이면 matched_apply_plan 단수 제공" || bad "정확 일치 JSON" "$CHECK_EXACT"
+AMB_TABLE=$(JOBSTACK_STATE_DIR="$MSTATE" "$E" list --company 토스 2>&1)
+has "표 푸터에 부분일치 모호 카드 수" "부분일치 모호 1장" "$AMB_TABLE"
 
 rm -rf "$WORK"
 echo "PASS: $PASS / FAIL: $FAIL"

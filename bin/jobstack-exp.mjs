@@ -28,7 +28,7 @@
  */
 
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
-import { withLock } from './lib/lockfile.mjs';
+import { withLock, LOCK_TIMEOUT_CODE } from './lib/lockfile.mjs';
 import { dirname, join, resolve } from 'node:path';
 import { homedir } from 'node:os';
 import { randomBytes } from 'node:crypto';
@@ -55,11 +55,20 @@ const APPLY_REQUIRED = ['company', 'plan', 'basis', 'source'];
 // 보이지 않는 문자만 다른 회사명이 별개 항목으로 저장되지 않게 한다(회사당 1건 불변식)
 const normCompany = (s) => String(s ?? '').normalize('NFKC').replace(/[\s\p{Pd}\p{Cf}]+/gu, '').toLowerCase();
 const applyPlansOf = (card) => (Array.isArray(card?.apply_plans) ? card.apply_plans : []);
-// 회사명 느슨 매칭(위 정규화 뒤 부분일치) — defense-map 의 회사 매칭 규칙에 NFKC·비가시 문자 제거를 더한 것
-function matchedPlan(card, query) {
+// 회사명 느슨 매칭(위 정규화 뒤 부분일치) — defense-map 의 회사 매칭 규칙에 NFKC·비가시 문자 제거를 더한 것.
+// matches = 부분일치 전체, exact = 정규화 등치 1건. 계열사 항목이 여럿이면(토스페이먼츠·토스증권 ↔ '토스')
+// 단수 키를 비우고 모호 플래그를 준다 — 소비 스킬이 다른 법인의 계획을 섞어 쓰지 않게(PR #18 리뷰)
+function matchPlans(card, query) {
   const key = normCompany(query);
-  if (!key) return null;
-  return applyPlansOf(card).find((p) => normCompany(p?.company).includes(key)) ?? null;
+  if (!key) return { matches: [], exact: null };
+  const matches = applyPlansOf(card).filter((p) => normCompany(p?.company).includes(key));
+  const exact = matches.find((p) => normCompany(p?.company) === key) ?? null;
+  return { matches, exact };
+}
+function matchSummary(card, query) {
+  const { matches, exact } = matchPlans(card, query);
+  const single = exact ?? (matches.length === 1 ? matches[0] : null);
+  return { matched_apply_plan: single, matched_apply_plans: matches, ambiguous_company_match: single === null };
 }
 
 // ── KST/UTC 날짜 헬퍼 (가드레일 §4: 날짜가 실리는 출력은 항상 기준일을 KST로 확정) ──────
@@ -273,10 +282,11 @@ function cmdList(flags) {
     filter = typeof flags.company === 'string' ? flags.company.trim() : '';
     if (!filter) die('--company 값을 지정하세요 (jobstack-exp list --company <회사명>)');
   }
-  const cards = filter ? all.filter((c) => matchedPlan(c, filter) !== null) : all;
+  const cards = filter ? all.filter((c) => matchPlans(c, filter).matches.length > 0) : all;
   const verdicts = cards.map(verdictOf);
   const needsNumbers = verdicts.filter((v) => v !== 'O').length;
   const withPlans = cards.filter((c) => applyPlansOf(c).length > 0).length;
+  const ambiguous = filter ? cards.filter((c) => matchSummary(c, filter).ambiguous_company_match).length : 0;
 
   if (flags.json) {
     const out = {
@@ -284,13 +294,13 @@ function cmdList(flags) {
       total: cards.length,
       needs_numbers: needsNumbers,
       with_apply_plans: withPlans,
-      ...(filter ? { company_filter: filter } : {}),
+      ...(filter ? { company_filter: filter, ambiguous_company_matches: ambiguous } : {}),
       cards: cards.map((c, i) => ({
         ...c,
         numbers_verdict: verdicts[i],
         ai_usage_present: !!c?.ai_usage,
         apply_plans_count: applyPlansOf(c).length,
-        ...(filter ? { matched_apply_plan: matchedPlan(c, filter) } : {}),
+        ...(filter ? matchSummary(c, filter) : {}),
       })),
     };
     process.stdout.write(JSON.stringify(out, null, 2) + '\n');
@@ -312,7 +322,8 @@ function cmdList(flags) {
     console.log(`${id} ${title} ${verdict}   ${ai} ${apply} ${tags}`);
   });
   console.log(bar);
-  console.log(`카드 ${cards.length}장 · 수치 보강 필요 ${needsNumbers}장 · 입사 후 적용 ${withPlans}장`);
+  const ambiguousNote = ambiguous ? ` · 회사 필터 부분일치 모호 ${ambiguous}장(정확한 회사명으로 다시 조회)` : '';
+  console.log(`카드 ${cards.length}장 · 수치 보강 필요 ${needsNumbers}장 · 입사 후 적용 ${withPlans}장${ambiguousNote}`);
 }
 
 // ── show ────────────────────────────────────────────────────────────────────
@@ -493,6 +504,8 @@ function cmdValidate(positionals) {
     for (const f of REQUIRED_FIELDS) {
       const v = card[f];
       if (v === undefined || v === null || v === '') errors.push(`${label}: 필수 필드 누락 (${f})`);
+      else if (typeof v !== 'string') errors.push(`${label}: ${f} 필드는 문자열이어야 합니다`); // 숫자 id 는 show/update/apply 가 찾지 못한다(PR #18 리뷰)
+      else if (!v.trim()) errors.push(`${label}: 필수 필드 누락 (${f} — 공백뿐)`);
     }
     if (hasId) {
       if (!ID_RE.test(card.id)) errors.push(`${label}: id 형식 오류 (exp-YYYYMMDD-NN 아님)`);
@@ -572,26 +585,31 @@ if (!cmd) {
 }
 const { flags, positionals } = parseArgs(rest);
 
-switch (cmd) {
-  case 'add':
-    withLock(EXP_FILE, () => cmdAdd(flags)); // 동시 실행 lost update 방지(PR #17 리뷰 반영)
-    break;
-  case 'list':
-    cmdList(flags);
-    break;
-  case 'show':
-    cmdShow(positionals);
-    break;
-  case 'update':
-    withLock(EXP_FILE, () => cmdUpdate(positionals, flags)); // 동시 실행 lost update 방지(PR #17 리뷰 반영)
-    break;
-  case 'apply':
-    withLock(EXP_FILE, () => cmdApply(positionals, flags)); // add/update 와 같은 잠금 경로
-    break;
-  case 'validate':
-    process.exit(cmdValidate(positionals));
-    break;
-  default:
-    process.stderr.write(`알 수 없는 명령: ${cmd}\n\n${usage()}`);
-    process.exit(1);
+try {
+  switch (cmd) {
+    case 'add':
+      withLock(EXP_FILE, () => cmdAdd(flags)); // 동시 실행 lost update 방지(PR #17 리뷰 반영)
+      break;
+    case 'list':
+      cmdList(flags);
+      break;
+    case 'show':
+      cmdShow(positionals);
+      break;
+    case 'update':
+      withLock(EXP_FILE, () => cmdUpdate(positionals, flags)); // 동시 실행 lost update 방지(PR #17 리뷰 반영)
+      break;
+    case 'apply':
+      withLock(EXP_FILE, () => cmdApply(positionals, flags)); // add/update 와 같은 잠금 경로
+      break;
+    case 'validate':
+      process.exit(cmdValidate(positionals));
+      break;
+    default:
+      process.stderr.write(`알 수 없는 명령: ${cmd}\n\n${usage()}`);
+      process.exit(1);
+  }
+} catch (e) {
+  if (e?.code === LOCK_TIMEOUT_CODE) die(e.message); // 스택 트레이스 대신 jobstack-exp: 안내(PR #18 리뷰)
+  throw e;
 }
