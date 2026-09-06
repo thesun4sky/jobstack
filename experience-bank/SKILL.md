@@ -19,9 +19,10 @@ when_to_use: |
   학업·프로젝트·인턴·대외활동 경험을 서류·면접에 쓸 수 있는 카드로 구조화할 때 사용한다.
   경험을 정리하지 않으면 /resume나 /cover_letter 작성이 비효율적이므로 먼저 이 스킬로 경험 카드를 만든다.
   NCS 능력단위 매핑이 필요하면 ncs 스킬을 활용한다.
+  기업분석 결과(company-cache)가 있으면 카드에 입사 후 적용(STAR-R 의 R) 문장을 근거와 함께 연결한다.
 metadata:
   preamble-tier: 2
-  version: 0.1.0
+  version: 0.2.0
   benefits-from: [strategy]
 ---
 
@@ -52,7 +53,7 @@ metadata:
 ### 저장소 구분 (한 줄 문서화)
 
 - **프로필(`$_JS_STATE/profiles/default.yaml`)** = 이름·연락처·직무·자격 등 **정적 속성** (덮어쓰기형).
-- **경험뱅크(`$_JS_STATE/profiles/experiences.yaml`)** = 경험 1건 = 카드 1장의 **append형 카드** 저장소. 이 스킬이 카드를 추가하고, resume/cover-letter/mock-interview가 소비합니다.
+- **경험뱅크(`$_JS_STATE/profiles/experiences.yaml`)** = 경험 1건 = 카드 1장의 **append형 카드** 저장소. 이 스킬이 카드를 추가하고, resume/cover-letter/mock-interview가 소비합니다. 입사 후 적용(`apply_plans`)은 이 스킬과 company-research 가 `apply` 로 덧붙입니다.
 
 ---
 
@@ -66,12 +67,12 @@ AskUserQuestion으로 모드를 확인합니다. 프리앰블의 `EXPERIENCES_EX
 추천: A) 신규 카드 추가. 이유: 소재가 많을수록 서류·면접 재사용 폭이 넓어집니다.
 
 A) 신규 카드 추가 (경험을 인터뷰로 카드화)
-B) 기존 카드 조회·보강 (저장된 카드를 열어 수치·직무 태그 보강)
+B) 기존 카드 조회·보강 (저장된 카드를 열어 수치·직무 태그·입사 후 적용 보강)
 C) 뱅크 목록·커버리지 (카드 목록과 직무별 부족 영역 확인)
 ```
 
 - **A** → Phase 1 → Phase 2 → Phase 3 → Phase 4 → Phase 5
-- **B** → Phase 1(로드) → 대상 카드 선택 → Phase 3(보강) → Phase 4(갱신 저장)
+- **B** → Phase 1(로드) → 대상 카드 선택 → Phase 3(보강 — 입사 후 적용 포함) → Phase 4(갱신 저장)
 - **C** → Phase 1(로드) → Phase 5(요약만)
 
 ---
@@ -116,11 +117,29 @@ C) 뱅크 목록·커버리지 (카드 목록과 직무별 부족 영역 확인)
 
 > **날조 금지**: 도구 사용 자체는 성과가 아닙니다. `effect`가 비면 확정 저장하지 말고 `[확인 필요]`로 남깁니다 — cover-letter의 AI·도구 활용 경험 문항이 이 필드를 검증 근거로 그대로 소비합니다.
 
+### 입사 후 적용 — STAR-R 의 R (기업분석 캐시가 있을 때만)
+
+카드의 R(입사 후 적용)은 기업분석 근거가 있을 때만 씁니다. `${CLAUDE_SKILL_DIR}/references/experience-methods.md` §7(STAR-R 서술 프레임)을 Read 해 규칙 4가지(근거 1개 이상·한 문장·회사명 치환 테스트·감상 뒤에 잇지 않기)를 적용합니다.
+
+1. 캐시 확인 — 결과가 없으면 이 절을 건너뛰고, 저장 후 "`/company_research` 로 기업분석을 만들면 카드에 입사 후 적용 문장을 이어 붙일 수 있습니다" 한 줄만 안내합니다.
+
+```bash
+. "${JOBSTACK_STATE_DIR:-$HOME/.jobstack}/env.sh"
+ls -t "$_JS_STATE"/company-cache/*.md 2>/dev/null | head -5
+```
+
+2. 1회 AskUserQuestion — "이 경험을 연결할 지원 기업은? A) {캐시에 있는 회사}… Z) 지금은 없음". 없음이면 건너뜁니다.
+3. 선택한 회사의 최신 캐시에서 **요약 블록만** 읽습니다(`sed -n '/jobstack:summary/,/\/jobstack:summary/p' <파일>`) — 핵심 키워드·'이미 팀원처럼' 화두가 `basis` 후보입니다.
+4. §7 규칙 ② 형식으로 R 한 문장을 초안합니다. `basis` 는 요약 블록 원문 1개, `source` 는 캐시 파일명(`company-cache/<회사>-<날짜>.md`)입니다. 회사명을 경쟁사로 바꿔도 성립하면 다시 씁니다.
+5. 사용자가 문장을 확인하면 Phase 4 의 `apply` 로 저장합니다.
+
+> **날조 금지**: 캐시·사용자 답변에 없는 기업 과제·키워드를 `basis` 로 만들지 않습니다. 근거가 없으면 R 을 저장하지 않습니다(카드 자체는 DONE).
+
 ---
 
 ## Phase 4: 저장
 
-완성된 카드는 손으로 YAML에 append하거나 Edit로 고치지 않고 `"$_JS_BIN/jobstack-exp.mjs"` 로 저장합니다 — id 채번·수치 판정·스키마 검증을 스크립트가 결정적으로 수행합니다(같은 입력이면 같은 출력). 파일이 없으면 스크립트가 만듭니다. 필드 정의는 이 문서가 아니라 `${CLAUDE_SKILL_DIR}/references/experience-card-schema.md` 가 단일 소스이므로 Read 해서 확인하세요.
+완성된 카드는 손으로 YAML에 append하거나 Edit로 고치지 않고 `"$_JS_BIN/jobstack-exp.mjs"` 로 저장합니다 — id 채번·수치 판정·스키마 검증을 스크립트가 결정적으로 수행합니다(같은 입력이면 같은 출력). 파일이 없으면 스크립트가 만듭니다. 필드 정의는 이 문서가 아니라 `${CLAUDE_SKILL_DIR}/references/experience-card-schema.md` 가 단일 소스이므로 **`add` 를 호출하기 전에 반드시 Read** 해 필드·플래그 계약을 확인합니다 — 프롬프트에 6단계 정보가 모두 주어져 있어도 이 Read 를 건너뛰지 않습니다.
 
 **모드 A(신규)** — 카드 1장을 끝에 추가(append, 기존 카드는 보존):
 
@@ -136,6 +155,17 @@ C) 뱅크 목록·커버리지 (카드 목록과 직무별 부족 영역 확인)
 
 - `--numbers`·`--tags`·`--ai-usage-*`는 값이 없으면 통째로 생략합니다.
 - `--ai-usage-tool`/`--ai-usage-task`/`--ai-usage-effect`는 Phase 3에서 AI 활용 근거를 확보했을 때만 **셋을 함께** 붙입니다 — 하나만 넘기면 스크립트가 거부합니다(미완성 값이 저장되지 않도록 막는 의도된 동작).
+
+**입사 후 적용(선택)** — 위 절에서 R 문장을 사용자가 확인했을 때만, 카드당·회사당 1건:
+
+```bash
+. "${JOBSTACK_STATE_DIR:-$HOME/.jobstack}/env.sh"
+"$_JS_BIN/jobstack-exp.mjs" apply <id> --company "지원 기업" --position "직무" \
+  --plan "[기업의 과제·키워드]에 [카드의 행동·변화]를 적용해 [기대 변화]" \
+  --basis "캐시 요약 블록 원문 1개" --source "company-cache/<회사>-<날짜>.md"
+```
+
+- 같은 회사는 교체, 다른 회사는 추가됩니다. `--basis`·`--source` 가 비면 스크립트가 거부합니다(근거 없는 R 은 저장되지 않음).
 
 **모드 B(보강)** — 대상 카드의 필드만 in-place 수정(나머지 카드는 그대로):
 
@@ -166,7 +196,7 @@ C) 뱅크 목록·커버리지 (카드 목록과 직무별 부족 영역 확인)
 "$_JS_BIN/jobstack-exp.mjs" list
 ```
 
-출력 표(id·제목·수치·AI·직무 태그, `카드 N장 · 수치 보강 필요 M장`)를 그대로 사용자에게 보여줍니다. △·X 카드는 Phase 0 모드 B(보강)로 이어가길 권합니다. 여기에 모델이 더하는 것은 **부족 영역 코칭 한 줄**뿐입니다 — 지원 직무(프로필 또는 세션)에 비추어 부족한 소재 영역을 짚습니다(예: "프론트엔드 소재 없음", "리더십 근거 약함").
+출력 표(id·제목·수치·AI·적용·직무 태그, `카드 N장 · 수치 보강 필요 M장 · 입사 후 적용 K장`)를 그대로 사용자에게 보여줍니다. △·X 카드는 Phase 0 모드 B(보강)로, 적용이 `-` 인 카드 중 지원 기업이 정해진 것은 모드 B 의 입사 후 적용 연결로 이어가길 권합니다. 여기에 모델이 더하는 것은 **부족 영역 코칭 한 줄**뿐입니다 — 지원 직무(프로필 또는 세션)에 비추어 부족한 소재 영역을 짚습니다(예: "프론트엔드 소재 없음", "리더십 근거 약함").
 
 ---
 
@@ -203,4 +233,4 @@ C) 뱅크 목록·커버리지 (카드 목록과 직무별 부족 영역 확인)
 - **우려사항 있는 완료 (DONE_WITH_CONCERNS)** — 카드는 저장됐으나 수치가 `[수치 확인 필요]`로 남거나, `ai_usage.effect`가 `[확인 필요]`로 남음.
 - **추가 정보 필요 (NEEDS_CONTEXT)** — 카드화할 경험 소재가 부족.
 
-다음 추천: `/cover_letter` (저장 카드로 자소서 작성) · `/resume` (이력서 반영) 또는 `/review` (서류 통합 점검)
+다음 추천: `/cover_letter` (저장 카드로 자소서 작성) · `/resume` (이력서 반영) · `/company_research` (기업분석 뒤 카드에 입사 후 적용 연결) 또는 `/review` (서류 통합 점검)

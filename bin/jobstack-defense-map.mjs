@@ -24,7 +24,7 @@
  */
 
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
-import { withLock } from './lib/lockfile.mjs';
+import { withLock, LOCK_TIMEOUT_CODE } from './lib/lockfile.mjs';
 import { dirname, join, resolve, sep } from 'node:path';
 import { homedir } from 'node:os';
 import { randomBytes } from 'node:crypto';
@@ -124,9 +124,9 @@ function assertInsideDmDir(filePath) {
 
 function atomicWrite(filePath, content) {
   const dir = dirname(filePath);
-  mkdirSync(dir, { recursive: true });
+  mkdirSync(dir, { recursive: true, mode: 0o700 }); // 방어맵도 개인 정보 — 디렉토리 0700·파일 0600(PR #18 재리뷰)
   const tmp = join(dir, `.${Date.now()}.${randomBytes(4).toString('hex')}.tmp`);
-  writeFileSync(tmp, content, 'utf8');
+  writeFileSync(tmp, content, { encoding: 'utf8', mode: 0o600 });
   renameSync(tmp, filePath);
 }
 
@@ -612,26 +612,31 @@ if (!cmd) {
 }
 const { flags, positionals } = parseArgs(rest);
 
-switch (cmd) {
-  case 'add':
-    withLock(join(DM_DIR, '.write'), () => cmdAdd(flags)); // 디렉토리 단위 잠금(PR #17 리뷰 반영)
-    break;
-  case 'list':
-    cmdList(flags);
-    break;
-  case 'show':
-    cmdShow(flags);
-    break;
-  case 'set-status':
-    withLock(join(DM_DIR, '.write'), () => cmdSetStatus(flags, positionals)); // 디렉토리 단위 잠금(PR #17 리뷰 반영)
-    break;
-  case 'stats':
-    cmdStats(flags);
-    break;
-  case 'validate':
-    process.exit(cmdValidate(positionals));
-    break;
-  default:
-    process.stderr.write(`알 수 없는 명령: ${cmd}\n\n${usage()}`);
-    process.exit(1);
+try {
+  switch (cmd) {
+    case 'add':
+      withLock(join(DM_DIR, '.write'), () => cmdAdd(flags)); // 디렉토리 단위 잠금(PR #17 리뷰 반영)
+      break;
+    case 'list':
+      cmdList(flags);
+      break;
+    case 'show':
+      cmdShow(flags);
+      break;
+    case 'set-status':
+      withLock(join(DM_DIR, '.write'), () => cmdSetStatus(flags, positionals)); // 디렉토리 단위 잠금(PR #17 리뷰 반영)
+      break;
+    case 'stats':
+      cmdStats(flags);
+      break;
+    case 'validate':
+      process.exit(cmdValidate(positionals));
+      break;
+    default:
+      process.stderr.write(`알 수 없는 명령: ${cmd}\n\n${usage()}`);
+      process.exit(1);
+  }
+} catch (e) {
+  if (e?.code === LOCK_TIMEOUT_CODE) die(e.message); // 스택 트레이스 대신 안내(PR #18 리뷰)
+  throw e;
 }

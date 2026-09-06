@@ -61,6 +61,7 @@ python3 -c "import sys, re; s=sys.stdin.read().rstrip(); print('포함:', len(s)
 
 ### 경험뱅크 카드 재사용 순서
 
+0. 지원 기업과 `apply_plans[].company` 가 일치하는 카드(`jobstack-exp.mjs list --company <기업명>`) 우선 — 4분리 문항(직무 전문성·문제 해결·협업·실패)에서는 R 문장을 본문에 쓰지 않고 카드 선택 근거로만 쓰며, 지원동기·포부성 문항에만 R(experience-methods.md §7)을 잇는다.
 1. `job_link_tags` 가 문항 성격과 일치하는 카드 우선.
 2. AI·도구 활용 경험 문항이면 `ai_usage` 필드가 채워진 카드 우선 — 없으면 §2 지침대로 그 자리에서 보강 질문.
 3. 후보가 여럿이면 `numbers`(수치)가 채워진 카드 우선, 정성만 있는 카드는 후순위.

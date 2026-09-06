@@ -144,7 +144,7 @@ jobstack-view 기업분석-삼성전자.md  # 스타일링된 HTML로 변환
 | `/salary` | 연봉 벤치마크 + 협상 전략 | 2 |
 | `/portfolio` | 포트폴리오 최적화 + 임팩트 표현 (GitHub 레포·README) | 2 |
 | `/retro` | 면접 회고 + 탈락 원인 분석 + 개선 | 2 |
-| `/experience_bank` | 경험 소재 발굴·카드화 (자소서·이력서 소재 은행) | 2 |
+| `/experience_bank` | 경험 소재 발굴·카드화 + 입사 후 적용(STAR-R) 연결 (자소서·이력서 소재 은행) | 2 |
 | `/resume` | 이력서 작성/첨삭 + ATS 최적화 | 3 |
 | `/cover_letter` | 자소서 작성/첨삭 ("결이요" + 5단계 첨삭) | 3 |
 | `/career_history` | 경력기술서 작성/첨삭 (경력직·중고신입) | 3 |
@@ -236,7 +236,7 @@ jobstack은 4년간 60건 이상의 자소서 첨삭에서 추출된 실전 인�
 
 ## E2E 통합 테스트
 
-현재 동작의 근거는 헤드리스 스킬 eval 실측입니다 — `test/run-evals.sh` 로 15케이스(gate·periodic·e2e)를 돌린 결과와 모델 비교표는 [docs/E2E-TEST-REPORT.md](docs/E2E-TEST-REPORT.md) 상단에 있습니다(gate 5/5). 아래는 v0.3 시점에 샘플 데이터(이력서 + 자소서 + 채용공고)로 전체 8단계 플로우를 돌린 서사 기록입니다.
+현재 동작의 근거는 헤드리스 스킬 eval 실측입니다 — `test/run-evals.sh` 로 16케이스(gate·periodic·e2e)를 돌린 결과와 모델 비교표는 [docs/E2E-TEST-REPORT.md](docs/E2E-TEST-REPORT.md) 상단에 있습니다(gate 5/5). 아래는 v0.3 시점에 샘플 데이터(이력서 + 자소서 + 채용공고)로 전체 8단계 플로우를 돌린 서사 기록입니다.
 
 > **페르소나**: 김민수 (신입 백엔드 개발자, 서울과기대 컴공, 인턴 6개월)
 > **목표**: 네이버 서버 플랫폼 개발자
@@ -304,7 +304,7 @@ flowchart LR
 - **동적 주입 프리앰블** — 스킬 로드 시점에 `bin/jobstack-preamble`가 실행 컨텍스트(프로필·기준일·런타임)와 공유 가드레일을 프롬프트에 넣습니다 ([templates/preamble.md](templates/preamble.md))
 - **파일 기반 상태관리** — `~/.jobstack/`에 YAML/JSONL
 - **로컬 사용 기록** — 스킬 사용 이벤트가 `~/.jobstack/analytics/`에 로컬 파일로만 기록됩니다 (네트워크 전송 없음, 문서 내용·개인정보 미포함 — [규격](docs/telemetry-events.md))
-- **결정적 스크립트 계층** — 지원 현황(`jobstack-tracker`)·경험 카드(`jobstack-exp.mjs`)·방어맵(`jobstack-defense-map.mjs`)·키워드 매칭률(`jobstack-ats-match`)·회고 집계(`jobstack-retro-stats`)는 스크립트가 저장·계산하고 스킬은 해석·코칭만 합니다 (같은 입력 → 같은 결과)
+- **결정적 스크립트 계층** — 지원 현황(`jobstack-tracker`)·경험 카드(`jobstack-exp.mjs` — `apply` 로 입사 후 적용 문장 저장)·방어맵(`jobstack-defense-map.mjs`)·키워드 매칭률(`jobstack-ats-match`)·회고 집계(`jobstack-retro-stats`)는 스크립트가 저장·계산하고 스킬은 해석·코칭만 합니다 (같은 입력 → 같은 결과)
 - **진행적 공개** — SKILL.md 는 300줄 이하의 흐름·게이트만 담고, 모드별·플랫폼별·트랙별 자료는 `references/`에서 필요한 시점에만 읽습니다
 - **병렬 리서치 서브에이전트** — `agents/researcher.md`가 기업분석·연봉·전략의 웹 조사를 소스별로 나눠 맡고 출처 URL·기준일이 붙은 JSON만 돌려줍니다
 - **스킬 eval** — `evals/<skill>/evals.json` 케이스를 `test/run-evals.sh`가 `claude -p` 헤드리스로 실행해 산출물·스크립트 호출·참조 읽기를 판정합니다(결정적 gate / LLM 채점 periodic / e2e 3계층, [docs/evals.md](docs/evals.md))

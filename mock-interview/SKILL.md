@@ -180,7 +180,7 @@ AskUserQuestion으로 면접 강도를 선택합니다:
    - `"$_JS_BIN/jobstack-defense-map.mjs" show --company <회사명> --max-chars 1500` (env.sh 소싱 후)로 회사명 느슨 매칭·**최신 파일 1개**·weak/unprepared 우선·1500자 제한을 한 번에 적용해 읽고, 미끼 질문(40%)의 **1순위 소스**로 사용합니다. 자소서 직접 추출은 폴백으로 둡니다
    - `defense_status`가 `weak`·`unprepared`인 항목을 먼저 출제하고, 주입 분량은 1500자 이내로 제한합니다
    - **파싱 실패·형식 불일치 시 오류를 노출하지 않고 조용히 자소서 추출 폴백으로 진행**합니다 (파일 부재도 계약 위반이 아님)
-5. **경험 카드** (있으면): `"$_JS_BIN/jobstack-exp.mjs" list`·`show <id>` (env.sh 소싱 후)로 카드의 `change`·`numbers`를 읽어 답변 골자·수치 검증 질문의 근거로 씁니다(`references/experience-card-schema.md` 계약).
+5. **경험 카드** (있으면): `"$_JS_BIN/jobstack-exp.mjs" list`(무필터)·`show <id>` (env.sh 소싱 후)로 전체 카드의 `change`·`numbers`를 답변 골자·수치 검증 질문의 근거로 쓰고, 이어서 `list --company <회사명>`으로 지원 기업과 일치하는 `apply_plans`(입사 후 적용 문장)가 있는 카드만 추려 "입사하면 이 경험을 어떻게 쓰겠나" 류 질문·답변 평가의 근거로 씁니다 — 필터 결과가 0장이어도 무필터 카드는 그대로 씁니다(`references/experience-card-schema.md` 계약).
 
 **질문 세트 구성 원칙:**
 

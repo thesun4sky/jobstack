@@ -1,5 +1,73 @@
 # Changelog
 
+## [1.1.0] - 2026-09-06
+
+STAR-R 도입 — 경험 카드에 기업분석 근거와 함께 '입사 후 적용'(R)을 잇는다. 계획·실행 기록은
+`docs/plans/star-r-plan-2026-09.md`.
+
+### Added
+- **STAR-R 서술 프레임 (SR-01)** — `templates/experience-methods.md` §7: S·T·A·R 은 카드 필드에 매핑하고
+  두 번째 R 을 '입사 후 적용'으로 정의(일반 STARR·STAR-L 의 성찰·배운 점과 의도적으로 다름). 작성 규칙
+  4가지(근거 1개 이상·한 문장·회사명 치환 테스트·감상 뒤에 잇지 않기), 근거 확보 질문 2개, Before→After 예시.
+- **카드 필드 `apply_plans` + `jobstack-exp.mjs apply` (SR-02)** — 회사당 1건 `{company, position?, plan,
+  basis, source, created_at}` 를 선택 필드로 추가. `apply <id> --company --plan --basis --source [--position]`
+  는 정규화 회사명 등치로 교체·추가하고 근거·출처가 비면 저장하지 않는다. `list [--company C]` 필터·적용 열·
+  `입사 후 적용 K장` 푸터, `validate` 의 apply_plans 검사. `add`/`update` 는 그대로(기존 카드 호환).
+- **experience-bank 입사 후 적용 절 (SR-03)** — 기업분석 캐시가 있을 때만 1회 질문 → 요약 블록만 읽기 →
+  §7 초안 → 확인 후 `apply`. 모드 B 보강·뱅크 요약 열·다음 추천에 반영.
+- **company-research Phase 5.5 경험 카드 연결 (SR-04)** — 키워드 체크리스트·'이미 팀원처럼' 화두와 닿는
+  카드 3장 이하에 R 문장을 제안하고 확인 후 `apply`. 리포트 §5 에 "경험 카드 적용 문장" 항목.
+- **eval·테스트 (SR-07)** — `expbank-gate-star-r-apply` 게이트 케이스(캐시·카드 setup, apply 4플래그
+  must_call), `test/test-exp.sh` 단언 67 → 164(1차 리뷰 28·2차 리뷰 36·PR 리뷰 19·재리뷰 14 추가).
+
+### Changed
+- **문서·면접 스킬 소비 (SR-05·SR-06)** — cover-letter 는 '요'에 지원 기업 `apply_plans` 우선(`list --company`),
+  구조 가이드·구조화 모드·배운 점 규칙에 §7 연결; resume Phase 5 는 STAR-R 중 S·T·A·R 까지만 이력서 본문에;
+  ncs Phase 5 는 기관 분석 근거가 있을 때만 R; career-history 는 일치 카드를 배치 우선순위로; mock-interview 는
+  `apply_plans` 를 "입사하면 어떻게 쓰겠나" 평가 근거로.
+- **카드 스키마 문서** — 소비자 목록에 career-history·scout-profile 추가, 쓰기 경계(experience-bank·
+  company-research 만 `apply`) 명시.
+
+### Fixed — 3관점 리뷰·스모크 반영 (실행 기록 `docs/plans/star-r-plan-2026-09.md` §8)
+- mock-interview 가 `list --company` 만 호출해 아직 apply 하지 않은 카드의 change·numbers 를 잃던 문제 —
+  무필터 `list` 로 전체 카드를 확보한 뒤 `list --company` 로 apply_plans 카드만 추린다.
+- cover-letter 입사 후 포부 3개 시간축이 같은 plan 문장을 반복하지 않도록 배분 규칙, '요' 는 plan 문장을
+  실행형 그대로 쓴다(스모크에서 다짐형으로 바뀌던 것 관찰).
+- `validate` 의 apply_plans `created_at` 누락과 형식 오류 메시지 분리, 재-apply 전체 교체(`--position` 소실)
+  계약을 스키마·usage 에 명시, §7 의 humanize-check 인용 표기 정정, test-exp 의 company 카운트 앵커링과
+  position 단언, eval note 의 must_call 의미 정정, experience-bank 는 add 전 카드 스키마 Read 를 건너뛰지 않음.
+
+### Fixed — 2차 5관점 리뷰 반영 (호환·보안·문서·프롬프트·테스트 — 지적 16건 중 14건 확정, 2건 기각)
+- `normCompany` 가 결합 문자(NFD)·전각·zero-width 문자를 구분해 같은 회사가 별개 항목으로 저장되던 문제 — NFKC 정규화 뒤
+  공백·대시·비가시 문자를 제거하고, 저장 표시명에서도 비가시 문자를 뺀다. 보이지 않는 문자만인 회사명은 `apply`·`validate` 가 거부.
+- `list --company` 를 값 없이 부르면 무필터로 조용히 폴백하고, `apply --position` 값 없음은 조용히 버려지던 경로 — 둘 다 exit 1.
+- 같은 회사 재-apply 로 항목을 교체할 때 항목 뒤에 붙은 주석이 사라지던 문제 — 항목 주석(앞·뒤)을 새 항목으로 이월.
+- company-research Phase 5.5 가 이미 Write 한 리포트 §5 를 고치도록 하면서 `Edit` 도구가 없던 문제 — allowed-tools 에 추가하고
+  리포트 파일의 §5 줄만 교체(캐시 파일은 손대지 않음), 닿는 카드가 4장 이상일 때의 우선순위 규칙 추가.
+- guardrails §7 — 셸 펜스 인자에 공고·기업 페이지 원문을 넣을 때의 따옴표 규칙(`jobstack-exp add/update/apply`·tracker 공통).
+- test-exp 36단언 추가(95 → 131): 적용 열 컬럼 앵커링, 무필터 `--json` 스키마, 값 없는 플래그 거부, 유니코드 정규화,
+  `apply_plans: []`/`null` 승격, 다른 카드 보존, 항목 뒤 주석 보존, validate 픽스처, 동시 apply 20건(잠금).
+
+### Fixed — PR #18 오너 리뷰 반영
+- **env.sh 가 `JOBSTACK_STATE_DIR` 를 export** — 스킬 스니펫은 env.sh 만 source 하는데 bin 스크립트(Node·Python)는
+  `JOBSTACK_STATE_DIR` 만 보므로, 대체 상태 디렉토리로 프리앰블을 돌린 뒤 `jobstack-exp.mjs` 가 `~/.jobstack` 에 기록되던
+  문제. 프리앰블 안내문·test-preambles 의 env.sh 검사·test-exp 계약 테스트 추가.
+- **validate 필수 필드 타입** — 숫자 `id`·`title`·`created_at` 처럼 문자열이 아닌 값을 통과시키던 문제(문자열 id 로 찾는
+  show/update/apply 와 불일치). `필드는 문자열이어야 합니다` 로 검출.
+- **잠금 회수 시 소유자 확인** — 오래된 잠금(30초)을 소유 프로세스 생존 여부와 무관하게 지우던 문제. 잠금 파일에
+  `{pid, started_at}` 를 적고 살아 있는 소유자의 잠금은 훔치지 않으며, 대기 시간 초과는 스택 트레이스 대신 안내 문구로
+  exit 1(`JOBSTACK_LOCK_TIMEOUT_MS` 로 조정). exp·defense-map 공통.
+- **`list --company` 부분일치 모호성** — 한 카드에 계열사 항목(토스페이먼츠·토스증권)이 여럿일 때 첫 항목만
+  `matched_apply_plan` 으로 주던 문제. 정확 일치(또는 부분일치 1건)일 때만 단수 키를 주고 `matched_apply_plans`·
+  `ambiguous_company_match`·상위 `ambiguous_company_matches` 와 표 푸터 안내를 추가.
+- three-docs-guide 의 "자소서=선택 이유와 배움" 을 "행동 변화·입사 후 적용" 으로(일반 STARR/STAR-L 회귀 방지),
+  NCS Phase 4 에 기관명 확정 시 `list --company <기관명>` 우선 확인 한 줄.
+- **재리뷰 — 쓰기 경로 입력 검증** — `add --json` 이 불완전한 `ai_usage` 를 저장하고, 공백만 있는 필수값·`ai_usage` 값이
+  add/update 를 통과하던 문제. validate 의 카드 단위 검사를 `cardErrors()` 로 분리해 `add`·`update`·`apply` 가 저장 직전에
+  같은 검사를 돌린다(위반이면 파일 미변경). `--json` 의 문자열 아닌 필수값은 타입 오류, `update --numbers ""` 만 빈 값 허용.
+- **재리뷰 — 상태 파일 권한** — 프리앰블(umask 077) 없이 직접 실행하면 umask 에 따라 디렉토리 755·파일 644 로 만들어지던 문제.
+  새로 만드는 디렉토리 0700·파일 0600·잠금 파일 0600(jobstack-exp·jobstack-defense-map·lockfile). 기존 디렉토리 권한은 바꾸지 않음.
+
 ## [1.0.0] - 2026-09-03
 
 검토 보고서 P2 항목(U-14~U-16, U-18~U-20, U-22, U-23) — 기능 확장. 실행 기록은

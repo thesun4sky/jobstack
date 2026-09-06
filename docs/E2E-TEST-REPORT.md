@@ -97,6 +97,30 @@
 - 마감 지난 샘플 공고(2026.04.30)를 auto·cover_letter·strategy 가 모두 기준일 대비로 잡아냈다. 샘플 개인정보(홍길동·010-1234-5678)는
   auto 가 `[확인 필요]` 로, scout_profile 이 본문 제외로 처리했다.
 
+## 2026-09-06 — STAR-R(입사 후 적용) 헤드리스 실측 (v1.1.0)
+
+> 실행 방법: 격리 HOME 심링크 설치 → 카드 2장·네이버 캐시(요약 블록 + 키워드 체크리스트·'이미 팀원처럼' 화두) 시드, 첫 카드에 `jobstack-exp.mjs apply` 1건 시드 → `claude -p --model sonnet --max-turns 16 --permission-mode auto` 4케이스 순차. 계획·리뷰 기록은 `docs/plans/star-r-plan-2026-09.md` §8.
+
+### gate eval (`test/run-evals.sh --tier gate --skill experience-bank`, 2회)
+
+| 케이스 | 1차 | 수정 | 2차 |
+|---|---|---|---|
+| expbank-gate-single-card | FAIL — must_read: 카드 스키마 Read 를 건너뛰고 add | experience-bank Phase 4 에 "add 전 Read 를 건너뛰지 않는다" 명시 | PASS (6턴, 0.19 USD) |
+| expbank-gate-star-r-apply(신규) | PASS (10턴, 0.23 USD) — apply 4플래그·`적용 저장됨`·§7 Read | 턴 예산 10 → 12 | PASS |
+
+### 스킬 스모크 (격리 HOME, 카드 2장·네이버 캐시·apply 1건 시드, sonnet 16턴, 리뷰 반영 전 → 후)
+
+| 스킬 | 케이스 | 1차 | 2차(5f335d1) | 확인한 것 |
+|---|---|---|---|---|
+| experience_bank | 카드 추가 + 네이버 입사 후 적용 연결 | 7턴 53s 0.24 PASS | 7턴 34s 0.19 PASS | add → §7 Read → `apply`(basis = 캐시 화두 원문) → validate → list. 2차는 카드 스키마 Read 포함 |
+| company_research | 오늘 캐시 재사용 + Phase 5.5 | 6턴 48s 0.24 PASS | 8턴 59s 0.19 PASS | 웹 검색 없이 캐시 재사용, `list --json` → 미연결 카드 1장에 `apply`, 기존 연결 카드는 유지 |
+| cover_letter | 네이버 지원동기 초안 | 8턴 111s 0.33 PASS | 13턴 119s 0.38 PASS | 1차: '요' 를 다짐형("기여하고 싶습니다")으로 바꾸고 '이' 에 "배웠습니다" 잔존. 2차: `list --company` → `list` 2단계, '요' 를 실행형 그대로, 다짐형·"배웠습니다" 0건 |
+| mock_interview | 입사 후 적용 질문 1개 | 4턴 31s 0.18 PASS | 4턴 28s 0.16 PASS | 2차: 무필터 `list` → `list --company 네이버` → show, 카드 R·화두를 근거로 질문 |
+
+관찰: 4케이스 모두 캐시·카드에 없는 기업 과제를 지어내지 않았고 `basis` 는 요약 블록·체크리스트 원문을 인용했다. 비용 합계 약 2.7 USD(스모크 2회 1.9, gate 2회 약 0.8).
+
+3차(be3eb2a 2차 5관점 리뷰 반영 뒤, company_research 만 재실행 — Phase 5.5 의 Edit 명시 확인): 7턴 63s 0.28 USD, DONE_WITH_CONCERNS. 캐시 재사용 → §7 Read → `list --json` → 미연결 카드에 `apply`(basis = 체크리스트 최신기사 행·화두 원문, source = 캐시 파일), 캐시 파일은 수정 없음(mtime 유지), validate PASS. 캐시를 재사용한 세션에는 `네이버-분석리포트.md` 가 없어 §5 줄을 교체할 대상이 없었고 에이전트가 `find /` 로 찾은 뒤 우려사항으로 보고 → Phase 5.5 에 "리포트 파일을 만들지 않은 세션이면 §5 교체를 생략하고 완료 상태에만 적는다" 문구 추가.
+
 ---
 
 > 페르소나: **김민수** (신입 백엔드 개발자, 서울과학기술대 컴공 졸업, 인턴 6개월)
