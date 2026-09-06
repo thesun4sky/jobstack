@@ -3,7 +3,7 @@
 - **작성일**: 2026-09-06 · **기준 커밋**: `main @ 75ed5a6` (PR #17 v1.0.0 머지 직후) · **대상 버전**: 1.1.0
 - **근거 문서**: `templates/experience-methods.md`(경험 전환 6단계), `docs/experience-card-schema.md`(카드 계약), `ETHOS.md` 원칙 1·5·8, `docs/plans/version-upgrade-review-2026-09.md` U-21(`ai_usage` 신설 선례)
 - **표기**: `[사실]` 코드·문서로 확인 · `[2차]` 원문 접근 불가, 검색 요약 기준 · **S** 30분 내 · **M** 1~2시간 · **L** 반나절 이상
-- **상태**: 구현 완료 — 커밋 9개, 1차 3관점 리뷰 9건·2차 5관점 리뷰 14건 반영, gate eval 2/2·스모크 4/4 통과(§8).
+- **상태**: 구현 완료 — 커밋 11개, 1차 3관점 리뷰 9건·2차 5관점 리뷰 14건·PR #18 오너 리뷰 6건 반영, gate eval 2/2·스모크 4/4 통과(§8).
 
 ---
 
@@ -169,9 +169,11 @@ SKILL.md 의 경험 카드 항목을 한 줄 안에서 `list --company`·`apply_
 | 5f335d1 | C6 리뷰·스모크 반영 | test-exp 95/95, 린트 |
 | a85bbe0 | C7 실행 로그·헤드리스 실측 기록 | gate eval 2/2, 스모크 4/4 |
 | be3eb2a | C9 2차 5관점 리뷰 반영(아래 표) | test-exp 131/131, 린트 8종, run-integration-test 93/93, Node·셸 테스트 전부 통과 |
-| (이 커밋) | C9 문서 — 2차 리뷰 표·company_research 스모크 3차 | — |
+| 592ccae | C9 문서 — 2차 리뷰 표·company_research 스모크 3차 | — |
+| 24ee96f | C10 PR #18 오너 리뷰 반영(아래 표) | test-exp 150/150, test-preambles 19/19, run-integration-test 93/93, 린트 8종 |
+| (이 커밋) | C10 문서 — 오너 리뷰 반영 표 | — |
 
-결정적 테스트: `test/test-exp.sh` 131/131(원본 67 → 1차 28·2차 36 추가), `run-integration-test.sh` 93/93(격리 HOME), Node 테스트 7종·셸 테스트 12종·golden 통과, 린트 8종 통과.
+결정적 테스트: `test/test-exp.sh` 150/150(원본 67 → 1차 리뷰 28·2차 리뷰 36·PR 리뷰 19 추가), `run-integration-test.sh` 93/93(격리 HOME), Node 테스트 7종·셸 테스트 12종·golden 통과, 린트 8종 통과.
 
 ### 3관점 리뷰 (Workflow: 컨벤션 Haiku 4.5 · 방법론 적대적 검증 Sonnet 5 · 스크립트 코드리뷰 Sonnet 5, 지적마다 Sonnet 5 반박자 1명)
 
@@ -216,6 +218,21 @@ SKILL.md 의 경험 카드 항목을 한 줄 안에서 `list --company`·`apply_
 | 15 | 테스트 | 무필터 `list --json` | 기존 스키마에 필드 추가만 했는지(제거·개명 없음) 단언 없음 | low 확인 | 키 존재·필터 전용 키 부재 단언 |
 
 검증: `node --check`, `test/test-exp.sh` 131/131, `bin/gen-skill-docs.sh --check`, 린트 8종, `run-integration-test.sh` 93/93(격리 HOME), Node 7종·셸 12종·golden 통과. company-research 는 289줄(상한 300), 나머지 SKILL.md 는 변경 없음.
+
+### PR #18 오너 리뷰 반영 (24ee96f)
+
+오너 리뷰(2026-09-06 11:50 UTC) — 코드 지적 4건·문서 2건, 전부 반영. 1번은 구 프리앰블로 재현했다(대체 상태 디렉토리로 프리앰블을 돌린 뒤 env.sh 만 source 해 `add` → 대체 디렉토리 미기록, `~/.jobstack` 기록).
+
+| # | 지적 | 판정 | 조치 |
+|---|---|---|---|
+| 1 | env.sh 가 `_JS_STATE` 만 두고 `JOBSTACK_STATE_DIR` 를 export 하지 않아, env.sh 만 source 한 스니펫의 `jobstack-exp.mjs` 가 `~/.jobstack` 에 기록 | **중요** 확인(재현) | env.sh 에 `JOBSTACK_STATE_DIR=…; export`, 프리앰블 안내문, test-preambles env.sh 검사(`env -u` 뒤 `printenv` 로 export 확인), test-exp 계약 테스트 3단언 |
+| 2 | validate 가 숫자 `id`·`title`·`created_at` 을 통과 — 문자열 id 로 찾는 show/update/apply 와 불일치 | 중간 확인 | 필수 필드 문자열 강제(`필드는 문자열이어야 합니다`, 공백뿐이면 누락), 픽스처 카드 + 3단언 |
+| 3 | 오래된 잠금(30초)을 소유 프로세스 생존 확인 없이 회수 — 긴 임계 구역의 잠금을 훔칠 수 있음 | 중간 확인 | 잠금 파일에 `{pid, started_at}`, 죽은 소유자·구 형식만 회수, 살아 있으면 timeout 까지 대기 후 안내 문구로 exit 1(스택 트레이스 없음), `JOBSTACK_LOCK_TIMEOUT_MS`, exp·defense-map 공통, 9단언 |
+| 4 | `list --company` 부분일치가 여럿이면 `matched_apply_plan` 이 첫 항목만 — 계열사 계획이 섞일 수 있음 | 낮음 확인 | 정확 일치(또는 부분일치 1건)일 때만 단수 키, `matched_apply_plans`·`ambiguous_company_match`·상위 `ambiguous_company_matches`, 표 푸터 안내, 3단언 |
+| 5 | three-docs-guide "자소서=선택 이유와 배움" 이 일반 STARR/STAR-L 의 배움으로 회귀할 여지 | 반영 | "선택 이유와 행동 변화·입사 후 적용" 으로, 복제본 2개 재생성 |
+| 6 | NCS 가 기관별 `apply_plans` 를 먼저 보지 않음 | 반영 | Phase 4 경험 카드 우선 사용에 `list --company <기관명>` → `list` 순서 한 줄 |
+
+검증: `test/test-exp.sh` 150/150, `test-preambles.sh` 19/19, `test-defense-map.sh`, `run-integration-test.sh` 93/93(격리 HOME), 린트 8종, Node 7종·셸 12종 통과.
 
 ### 헤드리스 실측
 
