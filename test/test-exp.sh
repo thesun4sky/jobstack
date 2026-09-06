@@ -80,6 +80,16 @@ const ok = d.total === 4 && d.needs_numbers === 3 && d.cards.length === 4
 console.log(ok ? 'OK' : 'MISMATCH:' + JSON.stringify(d));
 " <<<"$LIST_JSON")
 [ "$CHECK" = "OK" ] && ok "list --json 구조·판정 일치" || bad "list --json 구조·판정 일치" "$CHECK"
+# apply_plans 도입은 기존 --json 스키마에 필드를 더했을 뿐(제거·개명 없음), 필터 전용 키는 무필터 응답에 없어야 한다
+CHECK_KEYS=$(node -e "
+const d = JSON.parse(require('fs').readFileSync(0,'utf8'));
+const ok = ['today_kst','total','needs_numbers','with_apply_plans','cards'].every((k) => k in d)
+  && !('company_filter' in d) && d.with_apply_plans === 0
+  && ['id','title','numbers_verdict','ai_usage_present','apply_plans_count'].every((k) => k in d.cards[0])
+  && d.cards[0].apply_plans_count === 0 && !('matched_apply_plan' in d.cards[0]);
+console.log(ok ? 'OK' : 'MISMATCH:' + JSON.stringify(d));
+" <<<"$LIST_JSON")
+[ "$CHECK_KEYS" = "OK" ] && ok "list --json 무필터 스키마(기존 키 유지 + apply 키 추가, 필터 키 없음)" || bad "list --json 무필터 스키마" "$CHECK_KEYS"
 
 # ── show ──────────────────────────────────────────────────────────────────
 ID1="exp-${TODAY_COMPACT}-01"
@@ -151,10 +161,17 @@ has "apply_plans.basis 원문 저장" "핵심 키워드: 결제 안정성" "$(ca
 has "apply 후 주석 보존" "# 사용자 메모 — update 이후에도 남아야 함" "$(cat "$F")"
 has "apply_plans.position 저장" "position: 백엔드" "$(cat "$F")"
 
+# 항목 마지막 필드 뒤(6칸)·카드 레벨(2칸) 주석은 교체·추가 뒤에도 남아야 한다 — yaml 은 항목 뒤 주석을
+# 그 항목 맵의 comment 로 붙이므로 항목을 통째로 바꾸면 사라지던 경로(2차 리뷰). sed -i 는 macOS 와 인자가 달라 awk 로 삽입
+awk '{print} /^      created_at: /{print "      # 항목 뒤 주석 — 교체 후에도 남아야 함"; print "  # 카드 레벨 주석 — 교체 후에도 남아야 함"}' "$F" > "$F.tmp" && mv "$F.tmp" "$F"
+has "주석 픽스처 삽입 확인(항목 뒤)" "# 항목 뒤 주석" "$(cat "$F")"
+
 # 같은 회사(공백·대소문자 정규화 등치)는 교체 — 항목 수는 그대로, 새 plan 만 남는다
 "$E" apply "$ID1" --company " 토스" --plan "새 계획" --basis "b2" --source "s2" >/dev/null 2>&1
 COMPANY_LINES=$(grep -cE '^ {4}- company: ' "$F")
 [ "$COMPANY_LINES" -eq 1 ] && ok "같은 회사 재-apply 는 교체(항목 1건 유지)" || bad "같은 회사 재-apply 교체" "company 줄 수=$COMPANY_LINES"
+has "교체 후 항목 뒤 주석 보존" "# 항목 뒤 주석 — 교체 후에도 남아야 함" "$(cat "$F")"
+has "교체 후 카드 레벨 주석 보존" "# 카드 레벨 주석 — 교체 후에도 남아야 함" "$(cat "$F")"
 hasnt "재-apply 에서 --position 생략 시 이전 position 은 이월되지 않음(전체 교체)" "position: 백엔드" "$(cat "$F")"
 has "교체 후 새 plan 저장" "새 계획" "$(cat "$F")"
 hasnt "교체 후 이전 plan 제거" "p95 지연 원인 분석부터" "$(cat "$F")"
@@ -165,6 +182,21 @@ has "교체 시 (교체) 표시" "(교체)" "$REPL_OUT"
 "$E" apply "$ID1" --company "네이버" --plan "n-plan" --basis "n-basis" --source "n-source" >/dev/null 2>&1
 COMPANY_LINES=$(grep -cE '^ {4}- company: ' "$F")
 [ "$COMPANY_LINES" -eq 2 ] && ok "다른 회사 apply 는 추가(항목 2건)" || bad "다른 회사 apply 추가" "company 줄 수=$COMPANY_LINES"
+has "추가 후에도 항목 뒤 주석 보존" "# 항목 뒤 주석 — 교체 후에도 남아야 함" "$(cat "$F")"
+
+# zero-width 문자(U+200B)가 섞인 회사명은 같은 회사 — 별개 항목이 되지 않고 교체, 저장 표시명에서는 제거
+ZWSP=$(printf '\xe2\x80\x8b')
+ZW_OUT=$("$E" apply "$ID1" --company "토${ZWSP}스" --plan "새 계획3" --basis "b4" --source "s4" 2>&1)
+has "zero-width 가 섞인 같은 회사명은 교체" "(교체)" "$ZW_OUT"
+COMPANY_LINES=$(grep -cE '^ {4}- company: ' "$F")
+[ "$COMPANY_LINES" -eq 2 ] && ok "zero-width 재-apply 후에도 항목 2건 유지" || bad "zero-width 재-apply 항목 수" "company 줄 수=$COMPANY_LINES"
+hasnt "저장 표시명에서 zero-width 문자 제거" "$ZWSP" "$(cat "$F")"
+has "zero-width 제거 후 표시명은 원래 회사명" "company: 토스" "$(grep -E '^ {4}- company: ' "$F")"
+
+# 다른 카드(카드2)는 apply 의 영향을 받지 않는다 — 블록만 잘라 확인
+ID2_BLOCK=$(awk -v id="- id: $ID2" 'p && /^- id: / {exit} $0 == id {p=1} p' "$F")
+has "apply 후 다른 카드(카드2) title 유지" "title: 카드2" "$ID2_BLOCK"
+hasnt "apply 후 다른 카드(카드2)에 apply_plans 미생성" "apply_plans" "$ID2_BLOCK"
 
 # 근거·출처 누락은 거부(exit 1) + 파일 미변경
 BEFORE_APPLY=$(cat "$F")
@@ -175,17 +207,38 @@ BLANK_OUT=$("$E" apply "$ID1" --company "카카오" --plan "x" --basis "   " --s
 [ $RC -eq 1 ] && ok "apply --basis 공백만은 누락 취급(exit 1)" || bad "apply basis 공백 거부" "rc=$RC out=$BLANK_OUT"
 NOID_OUT=$("$E" apply exp-nonexistent --company c --plan p --basis b --source s 2>&1); RC=$?
 [ $RC -eq 1 ] && has "apply 없는 id 오류(exit 1)" "찾을 수 없습니다" "$NOID_OUT" || bad "apply 없는 id exit 1" "rc=$RC"
+POSBOOL_OUT=$("$E" apply "$ID1" --company "카카오" --position --plan "x" --basis "b" --source "s" 2>&1); RC=$?
+[ $RC -eq 1 ] && has "apply --position 값 없이 주면 거부(exit 1, 조용히 버리지 않음)" "position" "$POSBOOL_OUT" || bad "apply --position 값 없음 거부" "rc=$RC out=$POSBOOL_OUT"
+[ "$(cat "$F")" = "$BEFORE_APPLY" ] && ok "거부된 --position apply 는 파일 미변경" || bad "거부된 --position apply 파일 미변경" "파일이 변경됨"
+ZWONLY_OUT=$("$E" apply "$ID1" --company "$ZWSP" --plan "x" --basis "b" --source "s" 2>&1); RC=$?
+[ $RC -eq 1 ] && has "보이지 않는 문자만인 회사명 거부(exit 1)" "company" "$ZWONLY_OUT" || bad "zero-width 만인 회사명 거부" "rc=$RC out=$ZWONLY_OUT"
 
 # list — 적용 열·푸터·회사 필터
 LIST_APPLY=$("$E" list 2>&1)
 has "list 헤더에 적용 열" "적용" "$LIST_APPLY"
 ROW1=$(grep "$ID1" <<<"$LIST_APPLY")
-echo "$ROW1" | grep -qE 'O +- +2' && ok "list 적용 열에 항목 수(2)" || bad "list 적용 열 항목 수" "$ROW1"
+# 제목 뒤 꼬리만 잘라 '수치 AI 적용' 세 열을 앞에서부터 앵커한다(제목·태그 텍스트로 거짓 PASS 가 나지 않게)
+ROW1_TAIL=${ROW1#*"결제 API 지연 개선(수정)"}
+echo "$ROW1_TAIL" | grep -qE '^ +O +- +2 ' && ok "list 적용 열에 항목 수(2) — 수치 O·AI -·적용 2 순서" || bad "list 적용 열 항목 수" "$ROW1"
+LIST_APPLY_JSON=$("$E" list --json 2>&1)
+CHECK1=$(node -e "
+const d = JSON.parse(require('fs').readFileSync(0,'utf8'));
+const c = d.cards.find((x) => x.id === '$ID1');
+const ok = !!c && c.apply_plans_count === 2 && c.numbers_verdict === 'O' && c.ai_usage_present === false && d.with_apply_plans === 1;
+console.log(ok ? 'OK' : 'MISMATCH:' + JSON.stringify(c));
+" <<<"$LIST_APPLY_JSON")
+[ "$CHECK1" = "OK" ] && ok "list --json 의 ID1 값이 표와 일치(apply_plans_count 2·수치 O·AI 없음)" || bad "list --json ID1 값" "$CHECK1"
 has "list 푸터 입사 후 적용 집계" "입사 후 적용 1장" "$LIST_APPLY"
 FILTERED=$("$E" list --company "토 스" 2>&1)
 has "list --company 정규화 매칭(공백 무시)" "$ID1" "$FILTERED"
 hasnt "list --company 는 항목 없는 카드 제외" "$ID2" "$FILTERED"
 has "list --company 필터 표시" "회사 필터: 토 스" "$FILTERED"
+NOVAL_OUT=$("$E" list --company 2>&1); RC=$?
+[ $RC -eq 1 ] && has "list --company 값 없이 호출하면 거부(exit 1, 무필터 폴백 없음)" "값을 지정" "$NOVAL_OUT" || bad "list --company 값 없음 거부" "rc=$RC out=$NOVAL_OUT"
+NOVAL_JSON_OUT=$("$E" list --json --company 2>&1); RC=$?
+[ $RC -eq 1 ] && ok "list --json --company 값 없이도 거부(exit 1)" || bad "list --json --company 값 없음 거부" "rc=$RC out=$NOVAL_JSON_OUT"
+EMPTYVAL_OUT=$("$E" list --company "   " 2>&1); RC=$?
+[ $RC -eq 1 ] && ok "list --company 공백만인 값 거부(exit 1)" || bad "list --company 공백 값 거부" "rc=$RC out=$EMPTYVAL_OUT"
 FILTER_JSON=$("$E" list --json --company 네이버 2>&1)
 CHECK2=$(node -e "
 const d = JSON.parse(require('fs').readFileSync(0,'utf8'));
@@ -195,6 +248,56 @@ console.log(ok ? 'OK' : 'MISMATCH:' + JSON.stringify(d));
 " <<<"$FILTER_JSON")
 [ "$CHECK2" = "OK" ] && ok "list --json --company 구조(apply_plans_count·matched_apply_plan)" || bad "list --json --company 구조" "$CHECK2"
 hasnt "list 표에는 json 키가 새지 않음" "apply_plans_count" "$LIST_APPLY"
+
+# ── 회사명 유니코드 정규화(NFKC) — 결합 문자·전각·대소문자 차이는 같은 회사 ──────
+USTATE="$WORK/state-unicode"
+JOBSTACK_STATE_DIR="$USTATE" "$E" add --title u --problem p --role r --action a --change c >/dev/null 2>&1
+U_ID="exp-${TODAY_COMPACT}-01"
+UF="$USTATE/profiles/experiences.yaml"
+JOBSTACK_STATE_DIR="$USTATE" "$E" apply "$U_ID" --company "$(printf 'Caf\xc3\xa9')" --plan nfc --basis b --source s >/dev/null 2>&1   # NFC é
+NFD_OUT=$(JOBSTACK_STATE_DIR="$USTATE" "$E" apply "$U_ID" --company "$(printf 'Cafe\xcc\x81')" --plan nfd --basis b --source s 2>&1)  # NFD e + U+0301
+has "NFD/NFC 표기가 다른 같은 회사명은 교체" "(교체)" "$NFD_OUT"
+FW_OUT=$(JOBSTACK_STATE_DIR="$USTATE" "$E" apply "$U_ID" --company "ＴＯＳＳ" --plan fw --basis b --source s 2>&1)
+has "전각 회사명은 다른 회사(신규)" "(신규)" "$FW_OUT"
+HW_OUT=$(JOBSTACK_STATE_DIR="$USTATE" "$E" apply "$U_ID" --company "toss" --plan hw --basis b --source s 2>&1)
+has "전각↔반각·대소문자 차이는 같은 회사(교체)" "(교체)" "$HW_OUT"
+U_COUNT=$(grep -cE '^ {4}- company: ' "$UF"); U_COUNT=${U_COUNT:-0}
+[ "$U_COUNT" -eq 2 ] && ok "정규화 뒤 항목 2건(Café·toss)" || bad "정규화 항목 수" "count=$U_COUNT"
+U_FILTER=$(JOBSTACK_STATE_DIR="$USTATE" "$E" list --company "$(printf 'cafe\xcc\x81')" 2>&1)
+has "list --company 도 같은 정규화로 매칭(NFD 소문자 질의)" "$U_ID" "$U_FILTER"
+U_VAL=$(JOBSTACK_STATE_DIR="$USTATE" "$E" validate 2>&1)
+has "정규화 저장 파일 validate 통과" "PASS" "$U_VAL"
+
+# ── 손으로 쓴 apply_plans: [] (flow) / null 카드에 apply → 블록 시퀀스로 승격 ───
+FSTATE="$WORK/state-flow"; mkdir -p "$FSTATE/profiles"
+FF="$FSTATE/profiles/experiences.yaml"
+cat > "$FF" <<'YAML'
+- id: exp-20260701-01
+  title: flow-empty
+  problem: p
+  role: r
+  action: a
+  change: c
+  created_at: "2026-07-01T00:00:00Z"
+  apply_plans: []
+- id: exp-20260701-02
+  title: null-plans
+  problem: p
+  role: r
+  action: a
+  change: c
+  created_at: "2026-07-01T00:00:00Z"
+  apply_plans: null
+YAML
+JOBSTACK_STATE_DIR="$FSTATE" "$E" apply exp-20260701-01 --company A --plan p --basis b --source s >/dev/null 2>&1; RC1=$?
+JOBSTACK_STATE_DIR="$FSTATE" "$E" apply exp-20260701-02 --company B --plan p --basis b --source s >/dev/null 2>&1; RC2=$?
+[ $RC1 -eq 0 ] && [ $RC2 -eq 0 ] && ok "apply_plans: [] / null 카드에 apply 성공" || bad "flow/null 카드 apply" "rc=$RC1/$RC2"
+hasnt "flow [] 는 블록 시퀀스로 승격" "apply_plans: \[\]" "$(cat "$FF")"
+hasnt "null 은 시퀀스로 교체" "apply_plans: null" "$(cat "$FF")"
+F_COUNT=$(grep -cE '^ {4}- company: ' "$FF"); F_COUNT=${F_COUNT:-0}
+[ "$F_COUNT" -eq 2 ] && ok "승격 후 카드마다 항목 1건(블록 스타일)" || bad "승격 항목 수" "count=$F_COUNT"
+F_VAL=$(JOBSTACK_STATE_DIR="$FSTATE" "$E" validate 2>&1)
+has "승격 후 validate 통과" "PASS" "$F_VAL"
 
 # ── validate — 스키마 위반 파일 ───────────────────────────────────────────────
 BADFILE="$WORK/bad.yaml"
@@ -245,6 +348,33 @@ cat > "$BADFILE" <<'YAML'
       plan: "p3"
       basis: "b3"
       source: "s3"
+- id: exp-20260701-04
+  title: bad-apply-not-array
+  problem: p
+  role: r
+  action: a
+  change: c
+  created_at: "2026-07-01T00:00:00Z"
+  apply_plans: "문자열"
+- id: exp-20260701-05
+  title: bad-apply-position-type
+  problem: p
+  role: r
+  action: a
+  change: c
+  created_at: "2026-07-01T00:00:00Z"
+  apply_plans:
+    - company: "카카오"
+      position: 3
+      plan: "p"
+      basis: "b"
+      source: "s"
+      created_at: "2026-07-01T00:00:00Z"
+    - company: "\u200B"
+      plan: "p"
+      basis: "b"
+      source: "s"
+      created_at: "2026-07-01T00:00:00Z"
 YAML
 BAD_OUT=$("$E" validate "$BADFILE" 2>&1); RC=$?
 [ $RC -eq 1 ] && ok "위반 파일 validate exit 1" || bad "위반 파일 validate exit 1" "rc=$RC"
@@ -257,6 +387,9 @@ has "validate: apply_plans basis 공백 검출" "apply_plans\[0\] basis 가 비�
 has "validate: apply_plans 회사 중복(정규화) 검출" "회사 중복" "$BAD_OUT"
 has "validate: apply_plans created_at 형식 오류 검출" "apply_plans\[1\] created_at 형식 오류" "$BAD_OUT"
 has "validate: apply_plans created_at 누락은 형식 오류와 구분해 검출" "apply_plans\[2\] created_at 가 비어 있습니다" "$BAD_OUT"
+has "validate: apply_plans 비배열 검출" "apply_plans 는 배열이어야 합니다" "$BAD_OUT"
+has "validate: apply_plans position 비문자열 검출" "apply_plans\[0\] position 은 문자열이어야 합니다" "$BAD_OUT"
+has "validate: 보이지 않는 문자만인 회사명은 빈 값으로 검출" "apply_plans\[1\] company 가 비어 있습니다" "$BAD_OUT"
 
 # 최상위가 리스트가 아닌 파일
 TOPFILE="$WORK/top.yaml"
@@ -314,6 +447,27 @@ PCOUNT=$(grep -c '^- id:' "$PSTATE/profiles/experiences.yaml" 2>/dev/null || ech
 PUNIQ=$(grep '^- id:' "$PSTATE/profiles/experiences.yaml" 2>/dev/null | sort -u | wc -l | tr -d ' ')
 [ "$PUNIQ" -eq 20 ] && ok "동시 add 20건 → id 20개 모두 고유" || bad "동시 add id 중복" "unique=$PUNIQ"
 [ ! -e "$PSTATE/profiles/experiences.yaml.lock" ] && ok "완료 후 잠금 파일 정리" || bad "잠금 파일 잔존" "$PSTATE/profiles/experiences.yaml.lock"
+
+# 동시 apply 20건 — add 와 같은 withLock 경로의 회귀 테스트: 다른 회사 20건은 모두 남고, 같은 회사 20건은 1건만 남는다
+APSTATE="$WORK/state-apply-parallel"
+JOBSTACK_STATE_DIR="$APSTATE" "$E" add --title 동시적용 --problem p --role r --action a --change c >/dev/null 2>&1
+AP_ID="exp-${TODAY_COMPACT}-01"
+APF="$APSTATE/profiles/experiences.yaml"
+for i in $(seq 1 20); do
+  JOBSTACK_STATE_DIR="$APSTATE" "$E" apply "$AP_ID" --company "회사$i" --plan "p$i" --basis "b$i" --source "s$i" >/dev/null 2>&1 &
+done
+wait
+AP_COUNT=$(grep -cE '^ {4}- company: ' "$APF" 2>/dev/null); AP_COUNT=${AP_COUNT:-0}
+[ "$AP_COUNT" -eq 20 ] && ok "동시 apply 20건(다른 회사) → 항목 20건(잠금)" || bad "동시 apply 유실" "count=$AP_COUNT"
+for i in $(seq 1 20); do
+  JOBSTACK_STATE_DIR="$APSTATE" "$E" apply "$AP_ID" --company "같은회사" --plan "p$i" --basis "b" --source "s" >/dev/null 2>&1 &
+done
+wait
+SAME_COUNT=$(grep -cE '^ {4}- company: 같은회사$' "$APF" 2>/dev/null); SAME_COUNT=${SAME_COUNT:-0}
+[ "$SAME_COUNT" -eq 1 ] && ok "동시 apply 20건(같은 회사) → 항목 1건(교체)" || bad "동시 같은 회사 apply 중복" "count=$SAME_COUNT"
+AP_VAL=$(JOBSTACK_STATE_DIR="$APSTATE" "$E" validate 2>&1); RC=$?
+[ $RC -eq 0 ] && ok "동시 apply 후 validate 통과(회사 중복 없음)" || bad "동시 apply 후 validate" "$AP_VAL"
+[ ! -e "$APF.lock" ] && ok "동시 apply 완료 후 잠금 파일 정리" || bad "apply 잠금 파일 잔존" "$APF.lock"
 
 rm -rf "$WORK"
 echo "PASS: $PASS / FAIL: $FAIL"

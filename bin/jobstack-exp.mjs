@@ -17,7 +17,8 @@
  *                     [--ai-usage-tool X] [--ai-usage-task Y] [--ai-usage-effect Z]
  *   jobstack-exp apply <id> --company C --plan P --basis B --source S [--position X]
  *                     (STAR-R 의 R = 입사 후 적용. 회사당 1건 upsert — 근거·출처가 비면 거부.
- *                      같은 회사 재-apply 는 항목 전체를 교체하므로 --position 생략 시 이전 값은 사라진다)
+ *                      같은 회사 재-apply 는 항목 전체를 교체하므로 --position 생략 시 이전 값은 사라진다.
+ *                      회사명 비교: 유니코드 NFKC → 공백·대시·비가시 문자 제거 → 소문자)
  *   jobstack-exp validate [file]
  *
  * 환경: JOBSTACK_STATE_DIR (기본 ~/.jobstack) → profiles/experiences.yaml
@@ -50,9 +51,11 @@ const ISO_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$
 const UPDATE_SIMPLE_FIELDS = ['title', 'problem', 'role', 'action', 'change', 'numbers'];
 // apply_plans (STAR-R 의 R = 입사 후 적용) — 회사당 1건, 근거(basis)·출처(source) 없이는 저장하지 않는다
 const APPLY_REQUIRED = ['company', 'plan', 'basis', 'source'];
-const normCompany = (s) => String(s ?? '').replace(/[\s-]+/g, '').toLowerCase();
+// 회사명 정규화 — NFKC(전각·결합 문자 통일) 뒤 공백·대시(\p{Pd})·비가시 서식 문자(\p{Cf}: zero-width·BOM 등) 제거, 소문자.
+// 보이지 않는 문자만 다른 회사명이 별개 항목으로 저장되지 않게 한다(회사당 1건 불변식)
+const normCompany = (s) => String(s ?? '').normalize('NFKC').replace(/[\s\p{Pd}\p{Cf}]+/gu, '').toLowerCase();
 const applyPlansOf = (card) => (Array.isArray(card?.apply_plans) ? card.apply_plans : []);
-// 회사명 느슨 매칭(공백·하이픈 무시, 대소문자 무시, 부분일치) — defense-map 의 회사 매칭과 같은 규칙
+// 회사명 느슨 매칭(위 정규화 뒤 부분일치) — defense-map 의 회사 매칭 규칙에 NFKC·비가시 문자 제거를 더한 것
 function matchedPlan(card, query) {
   const key = normCompany(query);
   if (!key) return null;
@@ -264,7 +267,12 @@ function verdictOf(card) {
 function cmdList(flags) {
   const { cards: all } = loadExisting();
   const today = kstDateDash();
-  const filter = typeof flags.company === 'string' && flags.company.trim() ? flags.company.trim() : null;
+  // --company 를 값 없이(또는 공백만) 주면 무필터로 조용히 폴백하지 않고 거부한다 — 전체 카드를 필터 결과로 오인하게 되므로
+  let filter = null;
+  if (flags.company !== undefined) {
+    filter = typeof flags.company === 'string' ? flags.company.trim() : '';
+    if (!filter) die('--company 값을 지정하세요 (jobstack-exp list --company <회사명>)');
+  }
   const cards = filter ? all.filter((c) => matchedPlan(c, filter) !== null) : all;
   const verdicts = cards.map(verdictOf);
   const needsNumbers = verdicts.filter((v) => v !== 'O').length;
@@ -393,6 +401,11 @@ function cmdApply(positionals, flags) {
   if (missing.length) {
     die(`필수 인자 누락: ${missing.join(', ')} (근거 --basis·출처 --source 없이는 입사 후 적용을 저장하지 않습니다)`);
   }
+  // --position 을 값 없이 주면(다음 토큰이 플래그이거나 말미) 조용히 버리지 않고 거부한다
+  if (flags.position !== undefined && typeof flags.position !== 'string') {
+    die('--position 값이 비어 있습니다 (값을 지정하거나 --position 을 생략하세요)');
+  }
+  if (!normCompany(flags.company)) die('--company 값이 비어 있습니다 (보이지 않는 문자만으로는 회사명이 되지 않습니다)');
 
   const raw = readRaw(EXP_FILE);
   if (raw === null || raw.trim() === '') die(`${id} 카드를 찾을 수 없습니다 (경험뱅크 파일 없음)`);
@@ -415,7 +428,8 @@ function cmdApply(positionals, flags) {
   }
   if (plans.flow) plans.flow = false;
 
-  const entry = { company: flags.company.trim() };
+  // 표시명에서도 비가시 서식 문자는 뺀다 — 자소서·면접 산출물에 zero-width 문자가 실려 나가지 않게
+  const entry = { company: flags.company.trim().replace(/\p{Cf}+/gu, '') };
   if (typeof flags.position === 'string' && flags.position.trim()) entry.position = flags.position.trim();
   entry.plan = flags.plan.trim();
   entry.basis = flags.basis.trim();
@@ -426,8 +440,16 @@ function cmdApply(positionals, flags) {
   const key = normCompany(entry.company);
   const idx = plans.items.findIndex((p) => YAML.isMap(p) && normCompany(p.get('company')) === key);
   const node = doc.createNode(entry);
-  if (idx >= 0) plans.items[idx] = node;
-  else plans.add(node);
+  if (idx >= 0) {
+    // 교체해도 항목에 붙은 주석은 남긴다 — 항목 뒤(다음 항목·다음 필드 앞) 주석은 yaml 이 이 항목 맵의 comment 로 붙인다
+    const old = plans.items[idx];
+    if (old.commentBefore) node.commentBefore = old.commentBefore;
+    if (old.comment) node.comment = old.comment;
+    if (old.spaceBefore) node.spaceBefore = old.spaceBefore;
+    plans.items[idx] = node;
+  } else {
+    plans.add(node);
+  }
 
   atomicWrite(EXP_FILE, doc.toString());
   process.stdout.write(`적용 저장됨: ${id} · ${entry.company} (${idx >= 0 ? '교체' : '신규'})\n경로: ${EXP_FILE}\n`);
@@ -508,7 +530,8 @@ function cmdValidate(positionals) {
             return;
           }
           for (const k of APPLY_REQUIRED) {
-            if (typeof p[k] !== 'string' || !p[k].trim()) errors.push(`${label}: ${tag} ${k} 가 비어 있습니다`);
+            const blank = typeof p[k] !== 'string' || !p[k].trim() || (k === 'company' && !normCompany(p[k]));
+            if (blank) errors.push(`${label}: ${tag} ${k} 가 비어 있습니다`);
           }
           if (p.position !== undefined && p.position !== null && typeof p.position !== 'string') {
             errors.push(`${label}: ${tag} position 은 문자열이어야 합니다`);

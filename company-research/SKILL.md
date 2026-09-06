@@ -7,6 +7,7 @@ allowed-tools:
   - Bash
   - Read
   - Write
+  - Edit
   - AskUserQuestion
   - WebSearch
   - WebFetch
@@ -252,7 +253,7 @@ Write로 두 파일을 모두 저장합니다.
 "$_JS_BIN/jobstack-exp.mjs" list --json
 ```
 
-1. Phase 2 키워드 체크리스트의 O 항목·Phase 3 '이미 팀원처럼' 화두와 카드의 `job_link_tags`·`action`·`change` 가 닿는 카드를 **3장 이하** 고릅니다(닿는 카드가 없으면 이 절을 생략).
+1. Phase 2 키워드 체크리스트의 O 항목·Phase 3 '이미 팀원처럼' 화두와 카드의 `job_link_tags`·`action`·`change` 가 닿는 카드를 **3장 이하** 고릅니다(닿는 카드가 없으면 이 절을 생략). 닿는 카드가 4장 이상이면 겹치는 O 항목·화두 수가 많은 순으로, 같으면 `numbers` 가 있는 카드를 앞에 둡니다.
 2. 카드마다 §7 규칙 ② 형식으로 R 한 문장을 초안합니다 — `basis` 는 방금 만든 체크리스트·화두 **원문**, `source` 는 `company-cache/{COMPANY}-{TODAY}.md`.
 3. 1회 AskUserQuestion 으로 저장 여부를 확인한 뒤 카드마다 저장합니다.
 
@@ -263,7 +264,7 @@ Write로 두 파일을 모두 저장합니다.
   --basis "체크리스트·화두 원문" --source "company-cache/{COMPANY}-{TODAY}.md"
 ```
 
-저장한 문장은 리포트 §5 "자소서/면접 활용 가이드" 의 "경험 카드 적용 문장" 항목에도 같은 내용으로 적습니다. 근거가 체크리스트·화두에 없는 문장은 만들지 않습니다.
+저장한 문장은 Edit 으로 방금 저장한 `{COMPANY}-분석리포트.md` 의 §5 "경험 카드 적용 문장" 줄만 같은 내용으로 교체합니다(캐시 파일 `$_JS_STATE/company-cache/{COMPANY}-{TODAY}.md` 는 요약 블록용이므로 수정하지 않습니다). 근거가 체크리스트·화두에 없는 문장은 만들지 않습니다.
 
 ---
 

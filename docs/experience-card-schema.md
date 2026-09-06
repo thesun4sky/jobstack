@@ -21,7 +21,7 @@
 | `ai_usage.task` | string | `ai_usage`가 객체일 때 Y | 그 도구로 수행한 작업 |
 | `ai_usage.effect` | string | `ai_usage`가 객체일 때 Y | 개선 효과 (전후 비교) |
 | `apply_plans` | object[] | N | 입사 후 적용(STAR-R 의 R) 목록. 회사당 1건(정규화 회사명 기준 upsert). 없으면 필드 자체가 없을 수 있다(부재 == `[]`) — `add`는 쓰지 않고 `apply`만 쓴다 |
-| `apply_plans[].company` | string | 항목 내 Y | 지원 기업 표시명. 중복 판정·`list --company` 매칭은 공백·하이픈 제거·소문자 정규화 기준 |
+| `apply_plans[].company` | string | 항목 내 Y | 지원 기업 표시명. 중복 판정·`list --company` 매칭은 유니코드 NFKC 정규화 뒤 공백·대시·비가시 문자(zero-width·BOM) 제거·소문자 기준. 보이지 않는 문자만으로 된 회사명은 거부 |
 | `apply_plans[].position` | string | N | 지원 직무 (있을 때만) |
 | `apply_plans[].plan` | string | 항목 내 Y | R 한 문장 — "[기업의 과제·키워드]에 [카드의 행동·변화]를 적용해 [기대 변화]" (`experience-methods.md` §7) |
 | `apply_plans[].basis` | string | 항목 내 Y | 근거 원문 1개 이상 — 기업분석 키워드 체크리스트·'이미 팀원처럼' 화두·공고 문구를 그대로 인용 |
@@ -86,10 +86,10 @@ apply_plans:
 | 명령 | 기능 |
 |---|---|
 | `add --title T --problem P --role R --action A --change C [--numbers N] [--tags a,b] [--ai-usage-tool X --ai-usage-task Y --ai-usage-effect Z] [--json '{...}']` | 카드 1장을 파일 끝에 append — 기존 카드·주석 보존, append 후 전체 재파싱에 실패하면 원본을 건드리지 않고 종료 |
-| `list [--json] [--company C]` | id·제목·수치 판정(O/△/X)·AI 열(`ai_usage` 존재 시 O)·적용 열(`apply_plans` 항목 수, 없으면 `-`)·직무 태그 요약표 + `카드 N장 · 수치 보강 필요 M장 · 입사 후 적용 K장`. `--company C`는 정규화 부분일치로 그 회사의 `apply_plans`가 있는 카드만 보여 주고, `--json`에는 `apply_plans_count`·`with_apply_plans`, 필터 시 `company_filter`·`matched_apply_plan`이 붙는다 |
+| `list [--json] [--company C]` | id·제목·수치 판정(O/△/X)·AI 열(`ai_usage` 존재 시 O)·적용 열(`apply_plans` 항목 수, 없으면 `-`)·직무 태그 요약표 + `카드 N장 · 수치 보강 필요 M장 · 입사 후 적용 K장`. `--company C`는 정규화 부분일치로 그 회사의 `apply_plans`가 있는 카드만 보여 주고(값이 비면 exit 1 — 무필터로 폴백하지 않음), `--json`에는 `apply_plans_count`·`with_apply_plans`, 필터 시 `company_filter`·`matched_apply_plan`이 붙는다 |
 | `show <id>` | 카드 1장을 YAML로 출력 |
 | `update <id> [--title T] [--problem P] [--role R] [--action A] [--change C] [--numbers N] [--tags a,b] [--ai-usage-tool X] [--ai-usage-task Y] [--ai-usage-effect Z]` | 지정한 필드만 in-place 수정 (주석 보존) |
-| `apply <id> --company C --plan P --basis B --source S [--position X]` | 입사 후 적용(STAR-R 의 R) 항목을 회사당 1건 upsert — 같은 회사(정규화 등치)는 교체, 다른 회사는 추가. `--basis`·`--source`가 비면 exit 1, 파일 미변경. 주석 보존·원자적 쓰기·잠금은 `update`와 동일 |
+| `apply <id> --company C --plan P --basis B --source S [--position X]` | 입사 후 적용(STAR-R 의 R) 항목을 회사당 1건 upsert — 같은 회사(정규화 등치)는 교체, 다른 회사는 추가. `--basis`·`--source`가 비면 exit 1, 파일 미변경. `--position`을 값 없이 주면 exit 1. 교체해도 항목에 붙은 주석은 남는다. 주석 보존·원자적 쓰기·잠금은 `update`와 동일 |
 | `validate [file]` | 스키마 검사. 기본 대상은 `$_JS_STATE/profiles/experiences.yaml`, 위반마다 `[FAIL] id: 사유`, 통과 시 `[PASS] 카드 N장` |
 
 모든 쓰기는 임시 파일 + rename으로 원자적이며, 상태 디렉토리(`$_JS_STATE` 또는 `JOBSTACK_STATE_DIR`) 밖에는 쓰지 않는다. 날짜 파일명·기준일은 KST(UTC+9) 기준이다.

@@ -18,7 +18,7 @@ STAR-R 도입 — 경험 카드에 기업분석 근거와 함께 '입사 후 적
 - **company-research Phase 5.5 경험 카드 연결 (SR-04)** — 키워드 체크리스트·'이미 팀원처럼' 화두와 닿는
   카드 3장 이하에 R 문장을 제안하고 확인 후 `apply`. 리포트 §5 에 "경험 카드 적용 문장" 항목.
 - **eval·테스트 (SR-07)** — `expbank-gate-star-r-apply` 게이트 케이스(캐시·카드 setup, apply 4플래그
-  must_call), `test/test-exp.sh` 28단언 추가(67 → 95).
+  must_call), `test/test-exp.sh` 단언 67 → 131(1차 리뷰 28·2차 리뷰 36 추가).
 
 ### Changed
 - **문서·면접 스킬 소비 (SR-05·SR-06)** — cover-letter 는 '요'에 지원 기업 `apply_plans` 우선(`list --company`),
@@ -36,6 +36,17 @@ STAR-R 도입 — 경험 카드에 기업분석 근거와 함께 '입사 후 적
 - `validate` 의 apply_plans `created_at` 누락과 형식 오류 메시지 분리, 재-apply 전체 교체(`--position` 소실)
   계약을 스키마·usage 에 명시, §7 의 humanize-check 인용 표기 정정, test-exp 의 company 카운트 앵커링과
   position 단언, eval note 의 must_call 의미 정정, experience-bank 는 add 전 카드 스키마 Read 를 건너뛰지 않음.
+
+### Fixed — 2차 5관점 리뷰 반영 (호환·보안·문서·프롬프트·테스트 — 지적 16건 중 12건 확정)
+- `normCompany` 가 결합 문자(NFD)·전각·zero-width 문자를 구분해 같은 회사가 별개 항목으로 저장되던 문제 — NFKC 정규화 뒤
+  공백·대시·비가시 문자를 제거하고, 저장 표시명에서도 비가시 문자를 뺀다. 보이지 않는 문자만인 회사명은 `apply`·`validate` 가 거부.
+- `list --company` 를 값 없이 부르면 무필터로 조용히 폴백하고, `apply --position` 값 없음은 조용히 버려지던 경로 — 둘 다 exit 1.
+- 같은 회사 재-apply 로 항목을 교체할 때 항목 뒤에 붙은 주석이 사라지던 문제 — 항목 주석(앞·뒤)을 새 항목으로 이월.
+- company-research Phase 5.5 가 이미 Write 한 리포트 §5 를 고치도록 하면서 `Edit` 도구가 없던 문제 — allowed-tools 에 추가하고
+  리포트 파일의 §5 줄만 교체(캐시 파일은 손대지 않음), 닿는 카드가 4장 이상일 때의 우선순위 규칙 추가.
+- guardrails §7 — 셸 펜스 인자에 공고·기업 페이지 원문을 넣을 때의 따옴표 규칙(`jobstack-exp add/update/apply`·tracker 공통).
+- test-exp 36단언 추가(95 → 131): 적용 열 컬럼 앵커링, 무필터 `--json` 스키마, 값 없는 플래그 거부, 유니코드 정규화,
+  `apply_plans: []`/`null` 승격, 다른 카드 보존, 항목 뒤 주석 보존, validate 픽스처, 동시 apply 20건(잠금).
 
 ## [1.0.0] - 2026-09-03
 
