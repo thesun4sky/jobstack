@@ -3,7 +3,7 @@
 - **작성일**: 2026-09-06 · **기준 커밋**: `main @ 75ed5a6` (PR #17 v1.0.0 머지 직후) · **대상 버전**: 1.1.0
 - **근거 문서**: `templates/experience-methods.md`(경험 전환 6단계), `docs/experience-card-schema.md`(카드 계약), `ETHOS.md` 원칙 1·5·8, `docs/plans/version-upgrade-review-2026-09.md` U-21(`ai_usage` 신설 선례)
 - **표기**: `[사실]` 코드·문서로 확인 · `[2차]` 원문 접근 불가, 검색 요약 기준 · **S** 30분 내 · **M** 1~2시간 · **L** 반나절 이상
-- **상태**: 구현 완료 — 커밋 7개, 3관점 리뷰 9건 반영, gate eval 2/2·스모크 4/4 통과(§8).
+- **상태**: 구현 완료 — 커밋 9개, 1차 3관점 리뷰 9건·2차 5관점 리뷰 14건 반영, gate eval 2/2·스모크 4/4 통과(§8).
 
 ---
 
@@ -151,7 +151,7 @@ SKILL.md 의 경험 카드 항목을 한 줄 안에서 `list --company`·`apply_
 
 ## 7. 후속 후보 (범위 밖)
 
-`apply <id> --company C --remove` · strategy GAP 분석에서 R 제안 · defense-map `answer_hint` 가 카드 R 인용 · retro 회고의 '다음 행동' → 카드 갱신 · `bin/jobstack-preamble` 에 company-cache 개수 노출.
+`apply <id> --company C --remove` · strategy GAP 분석에서 R 제안 · defense-map `answer_hint` 가 카드 R 인용 · retro 회고의 '다음 행동' → 카드 갱신 · `bin/jobstack-preamble` 에 company-cache 개수 노출 · `bin/jobstack-defense-map.mjs` 회사 매칭을 `normCompany` 와 같은 NFKC·비가시 문자 제거 규칙으로 통일(2차 리뷰 #1 후속 — 지금은 공백·하이픈·소문자만).
 
 ---
 
@@ -167,8 +167,11 @@ SKILL.md 의 경험 카드 항목을 한 줄 안에서 `list --company`·`apply_
 | 19b9acf | C4 SR-05·SR-06 소비 스킬 | 린트, resume 299·cover-letter 298·mock-interview 296줄 유지 |
 | 723eecd | C5 SR-08 릴리스 1.1.0 | test-plugin-manifest, run-integration-test 93/93 |
 | 5f335d1 | C6 리뷰·스모크 반영 | test-exp 95/95, 린트 |
+| a85bbe0 | C7 실행 로그·헤드리스 실측 기록 | gate eval 2/2, 스모크 4/4 |
+| be3eb2a | C9 2차 5관점 리뷰 반영(아래 표) | test-exp 131/131, 린트 8종, run-integration-test 93/93, Node·셸 테스트 전부 통과 |
+| (이 커밋) | C9 문서 — 2차 리뷰 표·company_research 스모크 3차 | — |
 
-결정적 테스트: `test/test-exp.sh` 95/95(원본 67 → 28 추가), `run-integration-test.sh` 93/93(격리 HOME), Node 테스트 7종·셸 테스트 6종·golden 통과, 린트 8종 통과.
+결정적 테스트: `test/test-exp.sh` 131/131(원본 67 → 1차 28·2차 36 추가), `run-integration-test.sh` 93/93(격리 HOME), Node 테스트 7종·셸 테스트 12종·golden 통과, 린트 8종 통과.
 
 ### 3관점 리뷰 (Workflow: 컨벤션 Haiku 4.5 · 방법론 적대적 검증 Sonnet 5 · 스크립트 코드리뷰 Sonnet 5, 지적마다 Sonnet 5 반박자 1명)
 
@@ -190,6 +193,30 @@ SKILL.md 의 경험 카드 항목을 한 줄 안에서 `list --company`·`apply_
 
 스모크 관찰에서 추가로 반영: cover-letter 초안이 '요' 의 plan 문장을 "~하고 싶습니다" 다짐형으로 바꾸고 '이' 에 "배웠습니다" 를 남김 → '요' 는 실행형 그대로 쓰라는 문구를 SKILL.md 133행에 추가(5단계 첨삭의 배운 점 규칙은 그대로). experience-bank gate 케이스 1차 실행에서 카드 스키마 Read 를 건너뛰어 must_read 실패 → add 전 Read 를 건너뛰지 않는다는 문구 추가.
 
+### 2차 5관점 리뷰 (Workflow: 호환성·보안·프롬프트·테스트 Sonnet 5, 문서 Haiku 4.5 — 지적마다 Sonnet 5 반박자 1명, 에이전트 21개)
+
+지적 16건(보안 F2 와 테스트 F9 는 같은 지적) → 확정 14건(medium 3·low 11), 기각 2건. 반박자 2명이 구조화 출력 오류로 판정을 못 낸 지적 2건(#2·#11)은 격리 상태 디렉토리에서 직접 재현해 확정했다. 호환성 관점은 지적 없음(`add`/`update`·기존 카드 동작 불변).
+
+| # | 관점 | 대상 | 지적 | 판정 | 조치(be3eb2a) |
+|---|---|---|---|---|---|
+| 1 | 보안 | `bin/jobstack-exp.mjs` normCompany | 유니코드 결합 문자(NFD)·전각·zero-width 를 구분해 '회사당 1건'(D2) 이 깨짐 | **medium** — 직접 재현: "토\u200B스"·NFD "Café" 가 별개 (신규) 로 저장되고 validate 는 PASS | NFKC 정규화 뒤 공백·대시(`\p{Pd}`)·비가시 서식 문자(`\p{Cf}`) 제거, 저장 표시명에서도 비가시 문자 제거, 보이지 않는 문자만인 회사명은 `apply`·`validate` 거부 |
+| 2 | 보안 = 테스트 | `test/test-exp.sh` | 동시 apply 잠금 회귀 테스트 없음(add 만 커버) | low 확인 | 다른 회사 20건 → 20건, 같은 회사 20건 → 1건, validate PASS, 잠금 파일 정리 |
+| 3 | 보안 | experience-bank·company-research `apply` 펜스 | 공고·기업 페이지 원문을 무이스케이프로 큰따옴표 안에 넣도록 안내 | low 확인 | `templates/guardrails.md` §7 따옴표 규칙(모든 스킬 복제본 16개) — 스크립트 변경 없음 |
+| 4 | 문서 | 계획서 | 생성 복제본 수량 오차 | 기각 — 인용된 문구가 문서에 없음 | 없음 |
+| 5 | 문서 | CHANGELOG | 게이트 케이스 턴 예산(12) 누락 | 기각 — 완료 판정 기준은 SR-ID 연결이며 원본은 evals.json | 없음 |
+| 6 | 프롬프트 | `company-research/SKILL.md` allowed-tools | Phase 5.5 가 이미 Write 한 리포트 §5 를 고치라 하면서 `Edit` 이 없음 | **medium** 확인 | `- Edit` 추가, 리포트 파일의 §5 줄만 교체하고 캐시 파일은 손대지 않는다고 명시 |
+| 7 | 프롬프트 | Phase 5.5 1단계 | 닿는 카드가 4장 이상일 때 3장을 고르는 기준 없음 | low 확인 | 겹치는 O 항목·화두 수 → 같으면 `numbers` 보유 카드 우선 |
+| 8 | 테스트 | `test-exp.sh:183` | 적용 열 단언 `O +- +2` 가 행 전체에 걸려 제목·태그 텍스트로 거짓 PASS 가능 | **medium** 확인 | 제목 뒤 꼬리를 `^ +O +- +2 ` 로 앵커 + `--json` 값(`apply_plans_count`·수치·AI) 대조 |
+| 9 | 테스트 | `list --company` 불리언 | 값 없이 부르면 무필터로 조용히 폴백(전체 카드를 필터 결과로 오인) | low 확인(재현) | exit 1 로 변경 + 단언 3개(값 없음·`--json` 조합·공백 값) |
+| 10 | 테스트 | `apply --position` 불리언 | 값 없이 주면 조용히 무시되고 rc=0 | low — 직접 재현 | exit 1 로 변경 + 파일 미변경 단언 |
+| 11 | 테스트 | 손으로 쓴 `apply_plans: []`·`null` | 승격 경로 테스트 없음 | low 확인 | 별도 픽스처 4단언(블록 승격·null 교체·validate) |
+| 12 | 테스트 | 다중 카드 파일 | 다른 카드 보존 검증 없음 | low 확인 | 카드2 블록만 잘라 title 유지·apply_plans 미생성 2단언 |
+| 13 | 테스트 | 항목 뒤 주석 | 보존 테스트 없음 → 재현하니 교체 시 실제로 사라짐(yaml 이 항목 맵의 comment 로 붙임) | low 확인(**결함 발견**) | 교체 시 `commentBefore`·`comment`·`spaceBefore` 이월 + 단언 3개(구 스크립트로는 0건 잔존 확인) |
+| 14 | 테스트 | validate 픽스처 | `apply_plans` 비배열·`position` 비문자열 분기가 픽스처에 없음 | low 확인 | 카드 2장 추가 + 단언 3개(빈 회사명 포함) |
+| 15 | 테스트 | 무필터 `list --json` | 기존 스키마에 필드 추가만 했는지(제거·개명 없음) 단언 없음 | low 확인 | 키 존재·필터 전용 키 부재 단언 |
+
+검증: `node --check`, `test/test-exp.sh` 131/131, `bin/gen-skill-docs.sh --check`, 린트 8종, `run-integration-test.sh` 93/93(격리 HOME), Node 7종·셸 12종·golden 통과. company-research 는 289줄(상한 300), 나머지 SKILL.md 는 변경 없음.
+
 ### 헤드리스 실측
 
 ### gate eval (`test/run-evals.sh --tier gate --skill experience-bank`, 2회)
@@ -209,3 +236,5 @@ SKILL.md 의 경험 카드 항목을 한 줄 안에서 `list --company`·`apply_
 | mock_interview | 입사 후 적용 질문 1개 | 4턴 31s 0.18 PASS | 4턴 28s 0.16 PASS | 2차: 무필터 `list` → `list --company 네이버` → show, 카드 R·화두를 근거로 질문 |
 
 관찰: 4케이스 모두 캐시·카드에 없는 기업 과제를 지어내지 않았고 `basis` 는 요약 블록·체크리스트 원문을 인용했다. 비용 합계 약 2.7 USD(스모크 2회 1.9, gate 2회 약 0.8).
+
+3차(be3eb2a, company_research 만 재실행 — Phase 5.5 의 Edit 명시 확인): 7턴 63s 0.28 USD, DONE_WITH_CONCERNS. 캐시 재사용 → §7 Read → `list --json` → 미연결 카드에 `apply`(basis = 체크리스트 최신기사 행·화두 원문, source = 캐시 파일), 캐시 파일은 mtime 그대로(수정 없음), validate PASS. 관찰: 캐시를 재사용한 세션에는 `{COMPANY}-분석리포트.md` 가 없어 §5 줄을 고칠 대상이 없었고, 에이전트가 `find /` 로 파일을 찾은 뒤 우려사항으로 보고했다 → "리포트 파일을 만들지 않은 세션이면 §5 교체를 생략하고 완료 상태에만 적는다" 문구를 Phase 5.5 에 추가(이 커밋).

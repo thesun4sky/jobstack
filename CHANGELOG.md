@@ -37,7 +37,7 @@ STAR-R 도입 — 경험 카드에 기업분석 근거와 함께 '입사 후 적
   계약을 스키마·usage 에 명시, §7 의 humanize-check 인용 표기 정정, test-exp 의 company 카운트 앵커링과
   position 단언, eval note 의 must_call 의미 정정, experience-bank 는 add 전 카드 스키마 Read 를 건너뛰지 않음.
 
-### Fixed — 2차 5관점 리뷰 반영 (호환·보안·문서·프롬프트·테스트 — 지적 16건 중 12건 확정)
+### Fixed — 2차 5관점 리뷰 반영 (호환·보안·문서·프롬프트·테스트 — 지적 16건 중 14건 확정, 2건 기각)
 - `normCompany` 가 결합 문자(NFD)·전각·zero-width 문자를 구분해 같은 회사가 별개 항목으로 저장되던 문제 — NFKC 정규화 뒤
   공백·대시·비가시 문자를 제거하고, 저장 표시명에서도 비가시 문자를 뺀다. 보이지 않는 문자만인 회사명은 `apply`·`validate` 가 거부.
 - `list --company` 를 값 없이 부르면 무필터로 조용히 폴백하고, `apply --position` 값 없음은 조용히 버려지던 경로 — 둘 다 exit 1.
