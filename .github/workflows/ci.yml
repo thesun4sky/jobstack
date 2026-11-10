@@ -68,6 +68,7 @@ jobs:
           bash test/test-learn.sh
           bash test/test-netpay.sh
           bash test/test-package-skill.sh
+          bash test/test-release.sh
 
       - name: 통합 테스트 (격리된 HOME)
         run: |

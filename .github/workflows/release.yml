@@ -1,0 +1,48 @@
+name: release
+
+# 수동 실행 전용. VERSION·CHANGELOG 를 올린 커밋이 main 에 머지된 뒤 실행한다.
+# bin/release.sh 가 버전 파일·CHANGELOG 를 검사하고, 주석 태그 v<버전> 과 GitHub 릴리스(노트 = CHANGELOG 해당 절)를 만든다.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "릴리스 버전 (예: 1.1.1 — v 는 붙이지 않는다). VERSION 파일과 같아야 한다"
+        required: true
+        type: string
+      summary:
+        description: "태그 메시지 요약 (선택)"
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: main 에서만 실행
+        if: github.ref != 'refs/heads/main'
+        run: |
+          echo "릴리스는 main 에서만 만듭니다 (현재: $GITHUB_REF)"
+          exit 1
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: 태그·릴리스 생성
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ inputs.version }}
+          RELEASE_SUMMARY: ${{ inputs.summary }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if [ -n "$RELEASE_SUMMARY" ]; then
+            bash bin/release.sh "$RELEASE_VERSION" --summary "$RELEASE_SUMMARY"
+          else
+            bash bin/release.sh "$RELEASE_VERSION"
+          fi
