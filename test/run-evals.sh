@@ -152,7 +152,7 @@ PY
 # ── stream-json 로그 + 작업 디렉토리 산출물을 expectations 로 결정적으로 판정 ──────────
 judge() { # $1=case_file $2=stream_log $3=work_dir $4=claude_exit
   python3 - "$1" "$2" "$3" "$4" <<'PY'
-import json, os, sys
+import json, os, re, sys
 
 case_file, stream_log, work_dir, claude_exit = sys.argv[1], sys.argv[2], sys.argv[3], int(sys.argv[4])
 case = json.load(open(case_file, encoding='utf-8'))
@@ -235,7 +235,10 @@ for token in exp.get('must_call') or []:
     words = token.split()
     add_check('must_call', token, bool(words) and all(w in bash_blob for w in words))
 for token in exp.get('must_read') or []:
-    add_check('must_read', token, token in read_blob)
+    # Read 도구뿐 아니라 Bash 로 cat/head/tail/sed 해 읽은 것도 읽은 것으로 본다(변수 경로를 쓰므로 파일명으로 대조).
+    base = token.rsplit('/', 1)[-1]
+    via_bash = bool(re.search(r'\b(cat|head|tail|sed|less)\b[^\n]*' + re.escape(base), bash_blob))
+    add_check('must_read', token, token in read_blob or via_bash)
 # must_output: 도구 결과(스크립트 stdout)에 있어야 하는 토큰 — 모델이 출력을 요약해도 스크립트가 실제로 낸 값을 판정한다.
 for token in exp.get('must_output') or []:
     add_check('must_output', token, token in tool_blob)

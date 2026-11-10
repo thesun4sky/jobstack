@@ -2,7 +2,7 @@
 name: job-search
 description: |
   채용정보 탐색 스킬. 사람인/잡코리아/원티드 채용공고 검색, 수시·공채 캘린더.
-  "채용공고", "개발자 채용", "지금 뜨는 공고" 등의 요청 시 활용.
+  "채용공고", "개발자 채용", "지금 뜨는 공고", "공채 하는 곳", "수시 vs 공채" 등의 요청 시 활용.
 allowed-tools:
   - Bash
   - Read
@@ -27,7 +27,7 @@ metadata:
 
 ### 공통 가드레일 (references/guardrails.md)
 
-!`sed '1{/^# /d;}' "${CLAUDE_SKILL_DIR}/references/guardrails.md"`
+!`tail -n +2 "${CLAUDE_SKILL_DIR}/references/guardrails.md"`
 
 !`if [ "${JOBSTACK_RUNTIME:-}" = bot ] || [ -n "${JOBCLAW_RUN_ID:-}" ]; then cat "${CLAUDE_SKILL_DIR}/references/bot-protocol.md"; fi`
 

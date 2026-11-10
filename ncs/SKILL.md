@@ -25,7 +25,7 @@ metadata:
 
 ### 공통 가드레일 (references/guardrails.md)
 
-!`sed '1{/^# /d;}' "${CLAUDE_SKILL_DIR}/references/guardrails.md"`
+!`tail -n +2 "${CLAUDE_SKILL_DIR}/references/guardrails.md"`
 
 # ncs — NCS 역량 매핑
 

@@ -36,8 +36,13 @@ for s in $SKILLS; do
   # v0.5.0: 세 번째 인자 "${CLAUDE_PLUGIN_DATA:-}" (플러그인 데이터 디렉토리) 가 붙는다
   grep -qF '!`bash "${CLAUDE_SKILL_DIR}/scripts/preamble.sh" '"$s"' "${CLAUDE_SESSION_ID}" "${CLAUDE_PLUGIN_DATA:-}"`' "$SKILL_FILE" \
     || errors+=("missing !\`preamble.sh $s\` injection line")
-  grep -qF '"${CLAUDE_SKILL_DIR}/references/guardrails.md"' "$SKILL_FILE" \
-    || errors+=("missing guardrails.md injection")
+  # 가드레일 주입은 `tail -n +2` 형태여야 한다 — `sed '1{/^# /d;}'` 는 CLI 2.1.321 헤드리스에서 자동 실행되지 않고
+  # "[run this first …]" 안내문으로 바뀌어, 모델이 실행하지 않으면 가드레일이 컨텍스트에 들어오지 않는다(2026-11-10 실측).
+  grep -qxF '!`tail -n +2 "${CLAUDE_SKILL_DIR}/references/guardrails.md"`' "$SKILL_FILE" \
+    || errors+=("guardrails injection must be exactly: !\`tail -n +2 \"\${CLAUDE_SKILL_DIR}/references/guardrails.md\"\`")
+  grep -q '^!`sed ' "$SKILL_FILE" && errors+=("'!\`sed …\`' injection is not auto-executed — use tail/cat/bash script")
+  head -1 "$DIR/references/guardrails.md" 2>/dev/null | grep -q '^# ' \
+    || errors+=("references/guardrails.md line 1 must be a '# ' title (tail -n +2 drops it)")
   grep -q '^# ─── jobstack 프리앰블' "$SKILL_FILE" && errors+=("legacy inline preamble still present")
   grep -q 'CLAUDE_SKILL_DIR}\?/\.\./' "$SKILL_FILE" && errors+=("'\${CLAUDE_SKILL_DIR}/../' reference remains (breaks under symlink install)")
 

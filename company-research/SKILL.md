@@ -33,7 +33,7 @@ metadata:
 
 ### 공통 가드레일 (references/guardrails.md)
 
-!`sed '1{/^# /d;}' "${CLAUDE_SKILL_DIR}/references/guardrails.md"`
+!`tail -n +2 "${CLAUDE_SKILL_DIR}/references/guardrails.md"`
 
 !`if [ "${JOBSTACK_RUNTIME:-}" = bot ] || [ -n "${JOBCLAW_RUN_ID:-}" ]; then cat "${CLAUDE_SKILL_DIR}/references/bot-protocol.md"; fi`
 

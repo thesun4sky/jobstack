@@ -21,7 +21,7 @@ zip 에는 `SKILL.md`, `references/**`, `scripts/preamble.sh` 만 들어간다. 
 |---|---|---|
 | 프리앰블 `!` 주입 | 실행됨 | 실행되지 않을 수 있음 → SKILL.md 상단 안내대로 첫 Bash 로 `scripts/preamble.sh` 실행. Bash 도 없으면 컨텍스트 없이 진행 |
 | `scripts/preamble.sh` | `bin/jobstack-preamble` 실행 | bin 이 없어 폴백 컨텍스트(`PREAMBLE_FALLBACK=true`, `JS_BIN=unresolved`) |
-| 가드레일 | `!` sed 주입 | `references/guardrails.md` 를 Read (상단 안내) |
+| 가드레일 | `!` `tail -n +2` 주입 | `references/guardrails.md` 를 Read (상단 안내) |
 | 상태 저장(프로필·경험뱅크·지원 현황·방어맵) | `bin/jobstack-*` 스크립트 | 저장 단계 생략 — 결과는 채팅·파일 산출물로만 남김 |
 | 수집(job-search)·내보내기(docx)·한글 변환 | 스크립트 | 불가 → 자료 요청(공고 본문 붙여넣기)·마크다운 산출로 폴백 |
 | 리서치 서브에이전트 | Agent 도구 | 도구가 없으면 순차 WebSearch |

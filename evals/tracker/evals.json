@@ -48,7 +48,7 @@
       "expectations": {
         "must_contain": [
           "채용서류 반환",
-          "다음 추천"
+          "/retro"
         ],
         "must_not_contain": [
           "다각적",
@@ -67,10 +67,13 @@
         "must_read": [
           "references/policy-checklist.md"
         ],
-        "max_turns": 8
+        "max_turns": 8,
+        "must_output": [
+          "다음 추천"
+        ]
       },
       "grader": "llm",
-      "note": "같은 golden 입력의 app-002(카카오, updated_at 2026-03-29)는 오늘(기준일) 대비 정체 조건을 만족해 정체 넛지와 탈락 후 권리 체크리스트가 함께 뜬다. '다음 추천:' 줄은 스크립트 자체 산출(결정적)이라 must_contain으로도 확인하지만, 체크리스트 전달 톤·정체 넛지 문구의 자연스러움은 LLM 채점으로 본다. 권리 안내는 references/policy-checklist.md 단일 출처에서 읽어 전달하므로 must_read 로 고정한다(N-07) — 채용서류 반환 청구는 기본 안내 항목이다."
+      "note": "같은 golden 입력의 app-002(카카오)는 정체 조건을 만족해 정체 넛지와 탈락 후 권리 안내가 함께 뜬다. 판정: 스크립트가 '다음 추천:' 줄을 냈는지는 must_output 으로, 응답에 /retro 안내와 채용서류 반환 안내가 있는지는 must_contain 으로, 권리 안내를 references/policy-checklist.md 단일 출처에서 읽었는지는 must_read 로 본다(N-07). LLM 채점 기준: (1) 응답이 /retro 복기를 안내했는가 — '다음 추천:' 이라는 글자를 그대로 옮기지 않고 '다음으로 /retro…'처럼 풀어 써도 통과다 (2) 채용서류 안내가 한두 줄로 짧고, 방문·우편 제출과 온라인 제출을 구분했으며, 법적 권리를 단정하지 않았는가 (3) 금지 표현이 없는가."
     },
     {
       "id": "tracker-e2e-add-update-stats-chain",

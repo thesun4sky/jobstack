@@ -236,7 +236,7 @@ jobstack은 4년간 60건 이상의 자소서 첨삭에서 추출된 실전 인�
 
 ## E2E 통합 테스트
 
-현재 동작의 근거는 헤드리스 스킬 eval 실측입니다 — `test/run-evals.sh` 로 16케이스(gate·periodic·e2e)를 돌린 결과와 모델 비교표는 [docs/E2E-TEST-REPORT.md](docs/E2E-TEST-REPORT.md) 상단에 있습니다(gate 5/5). 아래는 v0.3 시점에 샘플 데이터(이력서 + 자소서 + 채용공고)로 전체 8단계 플로우를 돌린 서사 기록입니다.
+현재 동작의 근거는 헤드리스 스킬 eval 실측입니다 — `test/run-evals.sh` 로 16케이스(gate·periodic·e2e, 2026-09 기준 — 이후 salary 2케이스 추가)를 돌린 결과와 모델 비교표는 [docs/E2E-TEST-REPORT.md](docs/E2E-TEST-REPORT.md) 상단에 있습니다(gate 5/5). 아래는 v0.3 시점에 샘플 데이터(이력서 + 자소서 + 채용공고)로 전체 8단계 플로우를 돌린 서사 기록입니다.
 
 > **페르소나**: 김민수 (신입 백엔드 개발자, 서울과기대 컴공, 인턴 6개월)
 > **목표**: 네이버 서버 플랫폼 개발자

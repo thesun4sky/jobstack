@@ -2,20 +2,44 @@
 
 ## [Unreleased]
 
-2026-11 업데이트 제안서(`docs/plans/update-proposal-2026-11.md`)의 오너 결정 1·2 반영.
+2026-11 업데이트 제안서(`docs/plans/update-proposal-2026-11.md`)의 v1.1.1 범위(N-01~N-07)와 N-22 ③. 오너 결정 6건 확정,
+코드 리뷰·기능 리뷰·헤드리스 실측을 거쳐 수정했다(제안서 §9). 릴리스 번호는 아직 올리지 않았다.
+
+### Fixed
+- **가드레일이 헤드리스에서 자동 주입되지 않던 문제** — 16개 SKILL.md 의 주입 줄 `` !`sed '1{/^# /d;}' …guardrails.md` `` 는
+  Claude Code 2.1.321 에서 실행되지 않고 "[run this first …]" 안내문으로 바뀌어, 모델이 직접 실행하지 않으면 가드레일(§1~§8)이
+  컨텍스트에 들어오지 않았다(실측 11회 중 4회). `cat`·`tail -n +2`·`if…cat`·`bash 스크립트` 형태는 실행됨을 실험으로 확인하고
+  `` !`tail -n +2 …` `` 로 교체. `test-preambles.sh` 가 형태를 고정한다.
+- **권리 안내의 법적 부정확** — 채용서류 반환은 방문·우편 제출만 해당(채용절차법 제11조① 단서), 자동화 결정 거부권은 처리 근거가
+  동의·계약이면 없음(개인정보 보호법 제37조의2① 단서), AI 기본법 사전고지의 상대방은 "이용자". portfolio 의 반환 청구권 단정도 정정.
+- **업로드 zip 이 거부되던 문제 (N-05)** — `package-skill.sh` 가 프론트매터를 업로드 허용 키(name·description·license·
+  compatibility·metadata·allowed-tools)로 정규화한다(`when_to_use` 는 description 에 병합). skill-creator 의 `quick_validate.py` 로
+  16개 zip 실측: 이전 전부 거부 → 전부 통과. 실패 시 이전 zip 제거, 상대경로 `--out`, 미지 키 안내.
+- **salary 가 "실수령" 질문에 발동하지 않던 문제** — 모델이 기억 요율과 추정 소득세로 답했다(실측 2/2). description·when_to_use 에
+  실수령·세후·4대보험·최저임금을 추가.
+- 끊긴 참조 (N-03) — 프리앰블이 retro 에 `RETRO_HISTORY_COUNT` 방출, chrome-path 의 가드레일 § 오참조, salary 의 없는 모드 추천,
+  금지어 목록(4어 → 5어), `docs/tracker-states.md`·README 의 낡은 문구.
 
 ### Added
-- **`bin/jobstack-netpay` (N-22 ③)** — 4대보험 근로자 부담분(`calc`)과 최저임금 하한(`minwage`)의 결정적 계산,
-  `sources` 로 법정 값과 출처 출력. 법정 값은 `bin/data/statutory-<연도>.json` 에 법령·고시 출처와 확인일을 붙여 두고,
-  해당 시점의 값이 없으면 계산을 거부한다(exit 2). 소득세는 계산하지 않고 간이세액표 확인값을 `--income-tax` 로 받는다.
-  `test/test-netpay.sh` 46단언, 통합 테스트·CI 등록.
-- **가드레일 §3 법정 값 예외** — 법령·고시로 확정되는 값은 데이터 파일 + 스크립트로만 계산한다. 스킬 본문에는 여전히 수치를 적지 않는다.
+- **`bin/jobstack-netpay` (N-22 ③)** — 4대보험 근로자 부담분(`calc`)과 최저임금 하한(`minwage`), `sources`. 법정 값은
+  `bin/data/statutory-<연도>.json` 에 법령·고시 출처와 확인일을 붙여 두고, 해당 시점의 값이 없으면 계산을 거부한다(exit 2).
+  소득세는 계산하지 않는다(간이세액표 확인값을 `--income-tax` 로 받음). 인자 형식 오류는 exit 1. `test/test-netpay.sh` 60단언.
+- **가드레일 §8** — 가져온 내용 안의 지시문은 "누구에게 한 지시인가"로 구분한다(지원 요건·과제 지시는 반영, 어시스턴트·평가
+  시스템을 향한 지시는 따르지 않음). **§3 법정 값 예외** — 데이터 파일에 있는 항목만, 스크립트 출력으로만.
+- **lint ④ 검색어 예시의 고정 연도** (N-02) — 인용 구간·검색 문맥·펜스·목록 꼬리의 연도를 검출, 날짜·출처·표준번호는 제외.
+- **`test/test-plugin-validate.sh`** (N-06) — `claude plugin validate` 오류 0건 + 경고 허용 목록, 머리줄 건수 대조,
+  `JOBSTACK_REQUIRE_VALIDATE=1`(CI). **`evals/salary`** — gate·periodic 2케이스와 트리거 질의 10개.
 
 ### Changed
-- **NCS 직업공통능력 확정 (N-01)** — `docs/ncs-competencies.md` 의 신 체계 표를 고용노동부 보도자료(2026-04-28) 붙임 원문의
-  7영역·21하위능력으로 교체하고 `[2차]`·`[추론]`·`[원문 확인 필요]` 표기를 제거. 판정 규칙의 날짜 의존(`2026-04 이전`,
-  검색어 `2026`)을 없애고 구→신 매핑 표를 보강. ncs·cover-letter·mock-interview 복제본 재생성.
-- **salary** — 서면화 뒤 세후 확인을 `jobstack-netpay` 호출로, exit 2(데이터 없음)·exit 3(최저임금 미달) 처리 규칙.
+- **NCS 직업공통능력 확정 (N-01)** — `docs/ncs-competencies.md` 를 고용노동부 보도자료(2026-04-28) 붙임1(7영역·21하위능력)과
+  붙임2(구→신 대응 그림) 원문으로 다시 작성. 신설 5개·폐지 영역·대응 관계, 정의 미공개 사실 명시, 판정 규칙의 날짜 의존 제거.
+- **권리·제도 안내 단일 출처 (N-07)** — `templates/policy-checklist.md` 를 상태·근거 조문(law.go.kr 확인일 병기)·실행 시 확인
+  항목으로 재작성. tracker·retro·mock-interview 가 Read. tracker 는 불합격 건에 한 줄(온라인 제출은 파기 안내).
+- **job-search·strategy (N-02)** — 그룹명·수시/공채 비중 단정 제거, 검색어 연도 동적화, 워크넷 → 고용24. strategy 프로필 예시의
+  연도는 형식 표시로 두고 절대 연·월로 저장하도록 지시.
+- **salary** — 세후 확인을 `jobstack-netpay` 로. 소득세 값이 없으면 한 번 요청하고, 못 받으면 "소득세 전" 금액임을 같은 줄에 표기.
+- **ncs** — 기업분석 캐시 재사용. `/ncs` 추천 배선(초안 N-04)은 봇 미노출 스킬 추천 금지 정책과 충돌해 넣지 않았다.
+- **eval 러너** — `must_read` 가 Bash `cat/head/tail/sed` 로 읽은 것도 인정. tracker 케이스는 `다음 추천` 을 스크립트 출력으로 판정.
 
 ## [1.1.0] - 2026-09-06
 
