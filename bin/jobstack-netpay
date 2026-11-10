@@ -1,0 +1,238 @@
+#!/usr/bin/env python3
+"""jobstack-netpay — 법정 공제(4대보험 근로자 부담분)와 최저임금 하한의 결정적 계산.
+
+salary 스킬이 "세후로 다시 확인" 할 때 모델이 요율을 기억으로 채우지 않도록, 법령·고시 원문에서
+확인한 값을 bin/data/statutory-<연도>.json 에 두고 이 스크립트가 계산한다(가드레일 §3 예외).
+해당 연도 파일이 없거나 항목이 null 이면 계산을 거부한다 — 그때는 공식 출처를 실행 시 확인한다.
+
+사용법:
+  jobstack-netpay calc (--annual N | --monthly N) [--nontaxable N] [--income-tax N]
+                       [--date YYYY-MM] [--json]
+  jobstack-netpay minwage (--monthly N [--hours H] | --hourly N) [--date YYYY-MM] [--json]
+  jobstack-netpay sources [--date YYYY-MM] [--json]
+
+계산 범위와 한계:
+  - 국민연금·건강보험·장기요양·고용보험의 근로자 부담분만 계산한다.
+  - 소득세·지방소득세는 계산하지 않는다(부양가족 수에 따라 달라지는 간이세액표 값).
+    홈택스 간이세액표로 확인한 월 소득세를 --income-tax 로 넘기면 지방소득세(10%)와 함께 뺀다.
+  - 각 보험료는 10원 미만을 버린다. 실제 고지액과 수십 원 차이가 날 수 있다.
+  - 건강보험 보수월액 상·하한, 두루누리 등 감면은 반영하지 않는다.
+종료 코드: 0 정상 · 1 입력 오류 · 2 해당 시점의 법정 데이터 없음 · 3 최저임금 미달(minwage)
+"""
+from __future__ import annotations
+
+import argparse
+import datetime
+import decimal
+import json
+import os
+import re
+import sys
+
+DATA_DIR = os.environ.get('JOBSTACK_STATUTORY_DIR') or os.path.join(
+    os.path.dirname(os.path.realpath(__file__)), 'data')
+KST = datetime.timezone(datetime.timedelta(hours=9))
+
+
+def die(msg: str, code: int = 1) -> None:
+    print(f'[오류] {msg}', file=sys.stderr)
+    raise SystemExit(code)
+
+
+def resolve_ym(arg: str | None) -> str:
+    if arg is None:
+        return datetime.datetime.now(KST).strftime('%Y-%m')
+    if not re.fullmatch(r'\d{4}-(0[1-9]|1[0-2])', arg):
+        die('--date 는 YYYY-MM 형식이어야 합니다')
+    return arg
+
+
+def load(ym: str) -> dict:
+    year = ym[:4]
+    path = os.path.join(DATA_DIR, f'statutory-{year}.json')
+    if not os.path.isfile(path):
+        die(f'{year}년 법정 데이터 파일이 없습니다({os.path.basename(path)}). '
+            '공식 출처(법령·고시)를 실행 시 확인해 안내하세요.', 2)
+    try:
+        with open(path, encoding='utf-8') as f:
+            data = json.load(f)
+    except (OSError, ValueError) as e:
+        die(f'{os.path.basename(path)} 를 읽을 수 없습니다: {e}', 2)
+    if str(data.get('year')) != year or not data.get('verified_at'):
+        die(f'{os.path.basename(path)} 에 year·verified_at 이 없거나 맞지 않습니다', 2)
+    return data
+
+
+def floor10(amount: int, rate) -> int:
+    """amount × rate 를 10원 미만 버림. 부동소수점 오차를 피하려고 Decimal 로 곱한다."""
+    v = decimal.Decimal(amount) * decimal.Decimal(str(rate))
+    return int(v // 10) * 10
+
+
+def positive(name: str, v: int | None, allow_zero: bool = False) -> None:
+    if v is None:
+        return
+    if v < 0 or (v == 0 and not allow_zero):
+        die(f'{name} 은 {"0 이상" if allow_zero else "양수"}여야 합니다')
+
+
+def base_period(data: dict, ym: str) -> dict | None:
+    for p in (data.get('pension') or {}).get('base_income') or []:
+        if p['from'] <= ym <= p['to']:
+            return p
+    return None
+
+
+def cmd_calc(a: argparse.Namespace) -> None:
+    ym = resolve_ym(a.date)
+    positive('--annual', a.annual)
+    positive('--monthly', a.monthly)
+    positive('--nontaxable', a.nontaxable, allow_zero=True)
+    positive('--income-tax', a.income_tax, allow_zero=True)
+    data = load(ym)
+    missing = [k for k in ('pension', 'health', 'long_term_care', 'employment') if not data.get(k)]
+    period = base_period(data, ym)
+    if data.get('pension') and period is None:
+        missing.append(f'pension.base_income({ym})')
+    if missing:
+        die(f'{ym} 시점에 확인된 값이 없는 항목: {", ".join(missing)}. '
+            '공식 출처를 실행 시 확인해 안내하세요.', 2)
+
+    gross = a.monthly if a.monthly is not None else a.annual // 12
+    nontax = a.nontaxable or 0
+    if nontax >= gross:
+        die('--nontaxable 이 월 급여보다 크거나 같습니다')
+    taxable = gross - nontax
+
+    pension_base = min(max(taxable, period['floor']), period['ceiling'])
+    pension_base = (pension_base // 1000) * 1000
+    items = {
+        'pension': floor10(pension_base, data['pension']['employee_rate']),
+        'health': floor10(taxable, data['health']['employee_rate']),
+        'long_term_care': floor10(taxable, data['long_term_care']['employee_rate_of_income']),
+        'employment': floor10(taxable, data['employment']['employee_rate']),
+    }
+    insurance = sum(items.values())
+    result = {
+        'as_of': ym, 'verified_at': data['verified_at'],
+        'monthly_gross': gross, 'nontaxable': nontax, 'insurance_base': taxable,
+        'pension_base': pension_base, 'deductions': items, 'insurance_total': insurance,
+        'after_insurance': gross - insurance,
+        'income_tax': None, 'local_income_tax': None, 'net': None,
+        'sources': {k: data[k]['source'] for k in ('pension', 'health', 'long_term_care', 'employment')},
+    }
+    result['sources']['pension_base'] = period['source']
+    if a.income_tax is not None:
+        local = floor10(a.income_tax, '0.1')
+        result.update(income_tax=a.income_tax, local_income_tax=local,
+                      net=gross - insurance - a.income_tax - local)
+
+    if a.json:
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return
+    label = {'pension': '국민연금', 'health': '건강보험', 'long_term_care': '장기요양', 'employment': '고용보험'}
+    print(f'법정 공제 계산 — 기준 {ym} (법정 값 확인일 {data["verified_at"]})')
+    print(f'  월 급여(세전)        {gross:>12,}원' + (f'  (비과세 {nontax:,}원 제외 후 {taxable:,}원 기준)' if nontax else ''))
+    for k in ('pension', 'health', 'long_term_care', 'employment'):
+        print(f'  - {label[k]:<6}        {items[k]:>12,}원')
+    print(f'  4대보험 합계         {insurance:>12,}원')
+    print(f'  4대보험 공제 후      {gross - insurance:>12,}원')
+    if a.income_tax is None:
+        print('  소득세·지방소득세    (미계산 — 홈택스 간이세액표에서 부양가족 수로 확인 후 --income-tax 로 전달)')
+    else:
+        print(f'  - 소득세             {a.income_tax:>12,}원  (입력값)')
+        print(f'  - 지방소득세         {result["local_income_tax"]:>12,}원')
+        print(f'  월 실수령(추정)      {result["net"]:>12,}원')
+    if pension_base != (taxable // 1000) * 1000:
+        print(f'  ※ 국민연금은 기준소득월액 상·하한 적용 → {pension_base:,}원 기준')
+    print('  ※ 10원 미만 버림. 건강보험 상·하한·감면 미반영 — 실제 고지액과 차이가 날 수 있습니다.')
+    print('출처:')
+    for k, v in result['sources'].items():
+        print(f'  - {v}')
+
+
+def cmd_minwage(a: argparse.Namespace) -> None:
+    ym = resolve_ym(a.date)
+    positive('--monthly', a.monthly)
+    positive('--hourly', a.hourly)
+    positive('--hours', a.hours)
+    data = load(ym)
+    mw = data.get('min_wage')
+    if not mw:
+        die(f'{ym[:4]}년 최저임금 값이 없습니다. 최저임금위원회 고시를 확인하세요.', 2)
+    hours = a.hours or mw['monthly_hours']
+    floor_hourly = mw['hourly']
+    if a.hourly is not None:
+        offered_hourly, basis = a.hourly, f'시급 {a.hourly:,}원'
+    else:
+        offered_hourly, basis = a.monthly / hours, f'월 {a.monthly:,}원 ÷ {hours}시간'
+    below = offered_hourly < floor_hourly
+    result = {
+        'as_of': ym, 'verified_at': data['verified_at'], 'min_hourly': floor_hourly,
+        'min_monthly': floor_hourly * mw['monthly_hours'], 'hours': hours,
+        'offered_hourly': round(offered_hourly, 1), 'below_minimum': below, 'source': mw['source'],
+    }
+    if a.json:
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+    else:
+        print(f'최저임금 확인 — 기준 {ym} (법정 값 확인일 {data["verified_at"]})')
+        print(f'  최저임금             시급 {floor_hourly:,}원 · 월 {result["min_monthly"]:,}원({mw["monthly_hours"]}시간 기준)')
+        print(f'  제시 조건            {basis} = 시급 환산 {offered_hourly:,.0f}원')
+        print(f'  판정                 {"최저임금 미달 — 산입범위·근로시간을 계약서에서 확인하세요" if below else "최저임금 이상"}')
+        print('  ※ 최저임금 산입범위(상여·복리후생), 수습 감액, 실제 소정근로시간은 반영하지 않은 단순 환산입니다.')
+        print(f'출처:\n  - {mw["source"]}')
+    if below:
+        raise SystemExit(3)
+
+
+def cmd_sources(a: argparse.Namespace) -> None:
+    ym = resolve_ym(a.date)
+    data = load(ym)
+    if a.json:
+        print(json.dumps(data, ensure_ascii=False, indent=2))
+        return
+    print(f'{data["year"]}년 법정 값 — 확인일 {data["verified_at"]}')
+    for k, name in (('min_wage', '최저임금'), ('pension', '국민연금'), ('health', '건강보험'),
+                    ('long_term_care', '장기요양'), ('employment', '고용보험')):
+        v = data.get(k)
+        if not v:
+            print(f'  - {name}: (미확정 — 원문 확인 후 입력)')
+            continue
+        print(f'  - {name}: {v["source"]}\n      {v["url"]}')
+        for p in v.get('base_income', []) if k == 'pension' else []:
+            print(f'      기준소득월액 {p["from"]}~{p["to"]}: {p["source"]}')
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser(prog='jobstack-netpay', description='법정 공제·최저임금 결정적 계산')
+    sub = ap.add_subparsers(dest='cmd')
+    c = sub.add_parser('calc', help='4대보험 근로자 부담분 계산')
+    g = c.add_mutually_exclusive_group(required=True)
+    g.add_argument('--annual', type=int, help='연봉(세전, 원)')
+    g.add_argument('--monthly', type=int, help='월 급여(세전, 원)')
+    c.add_argument('--nontaxable', type=int, help='월 비과세 금액(원) — 사용자가 계약서에서 확인한 값만')
+    c.add_argument('--income-tax', type=int, dest='income_tax', help='간이세액표로 확인한 월 소득세(원)')
+    c.add_argument('--date', help='기준 연월 YYYY-MM (기본: 오늘 KST)')
+    c.add_argument('--json', action='store_true')
+    c.set_defaults(fn=cmd_calc)
+    m = sub.add_parser('minwage', help='최저임금 하한 확인')
+    g = m.add_mutually_exclusive_group(required=True)
+    g.add_argument('--monthly', type=int, help='월 급여(원)')
+    g.add_argument('--hourly', type=int, help='시급(원)')
+    m.add_argument('--hours', type=int, help='월 소정근로시간(기본 209)')
+    m.add_argument('--date', help='기준 연월 YYYY-MM (기본: 오늘 KST)')
+    m.add_argument('--json', action='store_true')
+    m.set_defaults(fn=cmd_minwage)
+    s = sub.add_parser('sources', help='법정 값과 출처 출력')
+    s.add_argument('--date', help='기준 연월 YYYY-MM (기본: 오늘 KST)')
+    s.add_argument('--json', action='store_true')
+    s.set_defaults(fn=cmd_sources)
+    a = ap.parse_args()
+    if not a.cmd:
+        ap.print_help()
+        raise SystemExit(1)
+    a.fn(a)
+
+
+if __name__ == '__main__':
+    main()

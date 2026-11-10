@@ -1,0 +1,29 @@
+{
+  "year": 2027,
+  "verified_at": "2026-11-10",
+  "note": "2027년 값 중 원문으로 확정된 것만 적었다. null 인 항목은 시행령·고시 개정을 확인한 뒤 채운다. 채우기 전에는 calc 가 계산을 거부한다.",
+  "min_wage": {
+    "hourly": 10700,
+    "monthly_hours": 209,
+    "source": "고용노동부 고시 제2026-60호(2026. 8. 5.) '2027년 적용 최저임금 고시'",
+    "url": "https://www.minimumwage.go.kr/customer/notice/view.do?bultnId=4774"
+  },
+  "pension": {
+    "employee_rate": 0.05,
+    "source": "국민연금법 부칙(2025. 4. 2. 개정) 제4조제1항제2호 — 2027년은 1만분의 500",
+    "url": "https://www.law.go.kr/법령/국민연금법",
+    "base_income": [
+      {
+        "from": "2027-01",
+        "to": "2027-06",
+        "floor": 410000,
+        "ceiling": 6590000,
+        "source": "보건복지부고시 제2026-31호 — 적용기간 2026년 7월분부터 2027년 6월분까지",
+        "url": "https://www.law.go.kr/행정규칙/국민연금기준소득월액하한액과상한액"
+      }
+    ]
+  },
+  "health": null,
+  "long_term_care": null,
+  "employment": null
+}
