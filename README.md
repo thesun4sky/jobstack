@@ -5,6 +5,15 @@
 4년간 60건+ 자소서 첨삭에서 검증된 방법론을 AI 코칭으로 제공합니다.
 기업분석부터 이력서, 자소서, 모의면접까지 취업 준비 전 과정을 통합 지원합니다.
 
+> **최근 변경 — 1.1.1 (2026-11-10)**
+> - 공통 가드레일이 헤드리스 실행에서 자동으로 로드되지 않던 문제를 고쳤습니다(16개 스킬 전부).
+> - 탈락 후 권리·AI 전형 관련 안내를 현행 법 조문에 맞췄습니다 — 채용서류 반환은 방문·우편 제출분만, 온라인 제출분은 파기 요청으로 안내합니다.
+> - `/salary` 가 실수령·세후 질문에서 4대보험 공제와 최저임금 하한을 스크립트(`bin/jobstack-netpay`)로 계산합니다. 소득세는 계산하지 않고 "소득세 전" 금액임을 밝힙니다.
+> - NCS 직업공통능력(7영역·21하위능력)과 구→신 대응을 고용노동부 보도자료 원문 기준으로 반영했습니다.
+> - claude.ai 업로드용 zip 이 업로드 검증을 통과하도록 프론트매터를 정규화합니다.
+>
+> 전체 내역은 [CHANGELOG.md](CHANGELOG.md), 배경과 다음 단계는 [docs/plans/update-proposal-2026-11.md](docs/plans/update-proposal-2026-11.md).
+
 ---
 
 ## 핵심 철학
@@ -110,7 +119,7 @@ cd jobstack
 - 스킬은 Claude Code 표준 위치 `~/.claude/skills/`에 심링크됩니다 (v0.3까지 쓰던 `~/.claude/commands/` 심링크는 설치 시 자동 정리). 저장소를 `git pull`하면 바로 반영됩니다.
 - 옵션: `./install.sh --with-insane-search` (차단 사이트 수집 어댑터, Python 3.10+), `./install.sh --prefix` (스킬명에 `jobstack-` 접두어)
 - 매일 자동으로 새 공고·마감 임박·정체 지원 건을 확인하려면 `bin/jobstack-cron install`(로컬 cron/launchd, `~/.jobstack/job-cache/daily-YYYY-MM-DD.md` 생성). 컴퓨터를 꺼두는 시간이 길면 클라우드 Routines 가이드 [docs/routines.md](docs/routines.md).
-- claude.ai / Cowork 에서 쓰려면 `bin/package-skill.sh all` 로 스킬별 zip 을 만들어 업로드합니다 — 상태 저장·수집 스크립트가 없는 축소 모드로 동작합니다([docs/cowork.md](docs/cowork.md)).
+- claude.ai / Cowork 에서 쓰려면 `bin/package-skill.sh all` 로 스킬별 zip 을 만들어 업로드합니다 — 상태 저장·수집 스크립트가 없는 축소 모드로 동작합니다([docs/cowork.md](docs/cowork.md)). zip 안의 SKILL.md 는 업로드가 허용하는 프론트매터 키만 남도록 자동으로 정규화됩니다(저장소의 SKILL.md 는 그대로).
 
 ---
 
@@ -141,7 +150,7 @@ jobstack-view 기업분석-삼성전자.md  # 스타일링된 HTML로 변환
 | `/company_research` | 7가지 키워드 소스 기업분석 + 적합도 스코어링 | 2 |
 | `/job_search` | 사람인/잡코리아/원티드/점핏 채용공고 탐색 | 2 |
 | `ncs/` (CLI 전용) | NCS 역량 매핑 + 경험→역량 변환 — 봇에서는 `/cover_letter`의 공기업 NCS 보강 | 2 |
-| `/salary` | 연봉 벤치마크 + 협상 전략 | 2 |
+| `/salary` | 연봉 벤치마크 + 협상 전략 + 실수령 확인(4대보험 공제·최저임금 하한) | 2 |
 | `/portfolio` | 포트폴리오 최적화 + 임팩트 표현 (GitHub 레포·README) | 2 |
 | `/retro` | 면접 회고 + 탈락 원인 분석 + 개선 | 2 |
 | `/experience_bank` | 경험 소재 발굴·카드화 + 입사 후 적용(STAR-R) 연결 (자소서·이력서 소재 은행) | 2 |
@@ -236,7 +245,7 @@ jobstack은 4년간 60건 이상의 자소서 첨삭에서 추출된 실전 인�
 
 ## E2E 통합 테스트
 
-현재 동작의 근거는 헤드리스 스킬 eval 실측입니다 — `test/run-evals.sh` 로 16케이스(gate·periodic·e2e, 2026-09 기준 — 이후 salary 2케이스 추가)를 돌린 결과와 모델 비교표는 [docs/E2E-TEST-REPORT.md](docs/E2E-TEST-REPORT.md) 상단에 있습니다(gate 5/5). 아래는 v0.3 시점에 샘플 데이터(이력서 + 자소서 + 채용공고)로 전체 8단계 플로우를 돌린 서사 기록입니다.
+현재 동작의 근거는 헤드리스 스킬 eval 실측입니다 — `test/run-evals.sh` 로 16케이스(gate·periodic·e2e)를 돌린 결과와 모델 비교표는 [docs/E2E-TEST-REPORT.md](docs/E2E-TEST-REPORT.md) 상단에 있습니다(2026-09 기준, gate 5/5). 지금은 salary 를 더해 6개 스킬·18케이스이며, 1.1.1 에서 고친 동작의 실측 기록은 [docs/plans/update-proposal-2026-11.md](docs/plans/update-proposal-2026-11.md) §9-4 에 있습니다. 아래는 v0.3 시점에 샘플 데이터(이력서 + 자소서 + 채용공고)로 전체 8단계 플로우를 돌린 서사 기록입니다.
 
 > **페르소나**: 김민수 (신입 백엔드 개발자, 서울과기대 컴공, 인턴 6개월)
 > **목표**: 네이버 서버 플랫폼 개발자
@@ -301,10 +310,11 @@ flowchart LR
 
 - **Markdown 스킬 + 얇은 스크립트** — 코칭 로직은 프롬프트(SKILL.md), 수집·변환·판정처럼 결정적인 일은 `bin/`의 bash·Node·Python 스크립트가 맡습니다
 - **YAML 프론트매터** — 스킬 메타데이터 정의
-- **동적 주입 프리앰블** — 스킬 로드 시점에 `bin/jobstack-preamble`가 실행 컨텍스트(프로필·기준일·런타임)와 공유 가드레일을 프롬프트에 넣습니다 ([templates/preamble.md](templates/preamble.md))
+- **동적 주입 프리앰블** — 스킬 로드 시점에 `bin/jobstack-preamble`가 실행 컨텍스트(프로필·기준일·런타임)를, 이어지는 주입 줄이 공유 가드레일([templates/guardrails.md](templates/guardrails.md) §1~§8 — 사실 날조 금지, 시장 수치 하드코딩 금지, 가져온 문서 속 지시문은 데이터로만 취급 등)을 프롬프트에 넣습니다 ([templates/preamble.md](templates/preamble.md))
 - **파일 기반 상태관리** — `~/.jobstack/`에 YAML/JSONL
 - **로컬 사용 기록** — 스킬 사용 이벤트가 `~/.jobstack/analytics/`에 로컬 파일로만 기록됩니다 (네트워크 전송 없음, 문서 내용·개인정보 미포함 — [규격](docs/telemetry-events.md))
-- **결정적 스크립트 계층** — 지원 현황(`jobstack-tracker`)·경험 카드(`jobstack-exp.mjs` — `apply` 로 입사 후 적용 문장 저장)·방어맵(`jobstack-defense-map.mjs`)·키워드 매칭률(`jobstack-ats-match`)·회고 집계(`jobstack-retro-stats`)는 스크립트가 저장·계산하고 스킬은 해석·코칭만 합니다 (같은 입력 → 같은 결과)
+- **결정적 스크립트 계층** — 지원 현황(`jobstack-tracker`)·경험 카드(`jobstack-exp.mjs` — `apply` 로 입사 후 적용 문장 저장)·방어맵(`jobstack-defense-map.mjs`)·키워드 매칭률(`jobstack-ats-match`)·회고 집계(`jobstack-retro-stats`)·법정 공제(`jobstack-netpay` — 4대보험 근로자 부담분과 최저임금 하한. 법정 값은 `bin/data/statutory-<연도>.json` 에 법령·고시 출처와 확인일을 붙여 두고, 값이 없는 시점은 계산을 거부)는 스크립트가 저장·계산하고 스킬은 해석·코칭만 합니다 (같은 입력 → 같은 결과)
+- **권리·제도 안내 단일 출처** — 탈락 후 권리, AI·자동화 전형에서의 권리, 구직 지원 제도는 [templates/policy-checklist.md](templates/policy-checklist.md) 한 곳에만 두고(근거 조문·확인일 병기, 기한·금액은 실행 시 확인) 지원 현황·회고·모의면접·연봉 스킬이 읽어 전달합니다. 법률 자문이 아니라 "이런 제도가 있고 여기서 확인할 수 있다"까지만 안내합니다
 - **진행적 공개** — SKILL.md 는 300줄 이하의 흐름·게이트만 담고, 모드별·플랫폼별·트랙별 자료는 `references/`에서 필요한 시점에만 읽습니다
 - **병렬 리서치 서브에이전트** — `agents/researcher.md`가 기업분석·연봉·전략의 웹 조사를 소스별로 나눠 맡고 출처 URL·기준일이 붙은 JSON만 돌려줍니다
 - **스킬 eval** — `evals/<skill>/evals.json` 케이스를 `test/run-evals.sh`가 `claude -p` 헤드리스로 실행해 산출물·스크립트 호출·참조 읽기를 판정합니다(결정적 gate / LLM 채점 periodic / e2e 3계층, [docs/evals.md](docs/evals.md))
@@ -324,7 +334,7 @@ jobstack/
 ├── ...
 ├── <skill>/references/     # 스킬별 참조 자료 (생성 복제본 + 스킬 소유)
 ├── agents/researcher.md    # 리서치 서브에이전트
-├── bin/                    # 결정적 스크립트 (tracker·exp·defense-map·ats-match·fetch-jobs·export·cron·learn …)
+├── bin/                    # 결정적 스크립트 (tracker·exp·defense-map·ats-match·netpay·fetch-jobs·export·cron·learn …)
 ├── evals/                  # 스킬 eval 케이스 (test/run-evals.sh)
 ├── .claude-plugin/         # 플러그인·마켓플레이스 매니페스트
 ├── templates/, docs/       # 공유 템플릿·계약 문서 (references/ 의 원본)
