@@ -11,6 +11,8 @@ bin/package-skill.sh all            # dist/skills/<skill>.zip 16개
 bin/package-skill.sh resume         # 하나만
 ```
 
+zip 안의 `SKILL.md` 는 **프론트매터가 업로드용으로 정규화**된다. 업로드 경로(claude.ai·Skills API)는 `name`·`description`·`license`·`compatibility`·`metadata`·`allowed-tools` 만 받고 그 밖의 키가 있으면 거부하므로, 패키징할 때 `when_to_use` 를 `description` 뒤에 합치고 `argument-hint`·`model`·`effort` 를 뺀다(본문은 그대로, 저장소의 SKILL.md 도 그대로). 합친 `description` 이 1024자를 넘거나 꺾쇠가 들어 있으면 exit 4 로 멈춘다. 2026-11-10 에 skill-creator 의 `quick_validate.py` 로 16개 zip 을 검사해 정규화 전에는 전부 거부, 정규화 후에는 전부 통과함을 확인했다 — 실제 claude.ai 업로드는 아직 하지 않았다.
+
 zip 에는 `SKILL.md`, `references/**`, `scripts/preamble.sh` 만 들어간다. `bin/`·`templates/`·`docs/` 는 넣지 않는다 — 참조는 이미 `references/` 복제본으로 스킬 안에 들어 있다(v0.4.0 D-1 수정의 결과).
 
 ## 업로드 환경에서 달라지는 것
@@ -19,7 +21,7 @@ zip 에는 `SKILL.md`, `references/**`, `scripts/preamble.sh` 만 들어간다. 
 |---|---|---|
 | 프리앰블 `!` 주입 | 실행됨 | 실행되지 않을 수 있음 → SKILL.md 상단 안내대로 첫 Bash 로 `scripts/preamble.sh` 실행. Bash 도 없으면 컨텍스트 없이 진행 |
 | `scripts/preamble.sh` | `bin/jobstack-preamble` 실행 | bin 이 없어 폴백 컨텍스트(`PREAMBLE_FALLBACK=true`, `JS_BIN=unresolved`) |
-| 가드레일 | `!` sed 주입 | `references/guardrails.md` 를 Read (상단 안내) |
+| 가드레일 | `!` `tail -n +2` 주입 | `references/guardrails.md` 를 Read (상단 안내) |
 | 상태 저장(프로필·경험뱅크·지원 현황·방어맵) | `bin/jobstack-*` 스크립트 | 저장 단계 생략 — 결과는 채팅·파일 산출물로만 남김 |
 | 수집(job-search)·내보내기(docx)·한글 변환 | 스크립트 | 불가 → 자료 요청(공고 본문 붙여넣기)·마크다운 산출로 폴백 |
 | 리서치 서브에이전트 | Agent 도구 | 도구가 없으면 순차 WebSearch |

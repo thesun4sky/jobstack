@@ -4,7 +4,7 @@
 
 - 확정 근거: Council #1 (2026-07-03) — watching 미포함(3:1), preparing 유지(4:0), 마이그레이션은 읽기 정규화+승인 재작성(4:0), withdrawn 라벨 "지원취소"(4:0)
 - 원칙: **저장은 영문 키, 표시는 한글 라벨**
-- **작업 범위 경계**: M1(INFRA-5)은 이 canonical 정의 문서 확정까지다. `tracker/SKILL.md`의 add/update 선택지·JSONL 예시·stats 분포를 이 모델로 실제 교체하는 편집과 `retro`/`auto`의 소비 배선은 **TRK-1(M4)** 작업이다. 그 사이 tracker/SKILL.md 본문은 구버전(v1) 예시를 유지하되 상단 경고로 이 문서를 기준으로 가리킨다.
+- **구현 상태**: 이 모델은 `bin/jobstack-tracker`(add/update/list/stats/nudge/migrate)와 `tracker/SKILL.md`·`retro`·`auto` 에 반영돼 있다(v0.5.0 U-09 이후). 상태를 바꾸려면 이 문서와 스크립트의 `PIPELINE`·`TERMINAL` 을 함께 고친다.
 
 ---
 
@@ -84,7 +84,7 @@
 - **7일 정체 넛지**:
   - jobclaw 봇 넛지는 `applied` 상태 한정(검증된 application-reminder-cron 설계와 일치).
   - CLI(tracker/auto)의 정체 감지는 `updated_at` 기준 7일 이상 경과한 진행 상태(preparing~final) 전체를 대상으로 확장한다 — 봇보다 넓은 범위임을 의도적으로 명시. 종결 상태(offer/rejected/withdrawn)는 양쪽 모두 제외.
-- **퍼널 전환율** (retro 집계): `max_stage`(최고 도달 단계) 기준으로 계산한다. "X 이상 도달" = `max_stage`가 파이프라인 순서상 X 이상인 건.
+- **퍼널 전환율** (`jobstack-tracker stats` 가 계산): `max_stage`(최고 도달 단계) 기준으로 계산한다. "X 이상 도달" = `max_stage`가 파이프라인 순서상 X 이상인 건.
   - 서류 통과율 = (`max_stage` ≥ document_pass 인 건) / (`max_stage` ≥ applied 인 건)
   - 면접 통과율 = (`status` = offer 인 건) / (`max_stage` ≥ interview_1 인 건)
   - `max_stage`가 없는 v1/폴백 항목은 종결 상태를 어느 단계에서 마쳤는지 알 수 없으므로 분자·분모 판정이 불확실하다 — 이런 항목 수를 별도로 세어 "정확도 제한: 구버전 N건 제외" 형태로 함께 표기한다(상향 왜곡 방지).
@@ -97,7 +97,7 @@
 
 | 문서 | 사용 지점 |
 |---|---|
-| tracker/SKILL.md | add/update 선택지, list 그룹핑, stats 분포 (TRK-1에서 개정) |
-| retro/SKILL.md | 탈락 원인 분기·퍼널 집계 (RET 항목에서 개정) |
-| auto/SKILL.md | 대시보드 지원 현황 줄·정체 넛지 (AUTO-6에서 개정) |
+| tracker/SKILL.md · bin/jobstack-tracker | add/update 선택지, list 그룹핑, stats 분포 |
+| retro/SKILL.md | 탈락 원인 분기(`stage` 라벨) |
+| auto/SKILL.md | 대시보드 지원 현황 줄·정체 넛지(`jobstack-tracker stats`·`nudge`) |
 | test/golden/tracker | v1→v2 정규화 하위호환 골든 테스트 (INFRA-8) |

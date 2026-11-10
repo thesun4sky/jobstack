@@ -20,6 +20,10 @@ jobs:
       - name: Node 의존성 (bin/ — playwright·cheerio·docx·yaml, 브라우저 바이너리 제외)
         run: cd bin && PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm install --no-audit --no-fund
 
+      # claude plugin validate 게이트용(로그인 없이 동작한다). CI 에서는 SKIP 을 실패로 본다 — 게이트가 조용히 꺼지지 않게.
+      - name: Claude Code CLI (plugin validate 용)
+        run: npm install -g @anthropic-ai/claude-code --no-audit --no-fund
+
       - name: 컨벤션·표기·경로 린트
         run: |
           bash test/lint-conventions.sh
@@ -29,6 +33,8 @@ jobs:
           bash test/test-skill-size.sh --frontmatter
           bash test/test-script-layer.sh
           bash test/test-plugin-manifest.sh
+          bash test/test-plugin-validate.sh --self-test
+          JOBSTACK_REQUIRE_VALIDATE=1 bash test/test-plugin-validate.sh
 
       - name: 프리앰블 격리 실행
         run: bash test/test-preambles.sh
@@ -60,6 +66,7 @@ jobs:
           bash test/test-fetch-jobs-saramin.sh
           bash test/test-cron.sh
           bash test/test-learn.sh
+          bash test/test-netpay.sh
           bash test/test-package-skill.sh
 
       - name: 통합 테스트 (격리된 HOME)

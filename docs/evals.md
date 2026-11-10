@@ -21,7 +21,7 @@
 | **periodic** | LLM 채점(`claude -p --model haiku`) 병행 | 야간 배치 | 코칭 톤·"결이요"·미끼 배치·날조 금지 준수처럼 grep만으로 판정하기 어려운 질적 특성. 결정적 `expectations`도 함께 확인하지만 최종 판정은 "결정적 통과 AND LLM 채점 PASS" |
 | **e2e** | 결정적 또는 LLM(케이스별 `grader`로 지정) | 야간 배치 | 여러 Phase·여러 스크립트 호출이 한 세션 안에서 이어지는 전체 흐름. `max_turns`가 더 크고 비용이 더 든다 |
 
-같은 스킬 안에서도 케이스마다 계층·채점 방식이 다를 수 있다 — 이 저장소의 5개 스킬(auto·resume·
+같은 스킬 안에서도 케이스마다 계층·채점 방식이 다를 수 있다 — 이 저장소의 6개 스킬(salary 포함 — 2026-11 추가, auto·resume·
 cover-letter·tracker·experience-bank) 초안은 스킬당 gate 1·periodic 1·e2e 1로 구성했다
 (`evals/<skill>/evals.json`).
 
@@ -91,7 +91,7 @@ cover-letter·tracker·experience-bank) 초안은 스킬당 gate 1·periodic 1·
 ## 실행 방법
 
 ```bash
-# 전체 16케이스 나열만(과금 없음) — claude CLI 가 없어도 동작
+# 전체 18케이스 나열만(과금 없음) — claude CLI 가 없어도 동작
 test/run-evals.sh --dry-run
 
 # gate 계층만 (PR 게이트 후보)

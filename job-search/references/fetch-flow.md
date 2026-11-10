@@ -25,7 +25,7 @@ job-search 스킬 SKILL.md Phase 2 에서 Read 한다.
 위 4개 플랫폼으로 결과가 10개 미만일 때만 사용:
 
 ```
-site:wanted.co.kr "{직무}" 2026
+site:wanted.co.kr "{직무}" {현재 연도}
 site:jobkorea.co.kr "{직무}" 채용
 ```
 

@@ -28,7 +28,7 @@ metadata:
 
 ### 공통 가드레일 (references/guardrails.md)
 
-!`sed '1{/^# /d;}' "${CLAUDE_SKILL_DIR}/references/guardrails.md"`
+!`tail -n +2 "${CLAUDE_SKILL_DIR}/references/guardrails.md"`
 
 !`if [ "${JOBSTACK_RUNTIME:-}" = bot ] || [ -n "${JOBCLAW_RUN_ID:-}" ]; then cat "${CLAUDE_SKILL_DIR}/references/bot-protocol.md"; fi`
 
@@ -52,12 +52,12 @@ metadata:
 
 **AskUserQuestion으로 한 번에 하나씩 질문:**
 
-1. **기본 정보**: "학력과 전공을 알려주세요. (예: OO대학교 컴퓨터공학과 2025년 졸업예정)" (A 트랙 우선)
+1. **기본 정보**: "학력과 전공을 알려주세요. (예: OO대학교 컴퓨터공학과, 내년 2월 졸업예정)" (A 트랙 우선)
 2. **경력/경험**: "인턴, 아르바이트, 프로젝트 등 직무 관련 경험을 알려주세요. 없으면 '없음'이라고 해주세요."
 3. **자격/어학**: "보유한 자격증과 어학성적이 있다면 알려주세요. (예: 정보처리기사, TOEIC 850)"
 4. **관심 분야**: "관심 있는 직무와 산업을 알려주세요. (예: 백엔드 개발, IT/테크 산업)"
 5. **강점/차별점**: "본인의 가장 큰 강점이나 차별점은 무엇이라고 생각하세요?"
-6. **목표**: "취업 목표 시기가 있으세요? (예: 2026년 상반기)"
+6. **목표**: "취업 목표 시기가 있으세요? (예: 내년 상반기)"
 
 **정보가 부족해 NEEDS_CONTEXT일 때 고정 소크라틱 4질문:**
 1. 타겟 기업 1-3곳
@@ -67,18 +67,18 @@ metadata:
 
 각 답변을 받은 후 프로필을 `$_JS_STATE/profiles/default.yaml`에 저장합니다.
 
-**YAML 프로필 형식:**
+**YAML 프로필 형식:** 아래 `YYYY…` 는 형식 표시입니다 — 그대로 저장하지 않습니다. 사용자가 "내년 2월"처럼 상대 시점으로 답하면 실행 컨텍스트의 `CURRENT_YEAR` 기준 절대 연·월로 바꿔 적고, 모르면 `[졸업시기 확인 필요]` 같은 placeholder 로 둡니다(가드레일 §1).
 ```yaml
 name: 홍길동
 career_track: new  # new | semi_experienced | experienced
 education:
   school: OO대학교
   major: 컴퓨터공학
-  graduation: 2025-02
+  graduation: YYYY-MM
 experience:
   - company: XX기업
     role: 백엔드 개발 인턴
-    period: 2024.07-2024.08
+    period: YYYY.MM-YYYY.MM
     highlights:
       - API 응답시간 40% 개선
 certifications:
@@ -88,10 +88,10 @@ language:
 target:
   roles: [백엔드 개발자]
   industries: [IT/테크]
-  timeline: 2026년 상반기
+  timeline: YYYY년 상반기
 strengths:
   - 문제 해결 능력
-updated_at: 2026-03-29
+updated_at: YYYY-MM-DD  # 저장한 날(KST)
 ```
 
 ---
@@ -137,12 +137,12 @@ WebSearch로 사용자의 목표 직무/산업 현황을 조사합니다.
 
 ## Phase 3: 전략 수립
 
-### 3.1 채용 방식 전략 (수시 기본, 공채 예외)
+### 3.1 채용 방식 전략 (상시 지원 기본, 공채는 기업별 확인)
 
-수시·상시 채용이 시장 기본값이며, 공채는 일부 기업의 예외 전형입니다. 이를 전제로 전략을 제안합니다:
+공고가 언제 뜰지 모르는 수시·상시 채용을 기본 전제로 준비하고, 목표 기업이 정기 공채를 운영하면 그 일정을 함께 잡습니다. 수시·공채 비중은 조사 표본마다 다르므로 단정하지 않습니다:
 - **기본**: 준비가 완료되는 대로 상시 지원. 공채 일정을 기다리며 미루지 않습니다.
 - **프로필 상시 노출 관리** (링크드인·원티드·리멤버) — 다이렉트 소싱 채널에 프로필을 열어둡니다. 프로필 텍스트 첨삭이 필요하면 `/scout_profile`로 위임합니다.
-- **공채 예외**: 목표 기업이 공채 전형을 운영하는지, 어떤 전형(서류·검사·면접)인지는 SKILL.md에 단정하지 말고 Phase 2에서 "[기업명] 채용 전형"으로 확인합니다.
+- **공채 운영 기업**: 목표 기업이 공채 전형을 운영하는지, 어떤 전형(서류·검사·면접)인지는 SKILL.md에 단정하지 말고 Phase 2에서 "[기업명] 채용 전형"으로 확인합니다.
 - 공채/수시 캘린더·채용 일정 세부는 여기서 다루지 않습니다 → **/job_search — 공채/수시 캘린더 확인**으로 확인하세요.
 
 ### 3.2 목표 기업 Tier 분류

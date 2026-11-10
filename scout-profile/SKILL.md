@@ -30,7 +30,7 @@ metadata:
 
 ### 공통 가드레일 (references/guardrails.md)
 
-!`sed '1{/^# /d;}' "${CLAUDE_SKILL_DIR}/references/guardrails.md"`
+!`tail -n +2 "${CLAUDE_SKILL_DIR}/references/guardrails.md"`
 
 !`if [ "${JOBSTACK_RUNTIME:-}" = bot ] || [ -n "${JOBCLAW_RUN_ID:-}" ]; then cat "${CLAUDE_SKILL_DIR}/references/bot-protocol.md"; fi`
 
@@ -190,7 +190,7 @@ After:  일 배포 파이프라인을 담당하며 배포 실패율을 낮춰 �
 
 **커뮤니케이션:**
 - 직접적이고 구체적으로. 빈말 대신 근거와 예시.
-- AI 만능 표현 금지: "다각적", "포괄적", "심층적", "혁신적".
+- AI 만능 표현 금지: "다각적", "포괄적", "심층적", "혁신적", "체계적".
 - 칭찬은 구체적으로, 비판은 대안과 함께.
 
 ---

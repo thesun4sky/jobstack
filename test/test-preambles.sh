@@ -36,8 +36,13 @@ for s in $SKILLS; do
   # v0.5.0: 세 번째 인자 "${CLAUDE_PLUGIN_DATA:-}" (플러그인 데이터 디렉토리) 가 붙는다
   grep -qF '!`bash "${CLAUDE_SKILL_DIR}/scripts/preamble.sh" '"$s"' "${CLAUDE_SESSION_ID}" "${CLAUDE_PLUGIN_DATA:-}"`' "$SKILL_FILE" \
     || errors+=("missing !\`preamble.sh $s\` injection line")
-  grep -qF '"${CLAUDE_SKILL_DIR}/references/guardrails.md"' "$SKILL_FILE" \
-    || errors+=("missing guardrails.md injection")
+  # 가드레일 주입은 `tail -n +2` 형태여야 한다 — `sed '1{/^# /d;}'` 는 CLI 2.1.321 헤드리스에서 자동 실행되지 않고
+  # "[run this first …]" 안내문으로 바뀌어, 모델이 실행하지 않으면 가드레일이 컨텍스트에 들어오지 않는다(2026-11-10 실측).
+  grep -qxF '!`tail -n +2 "${CLAUDE_SKILL_DIR}/references/guardrails.md"`' "$SKILL_FILE" \
+    || errors+=("guardrails injection must be exactly: !\`tail -n +2 \"\${CLAUDE_SKILL_DIR}/references/guardrails.md\"\`")
+  grep -q '^!`sed ' "$SKILL_FILE" && errors+=("'!\`sed …\`' injection is not auto-executed — use tail/cat/bash script")
+  head -1 "$DIR/references/guardrails.md" 2>/dev/null | grep -q '^# ' \
+    || errors+=("references/guardrails.md line 1 must be a '# ' title (tail -n +2 drops it)")
   grep -q '^# ─── jobstack 프리앰블' "$SKILL_FILE" && errors+=("legacy inline preamble still present")
   grep -q 'CLAUDE_SKILL_DIR}\?/\.\./' "$SKILL_FILE" && errors+=("'\${CLAUDE_SKILL_DIR}/../' reference remains (breaks under symlink install)")
 
@@ -71,6 +76,18 @@ for s in $SKILLS; do
     job-search|company-research|salary)
       echo "$OUTPUT" | grep -qE "^BROWSER_SCRAPER_AVAILABLE=(true|false)$" || errors+=("missing BROWSER_SCRAPER_AVAILABLE")
       echo "$OUTPUT" | grep -qE "^IS_FETCH_AVAILABLE=(true|false)$" || errors+=("missing IS_FETCH_AVAILABLE")
+      ;;
+    retro)
+      # retro Phase 1 이 참조하는 변수 — 빈 상태에서 0, 회고 파일(retro-*.md)만 센다(모의면접 기록 제외)
+      echo "$OUTPUT" | grep -q "^RETRO_HISTORY_COUNT=0$" || errors+=("RETRO_HISTORY_COUNT should be 0 on empty state")
+      : > "$STATE/interview-history/retro-a-2030-01-01.md"; : > "$STATE/interview-history/retro-b-2030-01-02.md"
+      : > "$STATE/interview-history/acme-personality-2030-01-03.md"
+      RC_OUT=$(JOBSTACK_STATE_DIR="$STATE" CLAUDE_SKILL_DIR="$WORK/skills/$s" JOBSTACK_NPM_AUTO_INSTALL=0 \
+               bash "$WORK/skills/$s/scripts/preamble.sh" "$s" 2>&1)
+      echo "$RC_OUT" | grep -q "^RETRO_HISTORY_COUNT=2$" || errors+=("RETRO_HISTORY_COUNT should count only retro-*.md (expected 2)")
+      ;;
+    *)
+      echo "$OUTPUT" | grep -q "^RETRO_HISTORY_COUNT=" && errors+=("RETRO_HISTORY_COUNT leaked into non-retro skill")
       ;;
   esac
 

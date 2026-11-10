@@ -28,7 +28,7 @@ metadata:
 
 ### 공통 가드레일 (references/guardrails.md)
 
-!`sed '1{/^# /d;}' "${CLAUDE_SKILL_DIR}/references/guardrails.md"`
+!`tail -n +2 "${CLAUDE_SKILL_DIR}/references/guardrails.md"`
 
 !`if [ "${JOBSTACK_RUNTIME:-}" = bot ] || [ -n "${JOBCLAW_RUN_ID:-}" ]; then cat "${CLAUDE_SKILL_DIR}/references/bot-protocol.md"; fi`
 
@@ -42,7 +42,7 @@ metadata:
 
 interview-history와 tracker에서 최근 기록을 확인합니다.
 
-`RETRO_HISTORY_COUNT`가 3 이상이면 C) 패턴 분석 옵션을 강조합니다.
+실행 컨텍스트의 `RETRO_HISTORY_COUNT`(저장된 회고 파일 수)가 3 이상이면 C) 패턴 분석 옵션을 강조합니다.
 
 AskUserQuestion:
 ```
@@ -90,7 +90,7 @@ Phase 2(면접 인터뷰)는 건너뛰고 Phase 3.3 패턴 분석으로 바로 �
 
 - **면접 단계 탈락**(1차/2차·최종)일 때만 Phase 2 면접 경험 인터뷰를 진행합니다. 서류·코테·AI역량검사 탈락은 Phase 2를 건너뛰고 해당 진단 축으로 바로 갑니다.
 - 단계별 평가 비중(%) 등 시효성 수치가 필요하면 본문에 단정하지 말고 실행 시점에 WebSearch로 출처·기준일과 함께 확인합니다.
-- **탈락 건 마무리 안내(1줄)**: "채용절차법상 채용서류 반환 청구권이 있습니다(반환·보관·파기 의무 존재). 반환을 원하면 청구할 수 있으니, 구체적 청구 기간·절차는 안내 시점에 최신 법령을 확인하세요."
+- **탈락 건 마무리 안내(1줄, 선택)**: 사용자가 원하면 `${CLAUDE_SKILL_DIR}/references/policy-checklist.md`를 Read 해 "탈락 후 권리"·"AI·자동화 전형에서의 권리" 표에서 이 건에 해당되는 항목 하나를 한 줄로 안내합니다(이 대화에서 이미 안내한 내용이면 생략). 그 문서의 "쓰는 규칙"(실행 시 확인·출처 병기·법률 자문 아님)을 따르고, 권리·조문을 이 스킬 본문에 따로 적지 않습니다.
 
 ---
 
