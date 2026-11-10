@@ -139,7 +139,7 @@ jobstack-view 기업분석-삼성전자.md  # 스타일링된 HTML로 변환
 | `/strategy` | 역량 진단 + 취업전략 + 로드맵 생성 | 1 |
 | `tracker/` (CLI 전용) | 지원 현황 추적 + 일정 관리 — 봇에서는 네이티브 `/track`·`/myapps` | 1 |
 | `/company_research` | 7가지 키워드 소스 기업분석 + 적합도 스코어링 | 2 |
-| `/job_search` | 사람인/잡코리아/원티드 채용공고 탐색 | 2 |
+| `/job_search` | 사람인/잡코리아/원티드/점핏 채용공고 탐색 | 2 |
 | `ncs/` (CLI 전용) | NCS 역량 매핑 + 경험→역량 변환 — 봇에서는 `/cover_letter`의 공기업 NCS 보강 | 2 |
 | `/salary` | 연봉 벤치마크 + 협상 전략 | 2 |
 | `/portfolio` | 포트폴리오 최적화 + 임팩트 표현 (GitHub 레포·README) | 2 |

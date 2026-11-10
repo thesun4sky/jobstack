@@ -52,12 +52,12 @@ metadata:
 
 **AskUserQuestion으로 한 번에 하나씩 질문:**
 
-1. **기본 정보**: "학력과 전공을 알려주세요. (예: OO대학교 컴퓨터공학과 2025년 졸업예정)" (A 트랙 우선)
+1. **기본 정보**: "학력과 전공을 알려주세요. (예: OO대학교 컴퓨터공학과, 내년 2월 졸업예정)" (A 트랙 우선)
 2. **경력/경험**: "인턴, 아르바이트, 프로젝트 등 직무 관련 경험을 알려주세요. 없으면 '없음'이라고 해주세요."
 3. **자격/어학**: "보유한 자격증과 어학성적이 있다면 알려주세요. (예: 정보처리기사, TOEIC 850)"
 4. **관심 분야**: "관심 있는 직무와 산업을 알려주세요. (예: 백엔드 개발, IT/테크 산업)"
 5. **강점/차별점**: "본인의 가장 큰 강점이나 차별점은 무엇이라고 생각하세요?"
-6. **목표**: "취업 목표 시기가 있으세요? (예: 2026년 상반기)"
+6. **목표**: "취업 목표 시기가 있으세요? (예: 내년 상반기)"
 
 **정보가 부족해 NEEDS_CONTEXT일 때 고정 소크라틱 4질문:**
 1. 타겟 기업 1-3곳
@@ -74,11 +74,11 @@ career_track: new  # new | semi_experienced | experienced
 education:
   school: OO대학교
   major: 컴퓨터공학
-  graduation: 2025-02
+  graduation: YYYY-MM
 experience:
   - company: XX기업
     role: 백엔드 개발 인턴
-    period: 2024.07-2024.08
+    period: YYYY.MM-YYYY.MM
     highlights:
       - API 응답시간 40% 개선
 certifications:
@@ -88,10 +88,10 @@ language:
 target:
   roles: [백엔드 개발자]
   industries: [IT/테크]
-  timeline: 2026년 상반기
+  timeline: YYYY년 상반기
 strengths:
   - 문제 해결 능력
-updated_at: 2026-03-29
+updated_at: YYYY-MM-DD  # 저장한 날(KST)
 ```
 
 ---

@@ -55,7 +55,7 @@ echo "## 0. 린트 게이트"
 echo ""
 
 for lint in test-preambles.sh test-skill-refs.sh test-command-style.sh test-no-home-paths.sh lint-conventions.sh run-golden.sh \
-            test-script-layer.sh test-plugin-manifest.sh \
+            test-script-layer.sh test-plugin-manifest.sh test-plugin-validate.sh \
             test-fetch-diag.mjs test-wanted-verify.mjs test-is-fetch-adapter.mjs test-is-fetch-ssrf.mjs \
             test-tracker.sh test-exp.sh test-defense-map.sh test-ats-match.sh test-retro-stats.sh test-hwpx.sh \
             test-export.sh test-md2docx.mjs test-is-fetch-classify.sh test-fetch-diag-summary.sh \

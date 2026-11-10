@@ -1,0 +1,6 @@
+# claude plugin validate 가 내는 경고 중 "알고 받아들인 것" 목록 — 한 줄에 정규식 하나 (오너 결정 4, 2026-11-10).
+# 여기에 없는 경고가 새로 생기면 test/test-plugin-validate.sh 가 실패한다. --strict 는 쓰지 않는다:
+# 루트 CLAUDE.md 는 기여자용 개발 가이드라 옮기지 않기로 했다(플러그인 컨텍스트로 실을 의도가 없다).
+CLAUDE\.md at the plugin root is not loaded as project context
+# 아이콘은 플러그인 디렉토리 제출 때만 필요하다. 제출 시점에 .claude-plugin/icon.png 를 추가하고 이 줄을 지운다.
+ICON_MISSING

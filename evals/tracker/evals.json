@@ -64,11 +64,13 @@
         "must_call": [
           "jobstack-tracker update --status"
         ],
-        "must_read": [],
+        "must_read": [
+          "references/policy-checklist.md"
+        ],
         "max_turns": 8
       },
       "grader": "llm",
-      "note": "같은 golden 입력의 app-002(카카오, updated_at 2026-03-29)는 오늘(기준일) 대비 정체 조건을 만족해 정체 넛지와 탈락 후 권리 체크리스트가 함께 뜬다. '다음 추천:' 줄은 스크립트 자체 산출(결정적)이라 must_contain으로도 확인하지만, 체크리스트 전달 톤·정체 넛지 문구의 자연스러움은 LLM 채점으로 본다."
+      "note": "같은 golden 입력의 app-002(카카오, updated_at 2026-03-29)는 오늘(기준일) 대비 정체 조건을 만족해 정체 넛지와 탈락 후 권리 체크리스트가 함께 뜬다. '다음 추천:' 줄은 스크립트 자체 산출(결정적)이라 must_contain으로도 확인하지만, 체크리스트 전달 톤·정체 넛지 문구의 자연스러움은 LLM 채점으로 본다. 권리 안내는 references/policy-checklist.md 단일 출처에서 읽어 전달하므로 must_read 로 고정한다(N-07) — 채용서류 반환 청구는 기본 안내 항목이다."
     },
     {
       "id": "tracker-e2e-add-update-stats-chain",

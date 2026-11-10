@@ -72,6 +72,18 @@ for s in $SKILLS; do
       echo "$OUTPUT" | grep -qE "^BROWSER_SCRAPER_AVAILABLE=(true|false)$" || errors+=("missing BROWSER_SCRAPER_AVAILABLE")
       echo "$OUTPUT" | grep -qE "^IS_FETCH_AVAILABLE=(true|false)$" || errors+=("missing IS_FETCH_AVAILABLE")
       ;;
+    retro)
+      # retro Phase 1 이 참조하는 변수 — 빈 상태에서 0, 회고 파일(retro-*.md)만 센다(모의면접 기록 제외)
+      echo "$OUTPUT" | grep -q "^RETRO_HISTORY_COUNT=0$" || errors+=("RETRO_HISTORY_COUNT should be 0 on empty state")
+      : > "$STATE/interview-history/retro-a-2030-01-01.md"; : > "$STATE/interview-history/retro-b-2030-01-02.md"
+      : > "$STATE/interview-history/acme-personality-2030-01-03.md"
+      RC_OUT=$(JOBSTACK_STATE_DIR="$STATE" CLAUDE_SKILL_DIR="$WORK/skills/$s" JOBSTACK_NPM_AUTO_INSTALL=0 \
+               bash "$WORK/skills/$s/scripts/preamble.sh" "$s" 2>&1)
+      echo "$RC_OUT" | grep -q "^RETRO_HISTORY_COUNT=2$" || errors+=("RETRO_HISTORY_COUNT should count only retro-*.md (expected 2)")
+      ;;
+    *)
+      echo "$OUTPUT" | grep -q "^RETRO_HISTORY_COUNT=" && errors+=("RETRO_HISTORY_COUNT leaked into non-retro skill")
+      ;;
   esac
 
   # (c) 부수효과: 상태 디렉토리, env.sh, 텔레메트리, 세션 파일·stale 정리

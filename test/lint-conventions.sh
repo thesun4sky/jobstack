@@ -6,12 +6,16 @@
 #   ② 금지 표현 (합격 보장|무조건 통과|전문가가 직접 첨삭|AI 대체 불가) — fail
 #   ③ 시장 수치 하드코딩 휴리스틱 (*/SKILL.md 한정) — 기본 fail (Council #1),
 #      --warn 플래그로 경고만 출력으로 완화
+#   ④ 검색어 예시의 고정 연도 (*/SKILL.md, templates/*.md, */references/**/*.md — 펜스 안 포함) — fail
+#      따옴표·백틱으로 감싼 문구나 `site:` 검색식 안에 4자리 연도가 단독으로 들어 있으면 검출한다.
+#      해가 바뀌면 낡은 검색을 하게 되므로 "[현재 연도]"·`CURRENT_YEAR` 로 쓴다.
+#      날짜(2026-03-28, 2026.03, 2026년)와 출처 표기 줄(기준|출처|조사|고시|보도|확인일)은 제외
 # 예외 처리:
 #   - '금지'·'만능'이 든 라인은 ①②에서 제외 (규칙 자체를 인용하는 라인)
 #   - 펜스 코드블록(``` ... ```) 내부는 ③에서 제외 (샘플 출력)
 #   - 같은 라인에 출처|기준|WebSearch|예:|예시|가중치|반영률|→ 가 있으면 ③에서 제외
 #     (교정 예시 표·방법론 상수·목표치)
-#   - test/lint-allowlist.txt: `파일경로부분::라인정규식` 형식의 예외 목록
+#   - test/lint-allowlist.txt: `파일경로부분::검사종류::라인정규식` 형식의 예외 목록 (검사종류: slop|banned|number|year)
 # 사용법: lint-conventions.sh [--warn] [--self-test]
 
 set -u
@@ -33,6 +37,11 @@ RE_BANNED='합격 보장|무조건 통과|전문가가 직접 첨삭|AI 대체 �
 RE_NUMBER='[0-9]+(\.[0-9]+)?%|[0-9][0-9,]*만원'
 RE_NUM_EXEMPT='출처|기준|WebSearch|예:|예시|가중치|반영률|→'
 RE_QUOTE_EXEMPT='금지|만능'
+# ④ 날짜 표기(2026-03, 2026.03, 2026/03, 2026년)를 먼저 지운 뒤, 남은 단독 연도가
+#    따옴표·백틱 안이나 site: 검색식 줄에 있으면 검출한다 (멀티바이트 문자를 대괄호에 넣지 않아 C 로케일에서도 같다)
+RE_YEAR_BARE='(^|[^0-9])20[2-9][0-9]([^0-9]|$)'
+RE_YEAR_QUOTED='["`][^"`]*(^|[^0-9])20[2-9][0-9]([^0-9][^"`]*)?["`]'
+RE_YEAR_EXEMPT='기준|출처|조사|고시|보도|확인일'
 
 FAIL_COUNT=0
 WARN_COUNT=0
@@ -110,7 +119,7 @@ run_scan() { # $1=루트 (self-test용 오버라이드)
   done
   # 스킬 참조 자료(*/references/**/*.md — 분할된 정적 자료와 docs/ 복제본)도 ①② 대상 (v0.5.0 U-08).
   # 파일이 많아(150개+) 줄 단위 루프 대신 grep 한 번으로 훑는다(펜스 안·규칙 인용 줄은 제외).
-  local hit rel lineno content
+  local hit rel lineno content stripped
   while IFS= read -r hit; do
     [ -n "$hit" ] || continue
     f="${hit%%:*}"; rel="${f#$root/}"
@@ -124,6 +133,21 @@ run_scan() { # $1=루트 (self-test용 오버라이드)
   done < <(find "$root"/*/references -type f -name '*.md' 2>/dev/null | sort \
            | xargs -r awk 'FNR==1{fence=0} /^[[:space:]]*```/{fence=!fence; next} !fence{print FILENAME":"FNR":"$0}' 2>/dev/null \
            | grep -E "$RE_SLOP|$RE_BANNED" || true)
+
+  # ④ 검색어 예시의 고정 연도 — 펜스 안(검색식 예시 블록)도 본다
+  while IFS= read -r hit; do
+    [ -n "$hit" ] || continue
+    f="${hit%%:*}"; rel="${f#$root/}"
+    lineno="$(echo "$hit" | cut -d: -f2)"; content="$(echo "$hit" | cut -d: -f3-)"
+    echo "$content" | grep -qE "$RE_YEAR_EXEMPT" && continue
+    stripped="$(echo "$content" | sed -E 's/20[2-9][0-9](년|[-./][0-9])/DATE/g')"
+    if echo "$stripped" | grep -qE "$RE_YEAR_QUOTED" \
+       || { echo "$stripped" | grep -q 'site:' && echo "$stripped" | grep -qE "$RE_YEAR_BARE"; }; then
+      is_allowed "$rel" "$content" year && continue
+      echo "$rel:$lineno:고정연도검색어:$(echo "$stripped" | grep -oE '20[2-9][0-9]' | head -1)"; FAIL_COUNT=$((FAIL_COUNT + 1))
+    fi
+  done < <( { ls "$root"/*/SKILL.md "$root"/templates/*.md 2>/dev/null; find "$root"/*/references -type f -name '*.md' 2>/dev/null; } | sort \
+           | xargs -r grep -nE '20[2-9][0-9]' /dev/null 2>/dev/null || true)
 }
 
 if [ -n "$SELF_TEST" ]; then
@@ -135,6 +159,12 @@ if [ -n "$SELF_TEST" ]; then
 합격 보장을 약속합니다.
 국내 기업의 도입률은 87.3%에 달합니다.
 반영률 목표는 85%+ 입니다.
+검색 쿼리: `대기업 신입 채용 동향 2031`
+지난 분석은 2031-03-28 에 했고 2031년 상반기 목표입니다.
+인용 형식: "(경총 500개사 조사, 2031 기준)"
+```
+site:example.com "{직무}" 2032
+```
 FIXTURE
   # 유형 분리 검증: 'number' allowlist('성과급')에 걸리는 라인이라도
   # 그 라인의 slop 위반('다각적')은 여전히 검출돼야 한다.
@@ -149,9 +179,11 @@ FIXTURE2
   if echo "$RESULT" | grep -q 'AI만능표현' \
      && echo "$RESULT" | grep -q '금지표현' \
      && echo "$RESULT" | grep -q '수치하드코딩' \
+     && [ "$(echo "$RESULT" | grep -c '고정연도검색어')" = 2 ] \
+     && echo "$RESULT" | grep -q '고정연도검색어:2032' \
      && ! echo "$RESULT" | grep -q '85%' \
      && echo "$RESULT" | grep -qE 'salary/SKILL.md:[0-9]+:AI만능표현'; then
-    echo "[PASS] self-test — 3종 검출 + 반영률 예외 + 유형 분리(number 예외가 slop 위반 안 숨김) (${HITS}건 검출)"
+    echo "[PASS] self-test — 4종 검출(고정 연도 검색어는 날짜·출처 줄 제외) + 반영률 예외 + 유형 분리(number 예외가 slop 위반 안 숨김) (${HITS}건 검출)"
     exit 0
   else
     echo "[FAIL] self-test — 기대 검출 불일치:"
@@ -162,7 +194,7 @@ fi
 
 OUTPUT=$(run_scan "$REPO")
 # 서브셸에서 카운터가 유실되므로 출력 기반으로 재집계
-FAILS=$(echo "$OUTPUT" | grep -cE ':(AI만능표현|금지표현|수치하드코딩):' 2>/dev/null || true)
+FAILS=$(echo "$OUTPUT" | grep -cE ':(AI만능표현|금지표현|수치하드코딩|고정연도검색어):' 2>/dev/null || true)
 WARNS=$(echo "$OUTPUT" | grep -c ':수치하드코딩(warn):' 2>/dev/null || true)
 
 if [ -n "$OUTPUT" ]; then

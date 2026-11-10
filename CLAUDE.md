@@ -40,7 +40,7 @@
 - `test/run-integration-test.sh` — 린트 전체 + 설치·뷰어·상태 파일 검사 (CI 는 격리된 HOME 에서 실행)
 - `test/test-preambles.sh` — 프리앰블 격리 실행(심링크 경로 주입) · `test/test-skill-refs.sh` — 참조 경로·생성 파일 드리프트·봇 마커
 - `test/lint-conventions.sh` — AI 만능 표현·금지 표현·시장 수치 · `test/test-command-style.sh` · `test/test-no-home-paths.sh` · `test/run-golden.sh`
-- `test/test-skill-size.sh --frontmatter` — 300줄 상한·description 예산·필수 키 · `test/test-script-layer.sh` — 상태 파일 직접 편집 지시 금지 · `test/test-plugin-manifest.sh`
+- `test/test-skill-size.sh --frontmatter` — 300줄 상한·description 예산·필수 키 · `test/test-script-layer.sh` — 상태 파일 직접 편집 지시 금지 · `test/test-plugin-manifest.sh` · `test/test-plugin-validate.sh`(`claude plugin validate` 오류 0건 + 경고 허용 목록 `test/plugin-validate-allowed.txt`, CLI 없으면 SKIP)
 - 스크립트 테스트: `test/test-tracker.sh` · `test-exp.sh` · `test-defense-map.sh` · `test-ats-match.sh` · `test-retro-stats.sh` · `test-hwpx.sh` · `test-export.sh` · `test-is-fetch-classify.sh` · `test-fetch-diag-summary.sh` · `test-fetch-jobs-saramin.sh` · `test-cron.sh` · `test-learn.sh` · `test-netpay.sh` · `test-package-skill.sh` · `node test/test-*.mjs`
 - 스킬 eval(`evals/<skill>/evals.json`, `test/run-evals.sh`): `claude -p` 헤드리스 실행으로 must_contain·must_call·must_read 를 판정한다. API 비용이 들어 CI 에 넣지 않고 로컬·야간에 돌린다(`docs/evals.md`)
 

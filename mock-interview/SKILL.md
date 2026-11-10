@@ -231,6 +231,8 @@ AskUserQuestion으로 면접 강도를 선택합니다:
 | F) 임원면접 | `references/modes/exec.md` |
 | G) 컬처핏 | `references/modes/culture.md` |
 
+D) AI면접·AI역량검사에서 사용자가 판정 방식·탈락 이유를 물으면 `${CLAUDE_SKILL_DIR}/references/policy-checklist.md`의 "AI·자동화 전형에서의 권리" 표로 안내한다(조문·요건은 본문에 적지 않는다).
+
 공기업·공공기관 지원자의 A) 인성·E) 기술 면접에서는 `${CLAUDE_SKILL_DIR}/references/ncs-competencies.md`(구·신 능력 체계와 판정 규칙)도 Read 해 직업기초능력·직업공통능력 기반 질문을 만든다.
 
 E) 기술면접에는 AI 도구 활용 과제 서브모드(E-2)가 있다 — 공고·기업분석 결과에서 AI 사용 허용 전형이 확인되면 `references/modes/tech.md`의 E-2 절을 적용하고, 리포트에 검증 근거·수정 이력 항목을 둔다.

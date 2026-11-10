@@ -86,7 +86,13 @@ BROWSER_SCRAPER_AVAILABLE=""
 IS_FETCH_AVAILABLE=""
 TRACKER_FILE=""
 ENTRY_COUNT=0
+RETRO_HISTORY_COUNT=""
 case "$SKILL" in
+  retro)
+    # 누적 회고 수 — retro Phase 1 이 3건 이상이면 패턴 분석(C)을 강조한다
+    RETRO_HISTORY_COUNT=$(ls "$_JS_STATE"/interview-history/retro-*.md 2>/dev/null | wc -l | tr -d ' ')
+    RETRO_HISTORY_COUNT="${RETRO_HISTORY_COUNT:-0}"
+    ;;
   tracker)
     # 구 인라인 프리앰블과 같은 정보(파일 사전 생성·건수·최근 5건)를 유지한다(리뷰 반영)
     TRACKER_FILE="$_JS_STATE/tracker/applications.jsonl"
@@ -177,6 +183,7 @@ echo "STATE_WRITE_FAILED=$STATE_WRITE_FAILED"
 [ -n "$BROWSER_SCRAPER_AVAILABLE" ] && echo "BROWSER_SCRAPER_AVAILABLE=$BROWSER_SCRAPER_AVAILABLE"
 [ -n "$IS_FETCH_AVAILABLE" ] && echo "IS_FETCH_AVAILABLE=$IS_FETCH_AVAILABLE"
 [ -n "$TRACKER_FILE" ] && { echo "TRACKER_FILE=$TRACKER_FILE"; echo "ENTRY_COUNT=$ENTRY_COUNT"; }
+[ -n "$RETRO_HISTORY_COUNT" ] && echo "RETRO_HISTORY_COUNT=$RETRO_HISTORY_COUNT"
 echo '```'
 if [ -n "$TRACKER_FILE" ] && [ "$ENTRY_COUNT" -gt 0 ] 2>/dev/null; then
   echo '최근 지원 5건 (`tracker/applications.jsonl` 마지막 줄부터):'

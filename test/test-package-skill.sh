@@ -35,7 +35,7 @@ bash "$BIN" no-such-skill --out "$WORK/x" >/dev/null 2>&1; RC=$?
 # 4. 참조 누락 → exit 2 (가짜 저장소)
 mkdir -p "$WORK/fake/broken/scripts" "$WORK/fake/bin"
 cp "$BIN" "$WORK/fake/bin/package-skill.sh"
-printf -- '---\nname: broken\n---\n`${CLAUDE_SKILL_DIR}/references/missing.md` 를 Read\n' > "$WORK/fake/broken/SKILL.md"
+printf -- '---\nname: broken\ndescription: 참조 누락 픽스처\n---\n`${CLAUDE_SKILL_DIR}/references/missing.md` 를 Read\n' > "$WORK/fake/broken/SKILL.md"
 touch "$WORK/fake/broken/scripts/preamble.sh"
 JOBSTACK_ROOT="$WORK/fake" bash "$WORK/fake/bin/package-skill.sh" broken --out "$WORK/fake/out" >/dev/null 2>&1; RC=$?
 [ "$RC" -eq 2 ] && ok "참조 누락 exit 2" || ng "참조 누락 exit $RC"
@@ -58,6 +58,57 @@ elif [ "$RC" -eq 124 ]; then
 else
   ng "--out 값 누락 exit $RC"
 fi
+
+# ── 업로드용 프론트매터 정규화 (N-05) ─────────────────────────────────────
+# 업로드 경로는 name·description·license·compatibility·metadata·allowed-tools 만 받는다.
+FM_OUT=$(python3 - "$WORK/all" "$REPO" <<'PY' 2>&1
+import os, re, sys, zipfile
+out, repo = sys.argv[1:3]
+ALLOWED = {'name', 'description', 'license', 'compatibility', 'metadata', 'allowed-tools'}
+bad, n = [], 0
+def split(text):
+    m = re.match(r'^---\n(.*?)\n---\n', text, re.DOTALL)
+    return (m.group(1), text[m.end():]) if m else (None, None)
+for z in sorted(f for f in os.listdir(out) if f.endswith('.zip')):
+    skill = z[:-4]; n += 1
+    fm, body = split(zipfile.ZipFile(os.path.join(out, z)).read(f'{skill}/SKILL.md').decode('utf-8'))
+    sfm, sbody = split(open(os.path.join(repo, skill, 'SKILL.md'), encoding='utf-8').read())
+    if fm is None:
+        bad.append(f'{skill}: 프론트매터 없음'); continue
+    keys = re.findall(r'^([A-Za-z_][A-Za-z0-9_-]*):', fm, re.M)
+    extra = sorted(set(keys) - ALLOWED)
+    if extra: bad.append(f'{skill}: 허용되지 않는 키 {extra}')
+    if len(keys) != len(set(keys)): bad.append(f'{skill}: 키 중복')
+    if 'name' not in keys or 'description' not in keys: bad.append(f'{skill}: name/description 누락')
+    if not re.search(rf'^name: {re.escape(skill)}$', fm, re.M): bad.append(f'{skill}: name 불일치')
+    d = re.search(r'^description: \|\n((?:(?:  .*)?\n?)+?)(?=^[A-Za-z_]|\Z)', fm + '\n', re.M)
+    desc = '\n'.join(l[2:] for l in d.group(1).rstrip('\n').split('\n')) if d else ''
+    if not desc: bad.append(f'{skill}: description 비어 있음')
+    if len(desc) > 1024: bad.append(f'{skill}: description {len(desc)}자')
+    if '<' in desc or '>' in desc: bad.append(f'{skill}: description 에 꺾쇠')
+    # when_to_use 가 버려지지 않고 description 에 합쳐졌는지 — 원본 when_to_use 첫 줄이 들어 있어야 한다
+    w = re.search(r'^when_to_use: \|\n  (.+)$', sfm, re.M)
+    if w and w.group(1).strip() not in desc: bad.append(f'{skill}: when_to_use 가 description 에 합쳐지지 않음')
+    for k in ('allowed-tools', 'metadata'):
+        if re.search(rf'^{k}:', sfm, re.M) and not re.search(rf'^{k}:', fm, re.M): bad.append(f'{skill}: {k} 유실')
+    if body != sbody: bad.append(f'{skill}: 본문이 원본과 다름')
+print(f'checked={n}')
+print('\n'.join(bad))
+sys.exit(1 if bad or n < 16 else 0)
+PY
+); FM_RC=$?
+[ "$FM_RC" -eq 0 ] && ok "16개 zip 프론트매터 — 허용 키만·when_to_use 병합·본문 보존" || ng "프론트매터 정규화: $FM_OUT"
+grep -q '^when_to_use:' "$REPO/resume/SKILL.md" && grep -q '^argument-hint:' "$REPO/resume/SKILL.md" \
+  && ok "저장소 SKILL.md 는 Claude Code 전용 키를 그대로 유지" || ng "저장소 SKILL.md 의 when_to_use·argument-hint 가 사라짐"
+
+# 정규화 실패 → exit 4 (description + when_to_use 1024자 초과, 꺾쇠)
+mkdir -p "$WORK/fmroot/longdesc/references" "$WORK/fmroot/angle/references"
+{ printf -- '---\nname: longdesc\ndescription: |\n  짧은 설명\nwhen_to_use: |\n  '; head -c 1100 /dev/zero | tr '\0' 'a'; printf '\n---\n\n본문\n'; } > "$WORK/fmroot/longdesc/SKILL.md"
+printf -- '---\nname: angle\ndescription: |\n  <회사명> 을 넣는다\n---\n\n본문\n' > "$WORK/fmroot/angle/SKILL.md"
+for fx in longdesc angle; do
+  JOBSTACK_ROOT="$WORK/fmroot" bash "$BIN" "$fx" --out "$WORK/fmout" >/dev/null 2>&1; RC=$?
+  [ "$RC" -eq 4 ] && [ ! -f "$WORK/fmout/$fx.zip" ] && ok "정규화 실패($fx) → exit 4, zip 미생성" || ng "정규화 실패($fx) exit $RC"
+done
 
 echo "PASS: $PASS / FAIL: $FAIL"
 [ "$FAIL" -eq 0 ]

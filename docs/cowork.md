@@ -11,6 +11,8 @@ bin/package-skill.sh all            # dist/skills/<skill>.zip 16개
 bin/package-skill.sh resume         # 하나만
 ```
 
+zip 안의 `SKILL.md` 는 **프론트매터가 업로드용으로 정규화**된다. 업로드 경로(claude.ai·Skills API)는 `name`·`description`·`license`·`compatibility`·`metadata`·`allowed-tools` 만 받고 그 밖의 키가 있으면 거부하므로, 패키징할 때 `when_to_use` 를 `description` 뒤에 합치고 `argument-hint`·`model`·`effort` 를 뺀다(본문은 그대로, 저장소의 SKILL.md 도 그대로). 합친 `description` 이 1024자를 넘거나 꺾쇠가 들어 있으면 exit 4 로 멈춘다. 2026-11-10 에 skill-creator 의 `quick_validate.py` 로 16개 zip 을 검사해 정규화 전에는 전부 거부, 정규화 후에는 전부 통과함을 확인했다 — 실제 claude.ai 업로드는 아직 하지 않았다.
+
 zip 에는 `SKILL.md`, `references/**`, `scripts/preamble.sh` 만 들어간다. `bin/`·`templates/`·`docs/` 는 넣지 않는다 — 참조는 이미 `references/` 복제본으로 스킬 안에 들어 있다(v0.4.0 D-1 수정의 결과).
 
 ## 업로드 환경에서 달라지는 것
