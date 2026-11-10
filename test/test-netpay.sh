@@ -78,7 +78,8 @@ jq_eq "소득세 입력 시 지방소득세 10%·실수령" "$J" "d['local_incom
 OUT=$("$N" calc --annual 42000000 --date 2030-03 2>&1)
 has "표 출력에 미계산 안내" "간이세액표" "$OUT"
 has "표 출력에 출처" "픽스처 연금" "$OUT"
-has "표 출력에 한계 고지" "실제 고지액과 차이" "$OUT"
+has "표 출력에 한계 고지" "실제 공제액은 달라집니다" "$OUT"
+has "소득세 전 금액 표시" "소득세·지방소득세를 빼기 전" "$OUT"
 
 # ── 데이터 없는 시점은 계산 거부(exit 2) ─────────────────────────────────
 OUT=$("$N" calc --annual 42000000 --date 2030-09 2>&1); RC=$?
@@ -113,7 +114,30 @@ for args in "calc --annual 0 --date 2030-03" "calc --monthly -5 --date 2030-03" 
   "$N" $args >/dev/null 2>&1; RC=$?
   [ $RC -eq 1 ] && ok "입력 오류 exit 1: $args" || bad "입력 오류 exit 1: $args" "rc=$RC"
 done
-"$N" calc --annual 1 --monthly 1 >/dev/null 2>&1; [ $? -eq 2 ] && ok "--annual·--monthly 동시 지정 거부" || bad "--annual·--monthly 동시 지정 거부"
+"$N" calc --annual 1 --monthly 1 >/dev/null 2>&1; [ $? -eq 1 ] && ok "--annual·--monthly 동시 지정 거부(exit 1)" || bad "--annual·--monthly 동시 지정 거부"
+# 인자 형식 오류는 '데이터 없음'(exit 2)과 섞이면 안 된다 — 쉼표 금액·소수·인자 누락 모두 exit 1 (리뷰 A1)
+for args in "calc --monthly 3,000,000 --date 2030-03" "calc --monthly 3000000.5 --date 2030-03" "calc" "minwage" "nosuch"; do
+  # shellcheck disable=SC2086
+  OUT=$("$N" $args 2>&1); RC=$?
+  [ $RC -eq 1 ] && ok "형식 오류 exit 1: $args" || bad "형식 오류 exit 1: $args" "rc=$RC"
+done
+has "형식 오류 안내에 쉼표 힌트" "쉼표 없는 정수" "$("$N" calc --monthly 3,000,000 --date 2030-03 2>&1)"
+# 말이 안 되는 금액은 음수 결과 대신 거부 (리뷰 A3)
+for args in "calc --monthly 1 --date 2030-03" "calc --annual 11 --date 2030-03" "calc --monthly 3000000 --income-tax 99999999 --date 2030-03" \
+            "minwage --hourly 10000 --hours 100 --date 2030-01"; do
+  # shellcheck disable=SC2086
+  "$N" $args >/dev/null 2>&1; RC=$?
+  [ $RC -eq 1 ] && ok "비정상 금액 exit 1: $args" || bad "비정상 금액 exit 1: $args" "rc=$RC"
+done
+# 경계에서 표시와 판정이 어긋나지 않는다 (리뷰 A2) — 2,089,999 ÷ 209 = 9,999.99…
+J=$("$N" minwage --monthly 2089999 --date 2030-01 --json 2>&1)
+jq_eq "미달 경계: 환산 시급이 최저임금보다 작게 표시" "$J" "d['below_minimum'] is True and d['offered_hourly'] < d['min_hourly']"
+# 출처 없는 데이터 거부
+printf '{"year": 2033, "verified_at": "2033-01-01", "min_wage": {"hourly": 1, "monthly_hours": 209}, "pension": null, "health": null, "long_term_care": null, "employment": null}' > "$JOBSTACK_STATUTORY_DIR/statutory-2033.json"
+"$N" minwage --hourly 5 --date 2033-01 >/dev/null 2>&1; [ $? -eq 2 ] && ok "source 없는 값 거부(exit 2)" || bad "source 없는 값 거부"
+echo '[1, 2]' > "$JOBSTACK_STATUTORY_DIR/statutory-2034.json"
+OUT=$("$N" sources --date 2034-01 2>&1); RC=$?
+[ $RC -eq 2 ] && ! grep -q Traceback <<<"$OUT" && ok "dict 아닌 데이터 파일 거부(traceback 없음)" || bad "dict 아닌 데이터 파일" "rc=$RC $OUT"
 "$N" >/dev/null 2>&1; [ $? -eq 1 ] && ok "하위 명령 없음 exit 1" || bad "하위 명령 없음 exit 1"
 
 # ── sources ──────────────────────────────────────────────────────────────

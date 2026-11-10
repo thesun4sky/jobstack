@@ -30,6 +30,7 @@ while [ $# -gt 0 ]; do
   esac
 done
 mkdir -p "$OUT" || { echo "출력 디렉토리를 만들 수 없습니다: $OUT" >&2; exit 3; }
+OUT="$(cd "$OUT" && pwd)"   # zip 은 작업 디렉토리로 cd 한 뒤 쓰므로 상대경로 --out 을 절대경로로 고정한다
 
 skill_list() {
   if [ "$TARGET" = all ]; then
@@ -69,6 +70,8 @@ body = text[m.end():]
 ALLOWED = ['name', 'description', 'license', 'compatibility', 'allowed-tools', 'metadata']
 blocks, order, cur = {}, [], None
 for line in m.group(1).split('\n'):
+    if line.startswith('#'):
+        continue  # 최상위 주석 줄은 앞 키의 값에 붙이지 않고 버린다
     k = re.match(r'^([A-Za-z_][A-Za-z0-9_-]*):(.*)$', line)
     if k:
         cur = k.group(1)
@@ -128,6 +131,7 @@ RC=0
 for skill in $(skill_list); do
   SRC="$ROOT/$skill"
   if [ ! -f "$SRC/SKILL.md" ]; then echo "[FAIL] $skill: SKILL.md 없음" >&2; RC=1; continue; fi
+  rm -f "$OUT/$skill.zip"   # 실패했을 때 이전 실행의 zip(정규화 전 것일 수 있다)이 남지 않게 먼저 지운다
   WORK="$(mktemp -d "${TMPDIR:-/tmp}/jobstack-pkg.XXXXXX")" || {
     echo "[FAIL] $skill: 임시 작업 디렉토리를 만들 수 없습니다." >&2
     RC=3
@@ -137,6 +141,9 @@ for skill in $(skill_list); do
   if ! NORM=$(normalize_frontmatter "$SRC/SKILL.md" "$WORK/$skill/SKILL.md" 2>&1); then
     echo "[FAIL] $skill: 프론트매터 정규화 실패 — $NORM" >&2; RC=4; rm -rf "$WORK"; continue
   fi
+  # Claude Code 전용으로 알고 빼는 키 외의 것이 빠졌으면 알린다(조용한 유실 방지)
+  UNKNOWN=$(echo "$NORM" | sed -n 's/^dropped=\([^ ]*\).*/\1/p' | tr ',' '\n' | grep -vxE 'argument-hint|model|effort|' | tr '\n' ' ')
+  [ -z "${UNKNOWN// /}" ] || echo "[안내] $skill: 업로드용 프론트매터에서 뺀 키 — $UNKNOWN" >&2
   [ -d "$SRC/references" ] && cp -R "$SRC/references" "$WORK/$skill/"
   if [ -d "$SRC/scripts" ]; then mkdir -p "$WORK/$skill/scripts"; cp "$SRC/scripts/preamble.sh" "$WORK/$skill/scripts/" 2>/dev/null || true; fi
   # 참조 무결성: SKILL.md 가 가리키는 references/·scripts/ 경로가 패키지 안에 있어야 한다

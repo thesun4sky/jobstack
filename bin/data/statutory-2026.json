@@ -5,7 +5,7 @@
   "min_wage": {
     "hourly": 10320,
     "monthly_hours": 209,
-    "source": "최저임금위원회 누리집 '2026년 적용 최저임금'",
+    "source": "최저임금위원회 누리집 게시 '2026년 적용 최저임금' 시간급(고시 번호는 누리집 공지에서 확인)",
     "url": "https://www.minimumwage.go.kr/main.do"
   },
   "pension": {

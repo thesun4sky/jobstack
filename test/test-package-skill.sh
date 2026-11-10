@@ -105,10 +105,25 @@ grep -q '^when_to_use:' "$REPO/resume/SKILL.md" && grep -q '^argument-hint:' "$R
 mkdir -p "$WORK/fmroot/longdesc/references" "$WORK/fmroot/angle/references"
 { printf -- '---\nname: longdesc\ndescription: |\n  짧은 설명\nwhen_to_use: |\n  '; head -c 1100 /dev/zero | tr '\0' 'a'; printf '\n---\n\n본문\n'; } > "$WORK/fmroot/longdesc/SKILL.md"
 printf -- '---\nname: angle\ndescription: |\n  <회사명> 을 넣는다\n---\n\n본문\n' > "$WORK/fmroot/angle/SKILL.md"
+mkdir -p "$WORK/fmout"; echo OLD > "$WORK/fmout/angle.zip"   # 이전 실행의 zip 이 남아 있는 상황 (리뷰 A5)
 for fx in longdesc angle; do
-  JOBSTACK_ROOT="$WORK/fmroot" bash "$BIN" "$fx" --out "$WORK/fmout" >/dev/null 2>&1; RC=$?
-  [ "$RC" -eq 4 ] && [ ! -f "$WORK/fmout/$fx.zip" ] && ok "정규화 실패($fx) → exit 4, zip 미생성" || ng "정규화 실패($fx) exit $RC"
+  ERR=$(JOBSTACK_ROOT="$WORK/fmroot" bash "$BIN" "$fx" --out "$WORK/fmout" 2>&1 >/dev/null); RC=$?
+  [ "$RC" -eq 4 ] && [ ! -f "$WORK/fmout/$fx.zip" ] && ok "정규화 실패($fx) → exit 4, zip 미생성(이전 zip 도 제거)" || ng "정규화 실패($fx) exit $RC"
+  case "$fx" in
+    longdesc) echo "$ERR" | grep -q '1024' && ok "실패 사유 안내(1024자)" || ng "실패 사유 없음: $ERR" ;;
+    angle)    echo "$ERR" | grep -q '꺾쇠' && ok "실패 사유 안내(꺾쇠)" || ng "실패 사유 없음: $ERR" ;;
+  esac
 done
+# 주석 줄·미지 키·한 줄 description (리뷰 A6)
+mkdir -p "$WORK/fmroot/misc/references"
+printf -- '---\nname: misc\ndescription: 한 줄 설명\n# 주석 줄\nhooks:\n  Stop: []\nwhen_to_use: 언제 쓰는지\n---\n\n본문\n' > "$WORK/fmroot/misc/SKILL.md"
+ERR=$(JOBSTACK_ROOT="$WORK/fmroot" bash "$BIN" misc --out "$WORK/fmout" 2>&1 >/dev/null); RC=$?
+MISC=$(python3 -c "import zipfile,sys; print(zipfile.ZipFile(sys.argv[1]).read('misc/SKILL.md').decode())" "$WORK/fmout/misc.zip" 2>/dev/null)
+[ "$RC" -eq 0 ] && echo "$MISC" | grep -q '^  한 줄 설명$' && echo "$MISC" | grep -q '^  언제 쓰는지$' && ! echo "$MISC" | grep -q '주석 줄\|^hooks:' \
+  && ok "한 줄 description 병합 · 주석 줄 제거 · 미지 키 제외" || ng "misc 정규화: rc=$RC $MISC"
+echo "$ERR" | grep -q '뺀 키.*hooks' && ok "미지 키를 뺐다는 안내 출력" || ng "미지 키 안내 없음: $ERR"
+# 상대경로 --out (리뷰 A7)
+(cd "$WORK" && bash "$BIN" auto --out relout >/dev/null 2>&1) && [ -f "$WORK/relout/auto.zip" ] && ok "상대경로 --out" || ng "상대경로 --out 실패"
 
 echo "PASS: $PASS / FAIL: $FAIL"
 [ "$FAIL" -eq 0 ]

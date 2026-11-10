@@ -20,9 +20,9 @@ jobs:
       - name: Node 의존성 (bin/ — playwright·cheerio·docx·yaml, 브라우저 바이너리 제외)
         run: cd bin && PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm install --no-audit --no-fund
 
-      # claude plugin validate 게이트용. 설치에 실패해도 CI 를 막지 않는다 — 그 경우 test-plugin-validate.sh 가 SKIP 한다.
-      - name: Claude Code CLI (plugin validate 용, 실패 허용)
-        run: npm install -g @anthropic-ai/claude-code --no-audit --no-fund || echo "claude CLI 설치 실패 — plugin validate 는 SKIP"
+      # claude plugin validate 게이트용(로그인 없이 동작한다). CI 에서는 SKIP 을 실패로 본다 — 게이트가 조용히 꺼지지 않게.
+      - name: Claude Code CLI (plugin validate 용)
+        run: npm install -g @anthropic-ai/claude-code --no-audit --no-fund
 
       - name: 컨벤션·표기·경로 린트
         run: |
@@ -34,7 +34,7 @@ jobs:
           bash test/test-script-layer.sh
           bash test/test-plugin-manifest.sh
           bash test/test-plugin-validate.sh --self-test
-          bash test/test-plugin-validate.sh
+          JOBSTACK_REQUIRE_VALIDATE=1 bash test/test-plugin-validate.sh
 
       - name: 프리앰블 격리 실행
         run: bash test/test-preambles.sh
