@@ -422,10 +422,12 @@ Default 환경은 모든 저장소가 함께 쓰므로 고치지 않고, 전용 
 - 헤드리스 eval: tracker gate·periodic, salary gate·periodic, cover-letter gate 통과. 가드레일 §8 이 tracker·mock-interview 컨텍스트에 자동 주입됨을 확인.
 - 주입 형태 실험: `sed '1{/^# /d;}'` 만 미실행, `cat`·`tail -n +2`·`if…cat`·`bash 스크립트` 는 실행.
 
+**머지 전 마지막 더블체크에서 추가로 확인한 것**
+- GitHub Actions: 브랜치 push 5회 모두 성공. 최신 커밋에서 `Claude Code CLI` 설치 단계와 `JOBSTACK_REQUIRE_VALIDATE=1` 검증 단계(SKIP 이면 실패)가 통과했고, macOS 스모크(`/bin/bash` 3.2 로 프리앰블 테스트 포함)도 통과했다.
+- job-search Phase 5: `/job_search` 로 "어디가 공채를 하나" 질문을 헤드리스 실행 — 현재 연도로 검색하고, 출처를 병기했으며, 공채 유지 여부 보도가 엇갈리는 그룹은 단정하지 않고 엇갈린다고 밝혔다. 기억에 의한 그룹 단정 없음.
+
 **하지 않았거나 확인하지 못한 것**
 - 실제 claude.ai 업로드(공식 검증기 통과까지만).
-- GitHub Actions 에서의 `claude plugin validate` 동작 — 로그인 없는 격리 환경에서는 동작을 확인했지만 Actions 실행은 보지 못했다. CI 는 SKIP 을 실패로 보도록 설정했으므로 CLI 설치가 실패하면 CI 가 빨개진다.
-- job-search Phase 5 본문의 헤드리스 실측(자연어 질문에 스킬이 발동하지 않았고, 이후 description 을 보강했지만 재실측하지 않았다).
 - salary·job-search 의 트리거 정확도 측정(`--trigger` 모드), 나머지 스킬의 e2e 계층.
 - 채점 모델(haiku)의 판정 흔들림 — salary periodic 은 스킬 동작이 맞았는데도 한 번 실패 판정을 받았다. 채점 기준을 구체적으로 다시 쓴 뒤 통과했다(N-32·N-33 의 근거).
 - 2026년 1~6월분·2027년 건강보험 등 데이터 파일에 없는 시점의 계산은 거부된다. **2027-01-01 부터는 건강보험·장기요양·고용보험 값을 채울 때까지 `calc` 가 전부 exit 2** 다 — 12월에 시행령·고시를 확인해 `statutory-2027.json` 을 채워야 한다.
