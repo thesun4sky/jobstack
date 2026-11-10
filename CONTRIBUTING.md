@@ -49,3 +49,10 @@ PR 전에 `test/run-integration-test.sh` 를 실행합니다. 기본으로 mktem
 - bash 스크립트: `set -euo pipefail`
 - YAML: 2칸 들여쓰기
 - Markdown: 한 줄 비우기로 문단 구분
+
+## 릴리스
+
+1. 릴리스 커밋에서 `VERSION`·`.claude-plugin/plugin.json`·`bin/package.json` 의 버전을 올리고, `CHANGELOG.md` 의 `[Unreleased]` 를 `## [X.Y.Z] - YYYY-MM-DD` 로 확정한다.
+2. PR 을 `main` 에 머지한다.
+3. GitHub Actions 의 **release** 워크플로우를 `main` 에서 수동 실행한다(입력: `version` = `X.Y.Z`, 선택 `summary`). `bin/release.sh` 가 버전 파일과 CHANGELOG 절을 검사한 뒤 주석 태그 `vX.Y.Z` 와 GitHub 릴리스를 만든다 — 릴리스 노트는 CHANGELOG 의 해당 절이다.
+4. 미리 확인하려면 로컬에서 `bin/release.sh X.Y.Z --dry-run` 을 돌린다(태그·릴리스는 만들지 않는다).

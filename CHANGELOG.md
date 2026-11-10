@@ -33,6 +33,8 @@
 - **lint ④ 검색어 예시의 고정 연도** (N-02) — 인용 구간·검색 문맥·펜스·목록 꼬리의 연도를 검출, 날짜·출처·표준번호는 제외.
 - **`test/test-plugin-validate.sh`** (N-06) — `claude plugin validate` 오류 0건 + 경고 허용 목록, 머리줄 건수 대조,
   `JOBSTACK_REQUIRE_VALIDATE=1`(CI). **`evals/salary`** — gate·periodic 2케이스와 트리거 질의 10개.
+- **릴리스 자동화** — `bin/release.sh` 와 수동 실행 워크플로우 `.github/workflows/release.yml`: VERSION·plugin.json·
+  bin/package.json·CHANGELOG 절을 검사한 뒤 주석 태그 `v<버전>` 과 GitHub 릴리스(노트 = CHANGELOG 해당 절)를 만든다.
 
 ### Changed
 - **NCS 직업공통능력 확정 (N-01)** — `docs/ncs-competencies.md` 를 고용노동부 보도자료(2026-04-28) 붙임1(7영역·21하위능력)과
